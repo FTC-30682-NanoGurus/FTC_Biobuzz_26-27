@@ -6,27 +6,19 @@ import com.acmerobotics.dashboard.config.Config;
 import com.acmerobotics.dashboard.telemetry.TelemetryPacket;
 import com.acmerobotics.roadrunner.Action;
 import com.acmerobotics.roadrunner.InstantAction;
-import com.acmerobotics.roadrunner.NullAction;
 import com.acmerobotics.roadrunner.ParallelAction;
-import com.acmerobotics.roadrunner.PoseVelocity2d;
 import com.acmerobotics.roadrunner.SequentialAction;
 import com.acmerobotics.roadrunner.SleepAction;
 import com.qualcomm.robotcore.hardware.DcMotor;
-import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.hardware.DcMotorSimple;
-import com.qualcomm.robotcore.hardware.DigitalChannel;
 import com.qualcomm.robotcore.hardware.HardwareMap;
-import com.qualcomm.robotcore.hardware.PIDFCoefficients;
 import com.qualcomm.robotcore.hardware.Servo;
 import com.qualcomm.robotcore.util.ElapsedTime;
 
 import org.firstinspires.ftc.robotcore.external.Telemetry;
 import org.firstinspires.ftc.teamcode.DECODERobotConstants;
-import org.firstinspires.ftc.teamcode.RobotConstants;
 import org.firstinspires.ftc.teamcode.library.NGMotor;
-import org.firstinspires.ftc.teamcode.library.Potentiometer;
-import org.firstinspires.ftc.teamcode.library.Subsystem;
-import org.firstinspires.ftc.teamcode.opmodes.NGAutoOpMode;
+
 @Config
 public class Intake2_0 {
     HardwareMap hardwareMap;
@@ -47,10 +39,11 @@ public class Intake2_0 {
         flywheels = new NGMotor(hardwareMap, telemetry, DECODERobotConstants.flywheels);
         transferRollers = new NGMotor(hardwareMap, telemetry, DECODERobotConstants.transferRollers);
         interTransfer = new NGMotor(hardwareMap, telemetry, DECODERobotConstants.interTransfer);
-        interTransfer.setDirection(DcMotor.Direction.REVERSE);
+        interTransfer.setDirection(DcMotor.Direction.FORWARD);
+        transferRollers.setDirection(DcMotor.Direction.REVERSE);
         flywheels.init();
         flywheels.setZeroPowerBehavior_Brake();
-        transferRollers.setDirection(DcMotor.Direction.REVERSE);
+
         hoodAdjuster = hardwareMap.get(Servo.class, DECODERobotConstants.hoodAdjuster);
     }
     public Intake2_0(HardwareMap hardwareMap, Telemetry telemetry, ElapsedTime timer) {
@@ -110,7 +103,7 @@ public class Intake2_0 {
 
         @Override
             public boolean run(@NonNull TelemetryPacket telemetryPacket) {
-                flywheels.updateFlywheels(transferRollers.getPower() > 0);
+                flywheels.updateFlywheels(transferRollers.getPower() > 0.1);
 
                 telemetry.addData("FW Current Vel", "%.1f", flywheels.getVelocity());
 
@@ -122,7 +115,7 @@ public class Intake2_0 {
     }
 
     public static void initHood(){
-        hoodAdjuster.setPosition(1.0);
+        hoodAdjuster.setPosition(0.9);
     }
 
     /*public void updateFlywheels(){

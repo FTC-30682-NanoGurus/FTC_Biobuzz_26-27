@@ -27,7 +27,6 @@ public class NGServo extends Subsystem{
     private double max = 1;
 
 
-
     public NGServo(HardwareMap hardwareMap, Telemetry telemetry, String name){
         servo = hardwareMap.get(ServoImplEx.class, name);
         this.telemetry = telemetry;

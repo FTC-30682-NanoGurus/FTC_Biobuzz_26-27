@@ -12,7 +12,7 @@ public class TargetingComputer {
     private static final double HEADING_CONVERGENCE_SPEED = 0.10;
     private static final double MAX_TRUST_VELOCITY = 20.0;
     private static final double MAX_JUMP_THRESHOLD = 4.0;
-    private Pose2d fusedPose;
+    public Pose2d fusedPose;
     private ElapsedTime lastCameraUpdate;
     private double currentConfidence = 0.0;
     private final TreeMap<Double, ShotData> ballisticTable = new TreeMap<>();
@@ -37,11 +37,17 @@ public class TargetingComputer {
         this.lastCameraUpdate = new ElapsedTime();
 
         // BALLISTICS TABLE (Distance, ShotData)
-        ballisticTable.put(24.0, new ShotData(1050.0, 1.0)); // Point Blank
-        ballisticTable.put(35.0, new ShotData(1080.0, 1.0)); // Close-Close
-        ballisticTable.put(52.0, new ShotData(1120.0, 1.0)); // Close-Mid
-        ballisticTable.put(72.0, new ShotData(1170.0, 0.9)); // Close-Far
-        ballisticTable.put(120.0, new ShotData(1560.0, 0.65)); // Far Zone
+        ballisticTable.put(24.0, new ShotData(1000.0, 1.0)); // Point Blank
+        ballisticTable.put(35.0, new ShotData(1020.0, 0.9)); // Close-Close
+        ballisticTable.put(52.0, new ShotData(1080.0, 0.8)); // Close-Mid
+        ballisticTable.put(72.0, new ShotData(1150.0, 0.7)); // Close-Far
+        ballisticTable.put(120.0, new ShotData(1320.0, 0.6)); // Far Zone
+
+        /*ballisticTable.put(24.0, new ShotData(1150.0, 1.0)); // Point Blank
+        ballisticTable.put(35.0, new ShotData(1250.0, 1.0)); // Close-Close
+        ballisticTable.put(52.0, new ShotData(1300.0, 1.0)); // Close-Mid
+        ballisticTable.put(72.0, new ShotData(1350.0, 0.9)); // Close-Far
+        ballisticTable.put(120.0, new ShotData(1450.0, 0.5)); // Far Zone*/
     }
 
     public Pose2d update(Pose2d odoPose, Pose2d camPose, double robotVel) {
@@ -93,6 +99,7 @@ public class TargetingComputer {
         currentConfidence = Range.clip(currentConfidence, 0, 100);
 
         fusedPose = new Pose2d(newX, newY, newH);
+
         return fusedPose;
     }
 

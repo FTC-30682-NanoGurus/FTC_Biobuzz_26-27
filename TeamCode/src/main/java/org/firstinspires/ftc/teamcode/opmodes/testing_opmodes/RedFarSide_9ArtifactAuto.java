@@ -14,7 +14,7 @@ import com.acmerobotics.roadrunner.ftc.Actions;
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
 import com.qualcomm.robotcore.eventloop.opmode.Disabled;
 
-import org.firstinspires.ftc.teamcode.opmodes.NGAutoOpMode;
+import org.firstinspires.ftc.teamcode.library.NGAutoOpMode;
 
 @Disabled
 @Autonomous

@@ -1,7 +1,6 @@
 package org.firstinspires.ftc.teamcode.subsystems;
 
 import static org.firstinspires.ftc.teamcode.RobotConstants.ARM_LIMIT;
-import static org.firstinspires.ftc.teamcode.RobotConstants.wrist_extended;
 
 import androidx.annotation.NonNull;
 
@@ -9,9 +8,7 @@ import com.acmerobotics.dashboard.config.Config;
 import com.acmerobotics.dashboard.telemetry.TelemetryPacket;
 import com.acmerobotics.roadrunner.Action;
 import com.acmerobotics.roadrunner.InstantAction;
-import com.acmerobotics.roadrunner.NullAction;
 import com.acmerobotics.roadrunner.ParallelAction;
-import com.acmerobotics.roadrunner.PoseVelocity2d;
 import com.acmerobotics.roadrunner.SequentialAction;
 import com.acmerobotics.roadrunner.SleepAction;
 import com.qualcomm.robotcore.hardware.DcMotor;
@@ -25,7 +22,6 @@ import org.firstinspires.ftc.teamcode.RobotConstants;
 import org.firstinspires.ftc.teamcode.library.NGMotor;
 import org.firstinspires.ftc.teamcode.library.Potentiometer;
 import org.firstinspires.ftc.teamcode.library.Subsystem;
-import org.firstinspires.ftc.teamcode.opmodes.NGAutoOpMode;
 
 @Config
 public class Intake extends Subsystem {

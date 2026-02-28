@@ -12,7 +12,7 @@ public class DECODERobotConstants {
             farShootPos = 0.65,
             //farShootingVel = 1300,
             farZoneShootingVel = 1560,
-            closeZoneShootingVel = 1140;
+            closeZoneShootingVel = 1060;
 
     public static String fr = "frontRight";
     public static String br = "backRight";

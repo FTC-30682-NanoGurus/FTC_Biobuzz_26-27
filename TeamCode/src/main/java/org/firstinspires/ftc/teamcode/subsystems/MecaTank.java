@@ -171,6 +171,56 @@ public class MecaTank extends Subsystem {
         );*/
     }
 
+    public boolean holdPosition(Pose2d targetPose) {
+        updatePoseEstimate();
+        Pose2d currentPose = getPoseEstimate();
+
+        // 1. Calculate Errors
+        double errorX = targetPose.position.x - currentPose.position.x;
+        double errorY = targetPose.position.y - currentPose.position.y;
+        double errorH = targetPose.heading.toDouble() - currentPose.heading.toDouble();
+
+        // Fix Angle Wrap (-180 to 180)
+        while (errorH > Math.PI) errorH -= 2 * Math.PI;
+        while (errorH <= -Math.PI) errorH += 2 * Math.PI;
+
+        // 2. The Deadzone (Ignore Flywheel Vibration)
+        // If error is tiny, pretend it is zero so motors don't jitter
+        if (Math.abs(errorX) < 1.0) errorX = 0;
+        if (Math.abs(errorY) < 1.0) errorY = 0;
+        if (Math.abs(errorH) < Math.toRadians(2.0)) errorH = 0;
+
+        //Calculate Power (PID)
+        // Tune these if the robot shakes (too high) or drifts (too low)
+        double xPower = errorX * 0.12;
+        double yPower = errorY * 0.12;
+        double hPower = errorH * 1.5;
+
+        // 4. Field Centric Rotation
+        double botHeading = currentPose.heading.toDouble();
+        double rotX = xPower * Math.cos(-botHeading) - yPower * Math.sin(-botHeading);
+        double rotY = xPower * Math.sin(-botHeading) + yPower * Math.cos(-botHeading);
+
+        // 5. Apply Power
+        drive.setDrivePowers(new PoseVelocity2d(new Vector2d(rotX, rotY), hPower));
+
+        double velocity = getRobotVelocity(); // Ensure you have this helper method
+        boolean isPositionCorrect = (errorX == 0 && errorY == 0 && errorH == 0);
+
+        return (velocity < 2.0 && isPositionCorrect);
+    }
+
+    public void releaseLock() {
+
+        // xIntegralSum = 0;
+        // yIntegralSum = 0;
+        // hIntegralSum = 0;
+    }
+
+    /**
+     * Helper to get speed (hypotenuse of x and y velocity)
+     */
+
     public void setPoseEstimate(Pose2d newPose) {
         drive.pose = newPose;
         /* this.currentPose = newPose;

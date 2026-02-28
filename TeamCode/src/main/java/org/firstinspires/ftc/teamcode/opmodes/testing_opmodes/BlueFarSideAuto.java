@@ -1,27 +1,20 @@
 package org.firstinspires.ftc.teamcode.opmodes.testing_opmodes;
+
 import com.acmerobotics.roadrunner.AccelConstraint;
 import com.acmerobotics.roadrunner.Action;
-import com.acmerobotics.roadrunner.InstantAction;
 import com.acmerobotics.roadrunner.MinMax;
-import androidx.annotation.NonNull;
-import com.acmerobotics.dashboard.telemetry.TelemetryPacket;
 import com.acmerobotics.roadrunner.ParallelAction;
 import com.acmerobotics.roadrunner.Pose2d;
 import com.acmerobotics.roadrunner.ProfileAccelConstraint;
 import com.acmerobotics.roadrunner.SequentialAction;
-import com.acmerobotics.roadrunner.SleepAction;
-import com.acmerobotics.roadrunner.Trajectory;
 import com.acmerobotics.roadrunner.TrajectoryActionBuilder;
 import com.acmerobotics.roadrunner.TranslationalVelConstraint;
 import com.acmerobotics.roadrunner.Vector2d;
-import com.acmerobotics.roadrunner.VelConstraint;
 import com.acmerobotics.roadrunner.ftc.Actions;
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
-import com.qualcomm.robotcore.util.ElapsedTime;
 
 import org.firstinspires.ftc.teamcode.DECODERobotConstants;
-import org.firstinspires.ftc.teamcode.opmodes.NGAutoOpMode;
-import org.firstinspires.ftc.teamcode.roadrunner.PoseStorage;
+import org.firstinspires.ftc.teamcode.library.NGAutoOpMode;
 
 @Autonomous
 public class BlueFarSideAuto extends NGAutoOpMode{
@@ -40,12 +33,14 @@ public class BlueFarSideAuto extends NGAutoOpMode{
         initAuto(beginPose);
 
         TrajectoryActionBuilder ToShootPos = drive.actionBuilder(beginPose)
-                .lineToXLinearHeading(52, Math.toRadians(212), new TranslationalVelConstraint(60), new ProfileAccelConstraint(-60, 70));
+                .lineToXLinearHeading(52, Math.toRadians(212), new TranslationalVelConstraint(60), new ProfileAccelConstraint(-70, 80));
+
         TrajectoryActionBuilder ToFirstSet = ToShootPos.endTrajectory().fresh()
-                .splineToSplineHeading(new Pose2d(35, -25, Math.toRadians(-90)), Math.toRadians(5), new TranslationalVelConstraint(90), new ProfileAccelConstraint(-40, 50))
+                .splineToSplineHeading(new Pose2d(43, -25, Math.toRadians(-90)), Math.toRadians(5), new TranslationalVelConstraint(90), new ProfileAccelConstraint(-40, 50))
                 .afterTime(0, intake2_0.collect(1))
-                .splineToLinearHeading(new Pose2d(35, -51, Math.toRadians(-90)), Math.toRadians(70), new TranslationalVelConstraint(42), new ProfileAccelConstraint(-10, 20))
+                .splineToLinearHeading(new Pose2d(43, -51, Math.toRadians(-90)), Math.toRadians(70), new TranslationalVelConstraint(42), new ProfileAccelConstraint(-10, 20))
                 .splineToSplineHeading(new Pose2d(52, -12, Math.toRadians(212)), Math.toRadians(90), new TranslationalVelConstraint(70), new ProfileAccelConstraint(-60, 70));
+
         TrajectoryActionBuilder ToHPset1 = ToFirstSet.endTrajectory().fresh()
                 .strafeToSplineHeading(
                         new Vector2d(52, -35),
@@ -62,6 +57,7 @@ public class BlueFarSideAuto extends NGAutoOpMode{
                         new ProfileAccelConstraint(-20, 20)
                 )
                 .splineToSplineHeading(new Pose2d(52, -12, Math.toRadians(212)), Math.toRadians(5), new TranslationalVelConstraint(70), new ProfileAccelConstraint(-60, 70));
+
         TrajectoryActionBuilder ToHPset2 = ToHPset1.endTrajectory().fresh()
                 .strafeToSplineHeading(
                         new Vector2d(52, -35),
@@ -78,6 +74,7 @@ public class BlueFarSideAuto extends NGAutoOpMode{
                         new ProfileAccelConstraint(-20, 20)
                 )
                 .splineToSplineHeading(new Pose2d(52, -12, Math.toRadians(212)), Math.toRadians(5), new TranslationalVelConstraint(70), new ProfileAccelConstraint(-60, 70));
+
         TrajectoryActionBuilder leaveLaunchLine = ToHPset2.endTrajectory().fresh()
                         .strafeToLinearHeading(new Vector2d(38, -12), Math.toRadians(-90));
 
@@ -109,19 +106,19 @@ public class BlueFarSideAuto extends NGAutoOpMode{
                                 new SequentialAction(
                                         new SequentialAction(
                                                 scorePreLoaded,
-                                                intake2_0.transferUsingRollersForTime(2, 0.75)
+                                                intake2_0.transferUsingRollersForTime(2, 0.3)
                                         ),
                                         new SequentialAction(
                                                 getFirstSet,
-                                                intake2_0.transferUsingRollersForTime(2, 0.75)
+                                                intake2_0.transferUsingRollersForTime(2, 0.3)
                                         ),
                                         new SequentialAction(
                                                 getHPset1,
-                                                intake2_0.transferUsingRollersForTime(2, 0.75)
+                                                intake2_0.transferUsingRollersForTime(2, 0.3)
                                         ),
                                         new SequentialAction(
                                                 getHPset2,
-                                                intake2_0.transferUsingRollersForTime(2, 0.75)
+                                                intake2_0.transferUsingRollersForTime(2, 0.3)
                                         ),
                                         leave
                                 )

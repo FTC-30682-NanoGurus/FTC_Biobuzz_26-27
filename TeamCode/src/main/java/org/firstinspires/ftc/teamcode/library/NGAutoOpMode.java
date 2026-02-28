@@ -1,7 +1,6 @@
-package org.firstinspires.ftc.teamcode.opmodes;
+package org.firstinspires.ftc.teamcode.library;
 
 import static org.firstinspires.ftc.teamcode.RobotConstants.ARM_LIMIT;
-import static org.firstinspires.ftc.teamcode.subsystems.Intake2_0.hoodAdjuster;
 
 import androidx.annotation.NonNull;
 
@@ -23,16 +22,12 @@ import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.hardware.Gamepad;
 import com.qualcomm.robotcore.util.ElapsedTime;
 
-import org.firstinspires.ftc.teamcode.DECODERobotConstants;
 import org.firstinspires.ftc.teamcode.RobotConstants;
-import org.firstinspires.ftc.teamcode.library.BulkRead;
 import org.firstinspires.ftc.teamcode.roadrunner.MecanumDrive;
 import org.firstinspires.ftc.teamcode.subsystems.Camera;
 import org.firstinspires.ftc.teamcode.subsystems.Distance;
 import org.firstinspires.ftc.teamcode.subsystems.Intake;
 import org.firstinspires.ftc.teamcode.subsystems.Intake2_0;
-import org.firstinspires.ftc.teamcode.subsystems.Rigging;
-import org.firstinspires.ftc.teamcode.subsystems.TrafficLight;
 import org.firstinspires.ftc.teamcode.subsystems.VihasCameraArm;
 
 public abstract class NGAutoOpMode extends LinearOpMode {

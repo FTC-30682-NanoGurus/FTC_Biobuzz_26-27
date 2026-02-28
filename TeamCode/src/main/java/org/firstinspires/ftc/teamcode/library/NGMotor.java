@@ -82,9 +82,9 @@ public class NGMotor extends Subsystem {
     Telemetry telemetry;
 
     //Flywheel PIDF Controller Constants
-    double kP_Recovery = 0.04;
-    double kP_Stable  = 0.0085;
-    public static double kLoad = 0.75;
+    double kP_Recovery = 0.08;//0.06
+    double kP_Stable  = 0.004;//0.007
+    public static double kLoad = 1.2;
 
     double ALPHA = 0.7;
     double RECOVERY_THRESHOLD = 60.0;
@@ -92,7 +92,7 @@ public class NGMotor extends Subsystem {
 
     ElapsedTime feederTimer = new ElapsedTime();
     boolean wasFeederActive = false; // Tracks state changes
-    public static double kRamp = 0.06;
+    public static double kRamp = 1.5;
 
 
     public NGMotor(HardwareMap hardwareMap, Telemetry telemetry, String name) {
@@ -184,8 +184,13 @@ public class NGMotor extends Subsystem {
         // Tuning Telemetry
         telemetry.addData("Current Velocity", rawVelocity);
         telemetry.addData("Error", error);
+        telemetry.addData("FeedForward Power: ", Load_Term*500);
+        //telemetry.addData("Load Boost", isFeederActive ? "ACTIVE" : "OFF");
+    }
 
-        telemetry.addData("Load Boost", isFeederActive ? "ACTIVE" : "OFF");
+    public void loopTelemetry(double loopMs){
+        telemetry.addData("Hz", "%.0f", 1000 / loopMs);
+        telemetry.addData("Loop Time", "%.1f ms", loopMs);
     }
 
     public void addPower(double power){

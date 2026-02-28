@@ -26,6 +26,9 @@ import com.noahbres.meepmeep.roadrunner.entity.RoadRunnerBotEntity;
 import org.jetbrains.annotations.NotNull;
 
 import java.awt.Color;
+
+import javax.swing.ProgressMonitor;
+
 public class  MeepMeepTestingNikhil {
     public static void main(String[] args) {
         MeepMeep meepMeep = new MeepMeep(800);
@@ -295,41 +298,70 @@ public class  MeepMeepTestingNikhil {
                 .strafeToSplineHeading(new Vector2d(-50, -36), Math.toRadians(55), new TranslationalVelConstraint(80))
                 .build())
 */
-        sampleBot.runAction(sampleBot.getDrive().actionBuilder(new Pose2d(-52, -48 , Math.toRadians(235)))
+        sampleBot.runAction(sampleBot.getDrive().actionBuilder(new Pose2d(-52, 48, Math.toRadians(-235)))
 
-                .lineToY(-25, new TranslationalVelConstraint(80), new ProfileAccelConstraint(-150, 150))
+                .lineToY(20, new TranslationalVelConstraint(45), new ProfileAccelConstraint(-30, 40))
+                        .waitSeconds(1.0)
+                .setReversed(true)
+                .splineToSplineHeading(new Pose2d(-22, 20, Math.toRadians(-270)), Math.toRadians(-5), new TranslationalVelConstraint(45), new ProfileAccelConstraint(-60, 60))
+                .splineToLinearHeading(new Pose2d(-22, 50, Math.toRadians(-270)), Math.toRadians(100), new TranslationalVelConstraint(50), new ProfileAccelConstraint(-20, 30))
+                .splineToSplineHeading(new Pose2d(-12, 30, Math.toRadians(-270)), Math.toRadians(-90))
+                .splineToSplineHeading(new Pose2d(-12, 43, Math.toRadians(-270)), Math.toRadians(90), new TranslationalVelConstraint(15), new ProfileAccelConstraint(-10, 30))
+                .waitSeconds(1.0)
+                .splineToSplineHeading(new Pose2d(-26, 20, Math.toRadians(-233)), Math.toRadians(-160), new TranslationalVelConstraint(50), new ProfileAccelConstraint(-30, 50))
+
+                .setReversed(true)
+                .splineToSplineHeading(new Pose2d(2.5, 17, Math.toRadians(90)), Math.toRadians(0), new TranslationalVelConstraint(50),  new ProfileAccelConstraint(-10, 60))
+                .splineToLinearHeading(new Pose2d(7, 49, Math.toRadians(90)), Math.toRadians(90), new TranslationalVelConstraint(35))
+                .splineToSplineHeading(new Pose2d(7, 30, Math.toRadians(90)), Math.toRadians(-90), new TranslationalVelConstraint(50))
+                .splineToSplineHeading(new Pose2d(-26, 25, Math.toRadians(-232)), Math.toRadians(-180), new TranslationalVelConstraint(50), new ProfileAccelConstraint(-20, 40))
+
+                .setReversed(true)
+                .splineToSplineHeading(new Pose2d(26, 20, Math.toRadians(-270)), Math.toRadians(0), new TranslationalVelConstraint(50),  new ProfileAccelConstraint(-60, 60))
+                .splineToLinearHeading(new Pose2d(29, 49, Math.toRadians(-270)), Math.toRadians(90), new TranslationalVelConstraint(35))
+                .splineToSplineHeading(new Pose2d(29, 35, Math.toRadians(-270)), Math.toRadians(-90), new TranslationalVelConstraint(50))
+                .splineToSplineHeading(new Pose2d(-26, 22, Math.toRadians(-228)), Math.toRadians(-180), new TranslationalVelConstraint(50), new ProfileAccelConstraint(-40, 40))
+                /*.lineToY(-25, new TranslationalVelConstraint(80), new ProfileAccelConstraint(-150, 150))
                         .waitSeconds(1)
-                        .splineToSplineHeading(new Pose2d(-15, -21, Math.toRadians(270)), Math.toRadians(5), new TranslationalVelConstraint(70), new ProfileAccelConstraint(-60, 60))
+
+                .setReversed(true)
+                .splineToSplineHeading(new Pose2d(11, -17, Math.toRadians(270)), Math.toRadians(0), new TranslationalVelConstraint(30),  new ProfileAccelConstraint(-120, 120))
+                .splineToLinearHeading(new Pose2d(11, -49, Math.toRadians(270)), Math.toRadians(-90), new TranslationalVelConstraint(30))
+                .splineToSplineHeading(new Pose2d(6, -38, Math.toRadians(270)), Math.toRadians(90))
+                .splineToSplineHeading(new Pose2d(6, -48, Math.toRadians(270)), Math.toRadians(-90))
+                        .waitSeconds(0.5)
+                .splineToSplineHeading(new Pose2d(6, -30, Math.toRadians(270)), Math.toRadians(90), new TranslationalVelConstraint(50))
+                .splineToSplineHeading(new Pose2d(-26, -22, Math.toRadians(229)), Math.toRadians(150), new TranslationalVelConstraint(50), new ProfileAccelConstraint(-40, 40))
+                .waitSeconds(1)
+
+                .setReversed(true)
+                        .splineToSplineHeading(new Pose2d(8, -22, Math.toRadians(245)), Math.toRadians(0), new TranslationalVelConstraint(50), new ProfileAccelConstraint(-60, 60))
+                        .splineToSplineHeading(new Pose2d(8, -51, Math.toRadians(245)), Math.toRadians(-90), new TranslationalVelConstraint(42), new ProfileAccelConstraint(-35, 35))
+                .waitSeconds(1.5)
+                        .setReversed(true)
+                        .splineToSplineHeading(new Pose2d(8, -25, Math.toRadians(245)), Math.toRadians(90), new TranslationalVelConstraint(50), new ProfileAccelConstraint(-50, 50))
+                        .splineToSplineHeading(new Pose2d(-26, -22, Math.toRadians(229)), Math.toRadians(180), new TranslationalVelConstraint(50), new ProfileAccelConstraint(-50, 50))
+
+                .setReversed(true)
+                    .splineToSplineHeading(new Pose2d(8, -22, Math.toRadians(245)), Math.toRadians(0), new TranslationalVelConstraint(50), new ProfileAccelConstraint(-60, 60))
+                    .splineToSplineHeading(new Pose2d(8, -51, Math.toRadians(245)), Math.toRadians(-90), new TranslationalVelConstraint(42), new ProfileAccelConstraint(-35, 35))
+                .waitSeconds(1.5)
+                .setReversed(true)
+                .splineToSplineHeading(new Pose2d(8, -25, Math.toRadians(245)), Math.toRadians(90), new TranslationalVelConstraint(50), new ProfileAccelConstraint(-50, 50))
+                .splineToSplineHeading(new Pose2d(-26, -22, Math.toRadians(229)), Math.toRadians(180), new TranslationalVelConstraint(50), new ProfileAccelConstraint(-50, 50))
+
+                .setReversed(true)
+                .splineToSplineHeading(new Pose2d(-15, -21, Math.toRadians(270)), Math.toRadians(5), new TranslationalVelConstraint(70), new ProfileAccelConstraint(-60, 60))
                         .splineToLinearHeading(new Pose2d(-12, -48.5, Math.toRadians(270)), Math.toRadians(-100), new TranslationalVelConstraint(60), new ProfileAccelConstraint(-20, 30))
                         .splineToSplineHeading(new Pose2d(-32, -30, Math.toRadians(230)), Math.toRadians(100), new TranslationalVelConstraint(100), new ProfileAccelConstraint(-80, 80))
                             .waitSeconds(1)
 
-                        .splineToLinearHeading(new Pose2d(13.2, -17, Math.toRadians(270)), Math.toRadians(-20), new TranslationalVelConstraint(100), new ProfileAccelConstraint(-120, 120))
-                        .splineToSplineHeading(new Pose2d(13.2, -50, Math.toRadians(270)), Math.toRadians(-60), new TranslationalVelConstraint(40))
-
-                        .splineToSplineHeading(new Pose2d(-32, -30, Math.toRadians(230)), Math.toRadians(-180), new TranslationalVelConstraint(100))
-                            .waitSeconds(1)
-
-                        .splineToLinearHeading(new Pose2d(10, -58, Math.toRadians(240)), Math.toRadians(-120), new TranslationalVelConstraint(55))
-                            .waitSeconds(1.8)
-                        .splineToSplineHeading(new Pose2d(10, -40, Math.toRadians(230)), Math.toRadians(90), new TranslationalVelConstraint(100))
-                        .splineToSplineHeading(new Pose2d(-45, -25, Math.toRadians(225)), Math.toRadians(-150), new TranslationalVelConstraint(100), smartScore)
-                            //.waitSeconds(1)
-
-                        .splineToLinearHeading(new Pose2d(10, -58, Math.toRadians(240)), Math.toRadians(-120), new TranslationalVelConstraint(55), smartScore)
-                            .waitSeconds(1.8)
-                        .splineToSplineHeading(new Pose2d(10, -40, Math.toRadians(230)), Math.toRadians(90), new TranslationalVelConstraint(100))
-                        .splineToSplineHeading(new Pose2d(-45, -25, Math.toRadians(225)), Math.toRadians(-150), new TranslationalVelConstraint(100), smartScore)
-                        //.waitSeconds(1)
-                        .splineToLinearHeading(new Pose2d(10, -58, Math.toRadians(240)), Math.toRadians(-120), new TranslationalVelConstraint(55), smartScore)
-                            .waitSeconds(1.8)
-                        //.strafeToConstantHeading(new Vector2d(10, -36), new TranslationalVelConstraint(140))
-                        .splineToSplineHeading(new Pose2d(10, -40, Math.toRadians(230)), Math.toRadians(90), new TranslationalVelConstraint(100))
-                        .splineToSplineHeading(new Pose2d(-45, -25, Math.toRadians(225)), Math.toRadians(-155), new TranslationalVelConstraint(100), new ProfileAccelConstraint(-120, 120))
-                        //.waitSeconds(1)
-                        //.splineToLinearHeading(new Pose2d(34, -15, Math.toRadians(270)), Math.toRadians(20), new TranslationalVelConstraint(100))
-                        //.splineToSplineHeading(new Pose2d(34, -50, Math.toRadians(270)), Math.toRadians(50), new TranslationalVelConstraint(40))
-                        //.splineToSplineHeading(new Pose2d(-32, -30, Math.toRadians(230)), Math.toRadians(-50), new TranslationalVelConstraint(100))
+                .setReversed(true)
+                .splineToSplineHeading(new Pose2d(37, -22, Math.toRadians(270)), Math.toRadians(-20), new TranslationalVelConstraint(55),  new ProfileAccelConstraint(-120, 120))
+                .splineToLinearHeading(new Pose2d(37, -50, Math.toRadians(270)), Math.toRadians(-90), new TranslationalVelConstraint(38))
+                .splineToSplineHeading(new Pose2d(20, -35, Math.toRadians(270)), Math.toRadians(90), new TranslationalVelConstraint(50))
+                .splineToSplineHeading(new Pose2d(-26, -22, Math.toRadians(234)), Math.toRadians(180), new TranslationalVelConstraint(50), new ProfileAccelConstraint(-40, 40))
+                            .waitSeconds(1)*/
                 .build());
 
         sampleBot2.runAction(sampleBot2.getDrive().actionBuilder(new Pose2d(60, -12, Math.toRadians(180)))
