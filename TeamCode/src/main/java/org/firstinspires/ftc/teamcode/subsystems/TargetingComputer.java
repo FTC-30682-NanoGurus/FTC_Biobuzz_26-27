@@ -38,10 +38,10 @@ public class TargetingComputer {
 
         // BALLISTICS TABLE (Distance, ShotData)
         ballisticTable.put(24.0, new ShotData(1000.0, 1.0)); // Point Blank
-        ballisticTable.put(35.0, new ShotData(1020.0, 0.9)); // Close-Close
-        ballisticTable.put(52.0, new ShotData(1080.0, 0.8)); // Close-Mid
-        ballisticTable.put(72.0, new ShotData(1150.0, 0.7)); // Close-Far
-        ballisticTable.put(120.0, new ShotData(1320.0, 0.6)); // Far Zone
+        ballisticTable.put(35.0, new ShotData(1000.0, 0.85)); // Close-Close //1070
+        ballisticTable.put(52.0, new ShotData(1040.0, 0.72)); // Close-Mid //1100
+        ballisticTable.put(80.0, new ShotData(1130.0, 0.67)); // Close-Far
+        ballisticTable.put(120.0, new ShotData(800, 0.6)); // Far Zone
 
         /*ballisticTable.put(24.0, new ShotData(1150.0, 1.0)); // Point Blank
         ballisticTable.put(35.0, new ShotData(1250.0, 1.0)); // Close-Close

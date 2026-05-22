@@ -143,7 +143,7 @@ public class MecaTank extends Subsystem {
 
     public void updateAutoAlign() {
         updatePoseEstimate();
-        telemetry.addData("Deadwheel Pose: ", "%.2f, %.2f", drive.pose.position.x, drive.pose.position.y);
+        //telemetry.addData("Deadwheel Pose: ", "%.2f, %.2f", drive.pose.position.x, drive.pose.position.y);
         /*int currentParallelTicks = backLeft.getCurrentPosition();
         int currentPerpTicks = backRight.getCurrentPosition();
         double currentImuHeadingRad = imu.get().getRobotYawPitchRollAngles().getYaw(AngleUnit.RADIANS);
@@ -561,6 +561,14 @@ public class MecaTank extends Subsystem {
         backLeft.setDrivePower(leftPower * MAX_DRIVE_SPEED);
         frontRight.setDrivePower(rightPower * MAX_DRIVE_SPEED);
         backRight.setDrivePower(rightPower * MAX_DRIVE_SPEED);
+
+    }
+
+    public void currentDrawTelemetry(){
+        telemetry.addData("frontLeft", frontLeft.getCurrent());
+        telemetry.addData("frontRight", frontRight.getCurrent());
+        telemetry.addData("backLeft", backLeft.getCurrent());
+        telemetry.addData("backRight", backRight.getCurrent());
     }
     public void LivePIDToDistance(double distance){
         if (target != distance){

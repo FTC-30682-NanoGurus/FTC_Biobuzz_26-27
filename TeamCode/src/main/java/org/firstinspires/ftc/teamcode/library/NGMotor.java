@@ -82,9 +82,9 @@ public class NGMotor extends Subsystem {
     Telemetry telemetry;
 
     //Flywheel PIDF Controller Constants
-    double kP_Recovery = 0.08;//0.06
-    double kP_Stable  = 0.004;//0.007
-    public static double kLoad = 1.2;
+    double kP_Recovery = 0.082;//0.06
+    double kP_Stable  = 0.008;//0.008
+    public static double kLoad = 0.8;
 
     double ALPHA = 0.7;
     double RECOVERY_THRESHOLD = 60.0;
@@ -92,7 +92,7 @@ public class NGMotor extends Subsystem {
 
     ElapsedTime feederTimer = new ElapsedTime();
     boolean wasFeederActive = false; // Tracks state changes
-    public static double kRamp = 1.5;
+    public static double kRamp = 1.0;
 
 
     public NGMotor(HardwareMap hardwareMap, Telemetry telemetry, String name) {
@@ -106,6 +106,7 @@ public class NGMotor extends Subsystem {
 
         timer = new ElapsedTime();
     }
+
     public void setCustomVelocityPID(double targetVel, double P, double I, double D, double F) {
         this.targetVelocity = targetVel;
         this.kP = P;
@@ -117,6 +118,7 @@ public class NGMotor extends Subsystem {
         this.flywheelLastError = 0;
         this.pidTimer.reset();
     }
+
     public void updateFlywheels(boolean isFeederActive) {
 
         double rawVelocity = pid_motor.getVelocity();
@@ -137,7 +139,6 @@ public class NGMotor extends Subsystem {
         } else {
             P_Term = error * kP_Stable;
         }
-
 
         if (Math.abs(error) < RECOVERY_THRESHOLD) {
             flywheelIntegralSum += error * loopTime;

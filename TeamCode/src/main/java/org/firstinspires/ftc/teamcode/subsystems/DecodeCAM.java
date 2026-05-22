@@ -105,7 +105,7 @@ public class DecodeCAM extends Subsystem{
             double robotY = detection.robotPose.getPosition().y; //tagFieldY - rotatedY;
 
             double robotHeadingDeg = tagHeadingDeg + 90 + detection.ftcPose.yaw;
-            telemetry.addData("Camera X, Y, Heading: ", "%.2f, %.2f, %.2f", robotX, robotY, robotHeadingDeg);
+            //telemetry.addData("Camera X, Y, Heading: ", "%.2f, %.2f, %.2f", robotX, robotY, robotHeadingDeg);
             return new Pose2d(
                     robotX,
                     robotY,

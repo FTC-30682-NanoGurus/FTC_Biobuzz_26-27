@@ -42,34 +42,34 @@ public class BlueGoalSideAuto extends NGAutoOpMode {
 
         TrajectoryActionBuilder moveBackwardPath = drive.actionBuilder(beginPose)
                 .lineToY(-20, new TranslationalVelConstraint(45), new ProfileAccelConstraint(-30, 40))
-                .afterTime(1.5, intake2_0.transferUsingRollersForTime(1.0, 1));
+                .afterTime(2, intake2_0.transferUsingRollersForTime(1.0, 1));
 
         TrajectoryActionBuilder ToFirstSet = moveBackwardPath.endTrajectory().fresh()
                 .setReversed(true)
                 .splineToSplineHeading(new Pose2d(-15, -24, Math.toRadians(270)), Math.toRadians(5), new TranslationalVelConstraint(60), new ProfileAccelConstraint(-60, 60))
-                .afterTime(0, intake2_0.collect(1.0))
-                .splineToLinearHeading(new Pose2d(-15, -45, Math.toRadians(270)), Math.toRadians(-100), new TranslationalVelConstraint(50), new ProfileAccelConstraint(-20, 30))
+                .afterTime(0, intake2_0.collect(0.75))
+                .splineToLinearHeading(new Pose2d(-15, -44, Math.toRadians(270)), Math.toRadians(-100), new TranslationalVelConstraint(50), new ProfileAccelConstraint(-20, 30))
                 //.splineToSplineHeading(new Pose2d(-26, -17, Math.toRadians(230)), Math.toRadians(100), new TranslationalVelConstraint(45), new ProfileAccelConstraint(-30, 50))
-                .splineToSplineHeading(new Pose2d(-4, -34, Math.toRadians(270)), Math.toRadians(90))
-                .splineToSplineHeading(new Pose2d(-4, -43, Math.toRadians(270)), Math.toRadians(-90), new TranslationalVelConstraint(15), new ProfileAccelConstraint(-10, 30))
+                .splineToSplineHeading(new Pose2d(-3, -34, Math.toRadians(270)), Math.toRadians(90))
+                .splineToSplineHeading(new Pose2d(-3, -49.5, Math.toRadians(270)), Math.toRadians(-90), new TranslationalVelConstraint(15), new ProfileAccelConstraint(-10, 30))
                 .waitSeconds(1.0)
-                .splineToSplineHeading(new Pose2d(-26, -17, Math.toRadians(228.5)), Math.toRadians(160), new TranslationalVelConstraint(45), new ProfileAccelConstraint(-30, 50));
+                .splineToSplineHeading(new Pose2d(-26, -17, Math.toRadians(230)), Math.toRadians(160), new TranslationalVelConstraint(45), new ProfileAccelConstraint(-30, 50));
 
         TrajectoryActionBuilder ToSecondSet = ToFirstSet.endTrajectory().fresh()
                 .setReversed(true)
-                .splineToSplineHeading(new Pose2d(9, -26, Math.toRadians(270)), Math.toRadians(0), new TranslationalVelConstraint(50),  new ProfileAccelConstraint(-100, 100))
+                .splineToSplineHeading(new Pose2d(5.5, -26, Math.toRadians(270)), Math.toRadians(0), new TranslationalVelConstraint(50),  new ProfileAccelConstraint(-100, 100))
                 .afterTime(0, intake2_0.collect(1.0))
-                .splineToLinearHeading(new Pose2d(17, -51, Math.toRadians(270)), Math.toRadians(-90), new TranslationalVelConstraint(30))
+                .splineToLinearHeading(new Pose2d(18, -55, Math.toRadians(270)), Math.toRadians(-90), new TranslationalVelConstraint(30))
                 .splineToSplineHeading(new Pose2d(13, -30, Math.toRadians(270)), Math.toRadians(90), new TranslationalVelConstraint(35))
-                .splineToSplineHeading(new Pose2d(-26, -18, Math.toRadians(228.5)), Math.toRadians(180), new TranslationalVelConstraint(45), new ProfileAccelConstraint(-20, 40));
+                .splineToSplineHeading(new Pose2d(-26, -18, Math.toRadians(230)), Math.toRadians(180), new TranslationalVelConstraint(45), new ProfileAccelConstraint(-20, 40));
 
         TrajectoryActionBuilder ToThirdSet = ToSecondSet.endTrajectory().fresh()
                 .setReversed(true)
-                .splineToSplineHeading(new Pose2d(31, -24, Math.toRadians(270)), Math.toRadians(0), new TranslationalVelConstraint(50),  new ProfileAccelConstraint(-60, 60))
+                .splineToSplineHeading(new Pose2d(25, -24, Math.toRadians(270)), Math.toRadians(0), new TranslationalVelConstraint(50),  new ProfileAccelConstraint(-60, 60))
                 .afterTime(0, intake2_0.collect(1.0))
-                .splineToLinearHeading(new Pose2d(36, -51, Math.toRadians(270)), Math.toRadians(-90), new TranslationalVelConstraint(35))
+                .splineToLinearHeading(new Pose2d(45, -50, Math.toRadians(270)), Math.toRadians(-90), new TranslationalVelConstraint(35))
                 .splineToSplineHeading(new Pose2d(15, -35, Math.toRadians(270)), Math.toRadians(90), new TranslationalVelConstraint(50))
-                .splineToSplineHeading(new Pose2d(-26, -22, Math.toRadians(229)), Math.toRadians(180), new TranslationalVelConstraint(45), new ProfileAccelConstraint(-20, 40));
+                .splineToSplineHeading(new Pose2d(-26, -22, Math.toRadians(230)), Math.toRadians(180), new TranslationalVelConstraint(45), new ProfileAccelConstraint(-20, 40));
 
         TrajectoryActionBuilder leaveFromLine = ToThirdSet.endTrajectory().fresh()
                 .strafeToLinearHeading(new Vector2d(-5, -36), Math.toRadians(0));
@@ -144,7 +144,7 @@ public class BlueGoalSideAuto extends NGAutoOpMode {
                                 new SequentialAction(
                                         new ParallelAction(
                                                 scorePreLoaded,
-                                                intake2_0.setHoodAdjuster(0.83)
+                                                intake2_0.setHoodAdjuster(0.9)
                                         ),
                                         new SequentialAction(
                                                 new ParallelAction(
@@ -156,14 +156,14 @@ public class BlueGoalSideAuto extends NGAutoOpMode {
                                         new SequentialAction(
                                                 new ParallelAction(
                                                         intakeSecondSet,
-                                                        intake2_0.setHoodAdjuster(0.9)
+                                                        intake2_0.setHoodAdjuster(0.85)
                                                 ),
                                                 intake2_0.transferUsingRollersForTime(1.2, 1)
                                         ),
                                         new SequentialAction(
                                                 new ParallelAction(
                                                         intakeThirdSet,
-                                                        intake2_0.setHoodAdjuster(0.9)
+                                                        intake2_0.setHoodAdjuster(0.85)
                                                 ),
                                                 intake2_0.transferUsingRollersForTime(1.2, 1)
                                         ),

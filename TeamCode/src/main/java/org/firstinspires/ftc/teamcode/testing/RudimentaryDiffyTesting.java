@@ -17,6 +17,7 @@ public class RudimentaryDiffyTesting extends TestingOpMode {
     NGServo left;
     NGServo right;
     NGServo claw;
+
     @Override
     public void runOpMode() throws InterruptedException {
         makeTelemetry();

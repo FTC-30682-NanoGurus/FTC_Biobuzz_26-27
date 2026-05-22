@@ -134,4 +134,12 @@ public class NGServo extends Subsystem{
     public void init() {
         servo.setPosition(init_pos);
     }
+
+    public void setPwmEnable(boolean b) {
+        if(b){
+            servo.setPwmEnable();
+        }else if(!b){
+            servo.setPwmDisable();
+        }
+    }
 }

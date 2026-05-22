@@ -19,7 +19,7 @@ public class Diffy extends LinearOpMode {
         waitForStart();
         double lastPos = 0;
         while (opModeIsActive() && isStopRequested()) {
-            double increment = 0.0005;
+            double increment = 0.05;
             if(gamepad1.dpad_up){
                 lastPos = leftServo.getPosition();
                 leftServo.setPosition(lastPos+increment);

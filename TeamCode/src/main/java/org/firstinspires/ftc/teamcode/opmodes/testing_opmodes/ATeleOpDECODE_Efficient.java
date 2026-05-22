@@ -30,20 +30,17 @@ import com.acmerobotics.roadrunner.Pose2d;
 @TeleOp
 public class ATeleOpDECODE_Efficient extends LinearOpMode {
 
-    // Hardware
+    //Hardware
     BulkRead bulkRead;
     MecaTank mecaTank;
-    MecanumDrive drive; // Added this so it doesn't crash
+    MecanumDrive drive;
     private DecodeCAM camera;
-    LED trafficLightRed, trafficLightGreen, trafficLightOrange;
     private TargetingComputer computer;
-
-    // Motors/Servos
     private DcMotorEx rollers, transferRollers, interTransfer;
     private NGMotor flywheels;
     private Servo hoodAdjuster;
 
-    // State Variables
+    //State trackers
     private Pose2d lockedPose = null;
     private Alliance currentAlliance = Alliance.BLUE;
     private double targetGoalY = BLUE_GOAL_Y;
@@ -53,7 +50,12 @@ public class ATeleOpDECODE_Efficient extends LinearOpMode {
     private boolean isIntaking = false;
     private long highCurrentStartTime = 0;
 
-    // Constants
+    //Timers
+    private ElapsedTime camTimer = new ElapsedTime();
+    private ElapsedTime currentTimer = new ElapsedTime();
+    private double lastRollerCurrent = 0;
+
+    //Alliance-based constants
     private static final double GOAL_X = -58.3727;
     private static final double BLUE_GOAL_Y = -55.6425;
     private static final double RED_GOAL_Y = 55.6425;
@@ -62,24 +64,20 @@ public class ATeleOpDECODE_Efficient extends LinearOpMode {
 
     @Override
     public void runOpMode() throws InterruptedException {
-        // Init Telemetry
+
         telemetry = new MultipleTelemetry(telemetry, FtcDashboard.getInstance().getTelemetry());
 
-        // Init Hardware
         rollers = hardwareMap.get(DcMotorEx.class, DECODERobotConstants.rollers);
         interTransfer = hardwareMap.get(DcMotorEx.class, DECODERobotConstants.interTransfer);
         transferRollers = hardwareMap.get(DcMotorEx.class, DECODERobotConstants.transferRollers);
         flywheels = new NGMotor(hardwareMap, telemetry, DECODERobotConstants.flywheels);
         hoodAdjuster = hardwareMap.get(Servo.class, "hoodAdjuster");
 
-        trafficLightRed = hardwareMap.get(LED.class, "front_led_red");
-        trafficLightOrange = hardwareMap.get(LED.class, "front_led_orange");
-
         bulkRead = new BulkRead(hardwareMap);
         camera = new DecodeCAM();
         camera.init(hardwareMap.appContext, hardwareMap, telemetry);
 
-        // Motor Configuration
+        //Motor config
         transferRollers.setDirection(DcMotor.Direction.REVERSE);
         interTransfer.setDirection(DcMotorSimple.Direction.FORWARD);
 
@@ -89,9 +87,9 @@ public class ATeleOpDECODE_Efficient extends LinearOpMode {
 
         flywheels.init();
         flywheels.setZeroPowerBehavior_Brake();
+        flywheels.setDirection(DcMotorSimple.Direction.FORWARD);
 
-        // PID Constants
-        flywheels.setCustomVelocityPID(0.0, 0.008, 0.015, 0.0001, 0.000426); //426
+        flywheels.setCustomVelocityPID(0.0, 0.008, 0.015, 0.0001, 0.000426);
 
         while (!isStarted() && !isStopRequested()) {
             bulkRead.clearCache();
@@ -115,9 +113,8 @@ public class ATeleOpDECODE_Efficient extends LinearOpMode {
             startPose = new Pose2d(-30, 12, Math.toRadians(-240));
         }
 
-
-        drive = new MecanumDrive(hardwareMap, startPose); // Used for braking
-        mecaTank = new MecaTank(hardwareMap, telemetry, startPose); // Used for everything else
+        drive = new MecanumDrive(hardwareMap, startPose);
+        mecaTank = new MecaTank(hardwareMap, telemetry, startPose);
         computer = new TargetingComputer(startPose, GOAL_X, targetGoalY);
 
         // Warm Up Loop
@@ -128,10 +125,12 @@ public class ATeleOpDECODE_Efficient extends LinearOpMode {
             Pose2d fusedPose = computer.update(rawOdo, rawCam, 0.0);
 
             mecaTank.setPoseEstimate(fusedPose);
-            drive.pose = fusedPose; // Sync RoadRunner drive
+            drive.pose = fusedPose;
         }
 
         double lastLoopTime = System.nanoTime();
+        camTimer.reset();
+        currentTimer.reset();
 
         while (!isStopRequested() && opModeIsActive()) {
             bulkRead.clearCache();
@@ -139,7 +138,7 @@ public class ATeleOpDECODE_Efficient extends LinearOpMode {
             mecaTank.updatePoseEstimate();
             mecaTank.updateAutoAlign();
             Pose2d currentPose = mecaTank.getPoseEstimate();
-            drive.pose = currentPose; // Keep RoadRunner synced
+            drive.pose = currentPose;
 
             double currentSpeed = mecaTank.getRobotVelocity();
 
@@ -148,8 +147,6 @@ public class ATeleOpDECODE_Efficient extends LinearOpMode {
             boolean stopIntake = gamepad2.y;
 
             autoAimActive = gamepad1.right_stick_button;
-
-            trafficLightOrange.off();
 
             if (isShooting) {
 
@@ -172,11 +169,9 @@ public class ATeleOpDECODE_Efficient extends LinearOpMode {
                 }
                 else if (readyToFire) {
                     shoot();
-                    trafficLightRed.off();
                 }
                 else {
                     resetOuttake();
-                    trafficLightRed.on();
                 }
 
             } else {
@@ -194,12 +189,14 @@ public class ATeleOpDECODE_Efficient extends LinearOpMode {
                 mecaTank.setDrivePowers(gamepad1.left_stick_y, gamepad1.right_stick_y, gamepad1.left_trigger, gamepad1.right_trigger);
 
                 transferRollers.setPower(0);
-                trafficLightRed.off();
             }
 
             Pose2d rawCam = null;
-            if (!isShooting && (System.currentTimeMillis() % 200 < 20)) {
+
+            //Camera update (every 200ms)
+            if (!isShooting && camTimer.milliseconds() > 200) {
                 rawCam = camera.getAbsoluteRobotPose();
+                camTimer.reset();
             }
 
             Pose2d smartPose = computer.update(currentPose, rawCam, currentSpeed);
@@ -223,13 +220,16 @@ public class ATeleOpDECODE_Efficient extends LinearOpMode {
 
             if (isIntaking) {
 
-                double rollerCurrent = rollers.getCurrent(CurrentUnit.MILLIAMPS);
-
-                if (rollerCurrent > 3000) {
+                if (currentTimer.milliseconds() > 50) {
+                    lastRollerCurrent = rollers.getCurrent(CurrentUnit.MILLIAMPS);
+                    currentTimer.reset();
+                }
+                //Current threshold: 3000
+                //Time threshold: 20 ms
+                if (lastRollerCurrent > 3000) {
                     if (highCurrentStartTime == 0) {
                         highCurrentStartTime = System.currentTimeMillis();
                     } else if ((System.currentTimeMillis() - highCurrentStartTime) > 20) {
-                        trafficLightRed.on();
                         resetOuttake();
                         isIntaking = false;
                         highCurrentStartTime = 0;
@@ -237,7 +237,6 @@ public class ATeleOpDECODE_Efficient extends LinearOpMode {
                 } else {
                     highCurrentStartTime = 0;
                 }
-                telemetry.addData("Intake Current: ", rollerCurrent);
             }
 
             flywheels.updateFlywheels(isShooting);
@@ -259,20 +258,18 @@ public class ATeleOpDECODE_Efficient extends LinearOpMode {
 
             if(isAutoVel) {
                 TargetingComputer.ShotData solution = computer.getShooterSolution();
-                //flywheels.setCustomVelocityPID(solution.velocity, 0.06, 0, 0, 0.00047);
-                flywheels.setCustomVelocityPID(solution.velocity, 0.06, 0.0004, 0, 0.00064);
+                //flywheels.setCustomVelocityPID(solution.velocity, 0.06, 0.0004, 0, 0.00046);
+                flywheels.setCustomVelocityPID(solution.velocity, 0, 0.0004, 0.0004, 0.0009);
                 hoodAdjuster.setPosition(solution.hoodPosition);
-
-                telemetry.addData("auto vel", solution.velocity);
+                telemetry.addData("target vel: ", solution.velocity);
             }
 
             double currentLoopTime = System.nanoTime();
             double loopMs = (currentLoopTime - lastLoopTime) / 1e6;
             lastLoopTime = currentLoopTime;
 
-            flywheels.loopTelemetry(loopMs);
-            telemetry.addData("distance", computer.getDistanceToGoal());
-            telemetry.addData("fused pose", computer.fusedPose);
+            telemetry.addData("Loop Time (ms)", loopMs);
+            //flywheels.loopTelemetry(loopMs);
             telemetry.update();
         }
     }
@@ -286,10 +283,8 @@ public class ATeleOpDECODE_Efficient extends LinearOpMode {
         hoodAdjuster.setPosition(DECODERobotConstants.farShootPos);
     }
 
-    private void stopFlywheel(){ flywheels.setCustomVelocityPID(0, 0.0092, 0.016, 0.0001, 0.000426); }
+    private void stopFlywheel(){ flywheels.setCustomVelocityPID(0, 0.0092, 0.016, 0.0001, 0.00035); }
     private void intake(){rollers.setPower(1.0); interTransfer.setPower(0.1); transferRollers.setPower(0); }
-    //private void prepShooter(){ isAutoVel = true; transferRollers.setPower(0); }
-    //interTransfer: 0.15
     private void shoot(){ transferArtifacts(); }
     private void farShoot(){rollers.setPower(0.3); interTransfer.setPower(0.3); transferRollers.setPower(0.3);}
     private void transferArtifacts(){ rollers.setPower(1.0); interTransfer.setPower(1.0); transferRollers.setPower(1.0); }
@@ -301,6 +296,3 @@ public class ATeleOpDECODE_Efficient extends LinearOpMode {
         interTransfer.setPower(-0.9);
     }
 }
-
-// (a == 1) ? <true> : <false>
-// return ((a == 1) ? b : (b == 1) ? c : d

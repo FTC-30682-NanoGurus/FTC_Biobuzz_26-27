@@ -47,31 +47,31 @@ public class RedGoalSideAuto extends NGAutoOpMode {
         TrajectoryActionBuilder ToFirstSet = moveBackwardPath.endTrajectory().fresh()
                 .setReversed(true)
                 .splineToSplineHeading(new Pose2d(-22, 13, Math.toRadians(-270)), Math.toRadians(-5), new TranslationalVelConstraint(60), new ProfileAccelConstraint(-60, 60))
-                .afterTime(0, intake2_0.collect(1.0))
-                .splineToLinearHeading(new Pose2d(-22, 49, Math.toRadians(-270)), Math.toRadians(100), new TranslationalVelConstraint(50), new ProfileAccelConstraint(-20, 30))
-                .splineToSplineHeading(new Pose2d(-5, 30, Math.toRadians(-270)), Math.toRadians(-90))
-                .splineToSplineHeading(new Pose2d(-5, 48, Math.toRadians(-270)), Math.toRadians(90), new TranslationalVelConstraint(15), new ProfileAccelConstraint(-10, 30))
+                .afterTime(0, intake2_0.collect(0.9))
+                .splineToLinearHeading(new Pose2d(-23, 46, Math.toRadians(-270)), Math.toRadians(100), new TranslationalVelConstraint(50), new ProfileAccelConstraint(-20, 30))
+                .splineToSplineHeading(new Pose2d(-4, 30, Math.toRadians(-270)), Math.toRadians(-90))
+                .splineToSplineHeading(new Pose2d(-4, 49.2, Math.toRadians(-270)), Math.toRadians(90), new TranslationalVelConstraint(15), new ProfileAccelConstraint(-10, 30))
                 .waitSeconds(1.0)
-                .splineToSplineHeading(new Pose2d(-26, 20, Math.toRadians(-233)), Math.toRadians(-160), new TranslationalVelConstraint(50), new ProfileAccelConstraint(-30, 50));
+                .splineToSplineHeading(new Pose2d(-26, 20, Math.toRadians(-232)), Math.toRadians(-160), new TranslationalVelConstraint(50), new ProfileAccelConstraint(-30, 50));
 
         TrajectoryActionBuilder ToSecondSet = ToFirstSet.endTrajectory().fresh()
                 .setReversed(true)
-                .splineToSplineHeading(new Pose2d(-6.2, 13, Math.toRadians(90)), Math.toRadians(0), new TranslationalVelConstraint(50),  new ProfileAccelConstraint(-10, 60))
-                .afterTime(0, intake2_0.collect(1.0))
-                .splineToLinearHeading(new Pose2d(18, 49, Math.toRadians(90)), Math.toRadians(90), new TranslationalVelConstraint(35))
-                .splineToSplineHeading(new Pose2d(9, 30, Math.toRadians(90)), Math.toRadians(-90), new TranslationalVelConstraint(50))
+                .splineToSplineHeading(new Pose2d(-14.5, 13, Math.toRadians(90)), Math.toRadians(0), new TranslationalVelConstraint(50),  new ProfileAccelConstraint(-10, 60))
+                .afterTime(0, intake2_0.collect(1.3))
+                .splineToLinearHeading(new Pose2d(15, 49, Math.toRadians(90)), Math.toRadians(90), new TranslationalVelConstraint(35))
+                .splineToSplineHeading(new Pose2d(14, 30, Math.toRadians(90)), Math.toRadians(-90), new TranslationalVelConstraint(50))
                 .splineToSplineHeading(new Pose2d(-26, 22, Math.toRadians(130)), Math.toRadians(-180), new TranslationalVelConstraint(50), new ProfileAccelConstraint(-20, 40));
 
         TrajectoryActionBuilder ToThirdSet = ToSecondSet.endTrajectory().fresh()
                 .setReversed(true)
-                .splineToSplineHeading(new Pose2d(22, 13, Math.toRadians(90)), Math.toRadians(0), new TranslationalVelConstraint(50),  new ProfileAccelConstraint(-10, 60))
-                .afterTime(0, intake2_0.collect(1.0))
-                .splineToLinearHeading(new Pose2d(33, 49, Math.toRadians(90)), Math.toRadians(90), new TranslationalVelConstraint(35))
+                .splineToSplineHeading(new Pose2d(16, 10, Math.toRadians(90)), Math.toRadians(0), new TranslationalVelConstraint(50),  new ProfileAccelConstraint(-10, 60))
+                .afterTime(0, intake2_0.collect(1.2))
+                .splineToLinearHeading(new Pose2d(30, 50, Math.toRadians(90)), Math.toRadians(90), new TranslationalVelConstraint(35))
                 .splineToSplineHeading(new Pose2d(28, 35, Math.toRadians(90)), Math.toRadians(-90), new TranslationalVelConstraint(50))
-                .splineToSplineHeading(new Pose2d(-26, 22, Math.toRadians(130)), Math.toRadians(-180), new TranslationalVelConstraint(50), new ProfileAccelConstraint(-20, 40));
+                .splineToSplineHeading(new Pose2d(-26, 22, Math.toRadians(129)), Math.toRadians(-180), new TranslationalVelConstraint(50), new ProfileAccelConstraint(-20, 40));
 
         TrajectoryActionBuilder leaveFromLine = ToThirdSet.endTrajectory().fresh()
-                .strafeToLinearHeading(new Vector2d(-5, -36), Math.toRadians(0));
+                .strafeToLinearHeading(new Vector2d(-2, 36), Math.toRadians(0));
 
         /*TrajectoryActionBuilder ToFirstGateSet = ToSecondSet.endTrajectory().fresh()
                 .splineToLinearHeading(new Pose2d(8, 47.6, Math.toRadians(-240)), Math.toRadians(120), new TranslationalVelConstraint(40))
@@ -143,12 +143,12 @@ public class RedGoalSideAuto extends NGAutoOpMode {
                                 new SequentialAction(
                                         new ParallelAction(
                                                 scorePreLoaded,
-                                                intake2_0.setHoodAdjuster(0.88)
+                                                intake2_0.setHoodAdjuster(0.9)
                                                 ),
                                         new SequentialAction(
                                                 new ParallelAction(
                                                         intakeFirstSet,
-                                                        intake2_0.setHoodAdjuster(0.8)
+                                                        intake2_0.setHoodAdjuster(0.82)
                                                         ),
                                                 intake2_0.transferUsingRollersForTime(1.2, 1)
                                         ),
