@@ -35,6 +35,13 @@ public final class TwoDeadWheelLocalizer implements Localizer {
 
     public static Params PARAMS = new Params();
 
+    /**
+     * Per-update FlightRecorder logging. The TwoDeadWheelInputsMessage is allocated on every
+     * update() regardless of how often it is actually flushed, so this is pure GC pressure at high
+     * loop rates. Must stay true for the RoadRunner tuning opmodes, which read this channel.
+     */
+    public static boolean LOG_INPUTS = true;
+
     public final Encoder par, perp;
     public final IMU imu;
 
@@ -48,10 +55,10 @@ public final class TwoDeadWheelLocalizer implements Localizer {
 
     public TwoDeadWheelLocalizer(HardwareMap hardwareMap, IMU imu, double inPerTick) {
 
-        par = new OverflowEncoder(new RawEncoder(hardwareMap.get(DcMotorEx.class, DECODERobotConstants.bl)));
-        perp = new OverflowEncoder(new RawEncoder(hardwareMap.get(DcMotorEx.class, DECODERobotConstants.br)));
+        par = new OverflowEncoder(new RawEncoder(hardwareMap.get(DcMotorEx.class, DECODERobotConstants.fl)));
+        perp = new OverflowEncoder(new RawEncoder(hardwareMap.get(DcMotorEx.class, DECODERobotConstants.fr)));
 
-        perp.setDirection(DcMotorSimple.Direction.REVERSE);
+        perp.setDirection(DcMotorSimple.Direction.FORWARD);
         par.setDirection(DcMotorSimple.Direction.REVERSE);
         this.imu = imu;
 
@@ -80,7 +87,9 @@ public final class TwoDeadWheelLocalizer implements Localizer {
                 angularVelocityDegrees.acquisitionTime
         );
 
-        FlightRecorder.write("TWO_DEAD_WHEEL_INPUTS", new TwoDeadWheelInputsMessage(parPosVel, perpPosVel, angles, angularVelocity));
+        if (LOG_INPUTS) {
+            FlightRecorder.write("TWO_DEAD_WHEEL_INPUTS", new TwoDeadWheelInputsMessage(parPosVel, perpPosVel, angles, angularVelocity));
+        }
 
         Rotation2d heading = Rotation2d.exp(angles.getYaw(AngleUnit.RADIANS));
 

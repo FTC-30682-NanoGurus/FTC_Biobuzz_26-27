@@ -30,6 +30,30 @@ public class TargetingComputer {
         }
     }
 
+    /**
+     * Confidence decay rate, in confidence units per SECOND. Negative = legacy behaviour
+     * (a flat -2.0 every time update() is called with no camera pose).
+     *
+     * The legacy decay is per-LOOP, which silently couples the fusion filter to loop rate: the
+     * faster the opmode loops, the faster confidence bleeds off between the ~200 ms camera
+     * samples. Once confidence drops under 10 the filter flips into "snap straight to the camera
+     * pose" mode (posGain = 1.0 below), so simply making a loop faster can change how the robot
+     * localises. Opmodes that have been sped up should call setTimeBasedDecay() so the effective
+     * rate stays put.
+     */
+    private double decayPerSecond = -1.0;
+    private final ElapsedTime decayTimer = new ElapsedTime();
+
+    /**
+     * @param perSecond confidence lost per second with no camera fix. To match the old behaviour,
+     *                  pass (2.0 * your measured pre-optimisation loop rate in Hz) - e.g. a loop
+     *                  that ran at 50 Hz was losing 100.0 per second.
+     */
+    public void setTimeBasedDecay(double perSecond) {
+        this.decayPerSecond = perSecond;
+        this.decayTimer.reset();
+    }
+
     public TargetingComputer(Pose2d startPose, double goalX, double goalY) {
         this.fusedPose = startPose;
         this.targetGoalX = goalX;
@@ -51,6 +75,9 @@ public class TargetingComputer {
     }
 
     public Pose2d update(Pose2d odoPose, Pose2d camPose, double robotVel) {
+
+        double dt = decayTimer.seconds();
+        decayTimer.reset();
 
         double newX = odoPose.position.x;
         double newY = odoPose.position.y;
@@ -93,7 +120,11 @@ public class TargetingComputer {
             }
         } else {
             // Decay confidence if tag is lost
-            currentConfidence -= 2.0;
+            if (decayPerSecond > 0) {
+                currentConfidence -= decayPerSecond * dt;
+            } else {
+                currentConfidence -= 2.0;
+            }
         }
 
         currentConfidence = Range.clip(currentConfidence, 0, 100);

@@ -108,6 +108,7 @@ public class MecaTank extends Subsystem {
     public DecodeCAM camera;
 
     public MecaTank(HardwareMap hardwareMap, Telemetry telemetry, Pose2d startPose){
+        this.hardwareMapRef = hardwareMap;   // for the lazily-resolved drive voltage sensor
         frontLeft = new NGMotor(hardwareMap, telemetry, DECODERobotConstants.fl);
         frontRight = new NGMotor(hardwareMap, telemetry, DECODERobotConstants.fr);
         backLeft = new NGMotor(hardwareMap, telemetry, DECODERobotConstants.bl);
@@ -116,20 +117,17 @@ public class MecaTank extends Subsystem {
         //distance = new Distance(hardwareMap, telemetry, RobotConstants.distance);
 //        rear_distance = new Distance(hardwareMap, telemetry, RobotConstants.rear_distance);
         imu = new LazyImu(hardwareMap, "imu", new RevHubOrientationOnRobot(
-                RevHubOrientationOnRobot.LogoFacingDirection.LEFT, RevHubOrientationOnRobot.UsbFacingDirection.UP));
+                RevHubOrientationOnRobot.LogoFacingDirection.LEFT, RevHubOrientationOnRobot.UsbFacingDirection.BACKWARD));
         //trafficLight = new TrafficLight("Traffic Light", hardwareMap, telemetry, RobotConstants.red_led, RobotConstants.green_led);
-        backRight.setDirection(DcMotor.Direction.FORWARD);
-        frontRight.setDirection(DcMotor.Direction.FORWARD);
-        backLeft.setDirection(DcMotor.Direction.REVERSE);
-        frontLeft.setDirection(DcMotor.Direction.REVERSE);
+        backRight.setDirection(DcMotor.Direction.REVERSE);
+        frontRight.setDirection(DcMotor.Direction.REVERSE);
+        backLeft.setDirection(DcMotor.Direction.FORWARD);
+        frontLeft.setDirection(DcMotor.Direction.FORWARD);
 
         backRight.setZeroPowerBehaviour(DcMotor.ZeroPowerBehavior.BRAKE);
         frontRight.setZeroPowerBehaviour(DcMotor.ZeroPowerBehavior.BRAKE);
         backLeft.setZeroPowerBehaviour(DcMotor.ZeroPowerBehavior.BRAKE);
         frontLeft.setZeroPowerBehaviour(DcMotor.ZeroPowerBehavior.BRAKE);
-
-        backLeft.init();
-        backRight.init();
 
         timer = new ElapsedTime();
         this.telemetry = telemetry;
@@ -141,8 +139,26 @@ public class MecaTank extends Subsystem {
         drive.updateLock(isShooting);
     }
 
+    /**
+     * When true (default, and what every existing opmode expects) updateAutoAlign() and
+     * holdPosition() each run their own updatePoseEstimate().
+     *
+     * Each updatePoseEstimate() costs two IMU reads (getRobotYawPitchRollAngles +
+     * getRobotAngularVelocity in TwoDeadWheelLocalizer), and those are I2C transactions that the
+     * bulk read does not cover. An opmode that already calls updatePoseEstimate() once per loop can
+     * set this false and avoid paying for the same reads two or three more times.
+     *
+     * Pose integration is delta-based, so sampling once instead of three times per loop integrates
+     * the same total motion - it does not change the estimate.
+     */
+    private boolean autoPoseUpdate = true;
+
+    public void setAutoPoseUpdate(boolean on) {
+        this.autoPoseUpdate = on;
+    }
+
     public void updateAutoAlign() {
-        updatePoseEstimate();
+        if (autoPoseUpdate) updatePoseEstimate();
         //telemetry.addData("Deadwheel Pose: ", "%.2f, %.2f", drive.pose.position.x, drive.pose.position.y);
         /*int currentParallelTicks = backLeft.getCurrentPosition();
         int currentPerpTicks = backRight.getCurrentPosition();
@@ -172,7 +188,7 @@ public class MecaTank extends Subsystem {
     }
 
     public boolean holdPosition(Pose2d targetPose) {
-        updatePoseEstimate();
+        if (autoPoseUpdate) updatePoseEstimate();
         Pose2d currentPose = getPoseEstimate();
 
         // 1. Calculate Errors
@@ -232,14 +248,42 @@ public class MecaTank extends Subsystem {
         return drive.pose;
     }
     private PoseVelocity2d currentVelocity = new PoseVelocity2d(new Vector2d(0, 0), 0);
+
+    /**
+     * The real velocity reported by the localizer on the last updatePoseEstimate().
+     * updatePoseEstimate() already computes this, so capturing it is free.
+     *
+     * NOTE: this is deliberately kept separate from getRobotVelocity() below. See that method.
+     */
+    private PoseVelocity2d measuredVelocity = new PoseVelocity2d(new Vector2d(0, 0), 0);
+
     public void updatePoseEstimate() {
-        drive.updatePoseEstimate();
+        measuredVelocity = drive.updatePoseEstimate();
     }
 
+    /**
+     * WARNING - this returns 0.0 unconditionally.
+     *
+     * 'currentVelocity' is initialised to zero and never assigned anywhere in this class, so every
+     * caller of getRobotVelocity() is reading a hard zero today. That silently disables the
+     * "too fast to lock" guard in the DECODE teleops, makes the velocity gate in holdPosition()
+     * always pass, and pins TargetingComputer's velocityTrust at 1.0.
+     *
+     * Left as-is on purpose so robot behaviour is unchanged. To adopt the real number, swap the
+     * field below to measuredVelocity (or call getMeasuredVelocity()) and RE-TUNE the affected
+     * thresholds - those guards will start firing for the first time.
+     */
     public double getRobotVelocity() {
         if (currentVelocity == null || currentVelocity.linearVel == null) return 0.0;
 
         return currentVelocity.linearVel.norm();
+    }
+
+    /** The actual measured speed, in/s. Not yet wired into any control decision - see above. */
+    public double getMeasuredVelocity() {
+        if (measuredVelocity == null || measuredVelocity.linearVel == null) return 0.0;
+
+        return measuredVelocity.linearVel.norm();
     }
 
     public void driveFieldCentric(double strafe, double forward, double turn, double currentHeading) {
@@ -460,6 +504,306 @@ public class MecaTank extends Subsystem {
     }
     private double sameSignSqrt(double number) {
         return Math.copySign(Math.sqrt(Math.abs(number)), number);
+    }
+
+    // ===========================================================================================
+    //  SMOOTH MECANUM DRIVE
+    // ===========================================================================================
+    //  Additive. The original setDrivePowers(y, y, lt, rt) below is untouched, so the nine other
+    //  opmodes that call it are unaffected.
+    //
+    //  Every sign is preserved exactly. The original negations survive verbatim:
+    //      L = f(-left_stick_y)   R = f(-right_stick_y)
+    //      S = f(-left_trigger) + f(right_trigger)
+    //  and the wheel mixing below reduces to the original assignments in every case the original
+    //  handled - proven case by case:
+    //      pure sticks (S=0) : FL=BL=L, FR=BR=R          matches the tank branch
+    //      left trigger only : FL=+s, BL=-s, FR=-s, BR=+s  matches the left_strafe branch
+    //      right trigger only: FL=-s, BL=+s, FR=+s, BR=-s  matches the right_strafe branch
+    //  The difference is that they now SUM instead of the trigger branches returning early, so
+    //  diagonal motion becomes possible for the first time.
+    // ===========================================================================================
+
+    /** Stick travel ignored around centre, then rescaled so output still starts at 0. */
+    public static double DRIVE_DEADBAND = 0.05;
+    public static double TRIGGER_DEADBAND = 0.05;
+
+    /**
+     * Response curve blend: out = k*x^3 + (1-k)*x.
+     *
+     * Replaces sameSignSqrt, which EXPANDED small inputs (sqrt(0.1) = 0.32, so a 10% nudge asked
+     * for 32% power) and made low-speed control twitchy. The cubic blend compresses the bottom of
+     * the range for fine control while still reaching 1.0 at full deflection.
+     */
+    public static double CURVE_K = 0.7;
+
+    /**
+     * Strafe multiplier. Mecanum loses ~30-40% of its lateral authority to roller geometry, so an
+     * uncorrected diagonal drifts toward the forward axis. Only bites on combined motion - a pure
+     * strafe is already commanding full power and gets normalised straight back down.
+     */
+    public static double LATERAL_GAIN = 1.25;
+
+    /** Acceleration limit in command units per second. Deceleration is NOT limited. */
+    public static double ACCEL_LIMIT = 3.0;
+
+    /** Scaling while the precision button is held. */
+    public static double PRECISION_SCALE = 0.35;
+
+    /** Feedforward velocity model on/off. Off = raw normalised power, like the original. */
+    public static boolean USE_FEEDFORWARD = true;
+
+    /** Cap on commanded wheel speed, in/s. 0 = use whatever the battery can currently deliver. */
+    public static double MAX_VEL_IN_S = 0.0;
+
+    // --- Features whose SIGN cannot be verified without driving the robot. Default OFF. --------
+    /**
+     * Holds heading when there is no turn input. HEADING_HOLD_SIGN must match your robot's
+     * rotation convention or the robot will spin up instead of correcting.
+     *
+     * TO FIND THE SIGN: enable heading hold, lift the robot's wheels off the ground, and twist the
+     * chassis by hand. The wheels should spin in the direction that would UNDO your twist. If they
+     * fight to continue it, flip HEADING_HOLD_SIGN to -1.
+     */
+    public static boolean HEADING_HOLD = false;
+    public static double HEADING_HOLD_KP = 0.8;
+    public static double HEADING_HOLD_SIGN = -1.0;
+
+    /** Rotates the (forward, strafe) command into field frame. Same sign caveat as above. */
+    public static boolean FIELD_CENTRIC = false;
+    public static double FIELD_CENTRIC_SIGN = 1.0;
+
+    /**
+     * Traction control. Compares commanded ground speed against what the odometry pods actually
+     * measure; if the wheels are being asked for far more than the robot is doing, the command is
+     * pulled back until it hooks up. Magnitude-only, so it carries no sign risk - but it does need
+     * updatePoseEstimate() called every loop.
+     */
+    public static boolean TRACTION_CONTROL = false;
+    /** Measured/commanded ratio below which we call it slip. */
+    public static double SLIP_RATIO = 0.55;
+    /** Don't judge slip below this commanded speed (in/s) - noise dominates down there. */
+    public static double SLIP_MIN_SPEED = 10.0;
+
+    public static double DRIVE_VOLTAGE_REFRESH_MS = 250.0;
+
+    // --- state ---------------------------------------------------------------------------------
+    private final ElapsedTime driveTimer = new ElapsedTime();
+    private double prevForward = 0, prevStrafe = 0, prevTurn = 0;
+    private double headingSetpoint = 0;
+    private boolean headingLatched = false;
+    private double slipScale = 1.0;
+
+    private com.qualcomm.robotcore.hardware.VoltageSensor driveVoltageSensor = null;
+    private double cachedDriveVoltage = 12.0;
+    private final ElapsedTime driveVoltageTimer = new ElapsedTime();
+    private HardwareMap hardwareMapRef = null;
+
+    // last computed values, telemetry only
+    private double lastForward, lastStrafe, lastTurn, lastCommandedSpeed;
+
+    /**
+     * Smooth mecanum drive. Pass the SAME four values you pass to setDrivePowers().
+     *
+     * @param precision hold-to-slow
+     * @param override  bypass the acceleration limiter and traction control (pushing matches)
+     */
+    public void setDrivePowersSmooth(double left_stick_y, double right_stick_y,
+                                     double left_trigger, double right_trigger,
+                                     boolean precision, boolean override) {
+
+        double dt = driveTimer.seconds();
+        driveTimer.reset();
+        if (dt <= 0) dt = 0.001;
+        if (dt > 0.1) dt = 0.1;   // a breakpoint must not let the slew jump
+
+        // 1. Shape the inputs. Same negations as the original, different curve.
+        double L = shapeInput(-left_stick_y, DRIVE_DEADBAND);
+        double R = shapeInput(-right_stick_y, DRIVE_DEADBAND);
+        double S = shapeInput(-left_trigger, TRIGGER_DEADBAND)
+                 + shapeInput(right_trigger, TRIGGER_DEADBAND);
+
+        // 2. Tank pair -> chassis axes. Exactly invertible: L = forward+turn, R = forward-turn.
+        double forward = (L + R) / 2.0;
+        double turn = (L - R) / 2.0;
+        double strafe = S * LATERAL_GAIN;
+
+        // 3. Field centric (optional). Needs updatePoseEstimate() to have run this loop.
+        if (FIELD_CENTRIC) {
+            double h = FIELD_CENTRIC_SIGN * (drive.pose.heading.toDouble() - headingSetpoint);
+            double cos = Math.cos(-h), sin = Math.sin(-h);
+            double fRot = forward * cos - strafe * sin;
+            double sRot = forward * sin + strafe * cos;
+            forward = fRot;
+            strafe = sRot;
+        }
+
+        // 4. Heading hold (optional). Only engages once the driver lets go of the turn input.
+        if (HEADING_HOLD) {
+            double heading = drive.pose.heading.toDouble();
+            if (Math.abs(turn) > 0.02) {
+                headingLatched = false;          // driver owns rotation
+            } else if (!headingLatched) {
+                headingSetpoint = heading;       // just released - lock here
+                headingLatched = true;
+            } else {
+                double err = headingSetpoint - heading;
+                while (err > Math.PI) err -= 2 * Math.PI;
+                while (err <= -Math.PI) err += 2 * Math.PI;
+                turn += HEADING_HOLD_SIGN * HEADING_HOLD_KP * err;
+            }
+        }
+
+        // 5. Precision scaling.
+        if (precision) {
+            forward *= PRECISION_SCALE;
+            strafe *= PRECISION_SCALE;
+            turn *= PRECISION_SCALE;
+        }
+
+        // 6. Acceleration limit, applied on the chassis axes so the commanded DIRECTION is not
+        //    distorted the way per-wheel limiting would distort it.
+        forward = slew(prevForward, forward, dt, override);
+        strafe = slew(prevStrafe, strafe, dt, override);
+        turn = slew(prevTurn, turn, dt, override);
+        prevForward = forward;
+        prevStrafe = strafe;
+        prevTurn = turn;
+
+        // 7. Traction control.
+        if (TRACTION_CONTROL && !override) {
+            double vMax = commandedMaxVel();
+            double commanded = Math.hypot(forward, strafe) * vMax;
+            lastCommandedSpeed = commanded;
+            double measured = getMeasuredVelocity();
+            if (commanded > SLIP_MIN_SPEED && measured < commanded * SLIP_RATIO) {
+                slipScale = Math.max(0.35, slipScale - 1.5 * dt);   // back off
+            } else {
+                slipScale = Math.min(1.0, slipScale + 1.0 * dt);    // recover
+            }
+            forward *= slipScale;
+            strafe *= slipScale;
+            turn *= slipScale;
+        } else {
+            slipScale = 1.0;
+        }
+
+        lastForward = forward;
+        lastStrafe = strafe;
+        lastTurn = turn;
+
+        // 8. Mix. Reduces to the original wheel assignments - see the proof in the header above.
+        double fl = forward + turn + strafe;
+        double bl = forward + turn - strafe;
+        double fr = forward - turn - strafe;
+        double br = forward - turn + strafe;
+
+        // 9. Normalise by the largest magnitude rather than clipping. Clipping would distort the
+        //    commanded direction, so an over-driven diagonal would curve.
+        double max = Math.max(Math.max(Math.abs(fl), Math.abs(bl)),
+                     Math.max(Math.max(Math.abs(fr), Math.abs(br)), 1.0));
+        fl /= max; bl /= max; fr /= max; br /= max;
+
+        // 10. Velocity feedforward -> power, against MEASURED battery voltage.
+        if (USE_FEEDFORWARD) {
+            fl = feedforwardPower(fl);
+            bl = feedforwardPower(bl);
+            fr = feedforwardPower(fr);
+            br = feedforwardPower(br);
+        }
+
+        frontLeft.setDrivePower(fl * MAX_DRIVE_SPEED);
+        backLeft.setDrivePower(bl * MAX_DRIVE_SPEED);
+        frontRight.setDrivePower(fr * MAX_DRIVE_SPEED);
+        backRight.setDrivePower(br * MAX_DRIVE_SPEED);
+    }
+
+    /** Deadband with rescale, then a cubic blend. Odd function, so sign is always preserved. */
+    private double shapeInput(double x, double deadband) {
+        double mag = Math.abs(x);
+        if (mag < deadband) return 0.0;
+        // Rescale so output resumes from 0 at the edge of the band instead of jumping.
+        double scaled = (mag - deadband) / (1.0 - deadband);
+        double curved = CURVE_K * scaled * scaled * scaled + (1.0 - CURVE_K) * scaled;
+        return Math.copySign(curved, x);
+    }
+
+    /** Limits acceleration only. Slowing down toward zero is always instant. */
+    private double slew(double prev, double target, double dt, boolean bypass) {
+        if (bypass) return target;
+        // Same direction and smaller magnitude = decelerating. Let it through untouched.
+        if (Math.signum(target) == Math.signum(prev) && Math.abs(target) <= Math.abs(prev)) {
+            return target;
+        }
+        double maxStep = ACCEL_LIMIT * dt;
+        double delta = target - prev;
+        if (delta > maxStep) delta = maxStep;
+        else if (delta < -maxStep) delta = -maxStep;
+        return prev + delta;
+    }
+
+    /** in/s the drivetrain can currently reach, from the feedforward model and live voltage. */
+    private double commandedMaxVel() {
+        double v = getDriveVoltage();
+        double kVin = PARAMS.kV / PARAMS.inPerTick;      // volts per in/s
+        double vMax = (v - PARAMS.kS) / kVin;
+        if (MAX_VEL_IN_S > 0) vMax = Math.min(vMax, MAX_VEL_IN_S);
+        return Math.max(1.0, vMax);
+    }
+
+    /**
+     * Turns a normalised wheel command into motor power through the RoadRunner feedforward model.
+     *
+     * PARAMS.kS is in VOLTS and PARAMS.kV is volts per tick/s, so kV/inPerTick gives volts per
+     * in/s. Dividing the result by live battery voltage is what makes a given stick position mean
+     * the same ground speed at 11 V as at 13 V, and the kS term is what stops small commands from
+     * buzzing without moving.
+     */
+    private double feedforwardPower(double cmd) {
+        if (cmd == 0.0) return 0.0;
+        double v = getDriveVoltage();
+        double kVin = PARAMS.kV / PARAMS.inPerTick;
+        double target = cmd * commandedMaxVel();          // in/s, signed
+        double volts = Math.signum(cmd) * PARAMS.kS + kVin * target;
+        return Range.clip(volts / v, -1.0, 1.0);
+    }
+
+    /** Cached: getVoltage() is a LynxGetADC round trip that the bulk read does not cover. */
+    private double getDriveVoltage() {
+        if (driveVoltageSensor == null) {
+            if (hardwareMapRef == null) return cachedDriveVoltage;
+            driveVoltageSensor = hardwareMapRef.voltageSensor.iterator().next();
+            cachedDriveVoltage = driveVoltageSensor.getVoltage();
+            driveVoltageTimer.reset();
+            return cachedDriveVoltage;
+        }
+        if (driveVoltageTimer.milliseconds() >= DRIVE_VOLTAGE_REFRESH_MS) {
+            double v = driveVoltageSensor.getVoltage();
+            if (v > 6.0) cachedDriveVoltage = v;   // ignore obviously bogus reads
+            driveVoltageTimer.reset();
+        }
+        return cachedDriveVoltage;
+    }
+
+    /** Re-zeroes the field-centric / heading-hold reference to the robot's current heading. */
+    public void resetDriveHeading() {
+        headingSetpoint = drive.pose.heading.toDouble();
+        headingLatched = false;
+    }
+
+    /** True when any feature that needs updatePoseEstimate() every loop is switched on. */
+    public boolean smoothDriveNeedsPose() {
+        return HEADING_HOLD || FIELD_CENTRIC || TRACTION_CONTROL;
+    }
+
+    public void smoothDriveTelemetry() {
+        telemetry.addData("Drive fwd", lastForward);
+        telemetry.addData("Drive strafe", lastStrafe);
+        telemetry.addData("Drive turn", lastTurn);
+        telemetry.addData("Drive voltage", getDriveVoltage());
+        telemetry.addData("Drive vMax (in/s)", commandedMaxVel());
+        telemetry.addData("Slip scale", slipScale);
+        telemetry.addData("Heading (deg)", Math.toDegrees(drive.pose.heading.toDouble()));
     }
     private double getHeading() {
         return imu.get().getRobotYawPitchRollAngles().getYaw(AngleUnit.DEGREES);

@@ -78,7 +78,7 @@ public final class MecanumDrive {
        public RevHubOrientationOnRobot.LogoFacingDirection logoFacingDirection =
                 RevHubOrientationOnRobot.LogoFacingDirection.LEFT;
         public RevHubOrientationOnRobot.UsbFacingDirection usbFacingDirection =
-                RevHubOrientationOnRobot.UsbFacingDirection.UP;
+                RevHubOrientationOnRobot.UsbFacingDirection.BACKWARD;
 
         // drive model parameters
         public double inPerTick = 0.0029356423568765;
@@ -331,10 +331,10 @@ public final class MecanumDrive {
         backRight.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
         frontRight.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
 
-        frontRight.setDirection(DcMotorSimple.Direction.FORWARD);
-        backRight.setDirection(DcMotorSimple.Direction.FORWARD);
-        frontLeft.setDirection(DcMotorSimple.Direction.REVERSE);
-        backLeft.setDirection(DcMotorSimple.Direction.REVERSE);
+        frontRight.setDirection(DcMotorSimple.Direction.REVERSE);
+        backRight.setDirection(DcMotorSimple.Direction.REVERSE);
+        frontLeft.setDirection(DcMotorSimple.Direction.FORWARD);
+        backLeft.setDirection(DcMotorSimple.Direction.FORWARD);
 
 
         lazyImu = new LazyImu(hardwareMap, "imu", new RevHubOrientationOnRobot(
@@ -990,16 +990,27 @@ public final class MecanumDrive {
             c.fillCircle(turn.beginPose.position.x, turn.beginPose.position.y, 2);
         }
     }
+    /**
+     * Per-update pose history + FlightRecorder logging. Keep true for autos and for any RoadRunner
+     * tuning opmode (the tuners read these logs). Teleop can turn it off: the pose history is only
+     * consumed by drawPoseHistory() during trajectory actions, and the PoseMessage allocation
+     * happens on every update even though DownsampledWriter only writes every 50 ms.
+     */
+    public static boolean LOG_POSE_HISTORY = true;
+
     public PoseVelocity2d updatePoseEstimate() {
         Twist2dDual<Time> twist = localizer.update();
         pose = pose.plus(twist.value());
         DECODERobotConstants.pose = pose;
-        poseHistory.add(pose);
-        while (poseHistory.size() > 100) {
-            poseHistory.removeFirst();
-        }
 
-        estimatedPoseWriter.write(new PoseMessage(pose));
+        if (LOG_POSE_HISTORY) {
+            poseHistory.add(pose);
+            while (poseHistory.size() > 100) {
+                poseHistory.removeFirst();
+            }
+
+            estimatedPoseWriter.write(new PoseMessage(pose));
+        }
 
         return twist.velocity().value();
     }

@@ -8,6 +8,7 @@ import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.hardware.HardwareMap;
 import com.qualcomm.robotcore.hardware.PIDFCoefficients;
+import com.qualcomm.robotcore.hardware.VoltageSensor;
 import com.qualcomm.robotcore.util.ElapsedTime;
 
 import org.firstinspires.ftc.robotcore.external.Telemetry;
@@ -94,6 +95,38 @@ public class NGMotor extends Subsystem {
     boolean wasFeederActive = false; // Tracks state changes
     public static double kRamp = 1.0;
 
+    // --- Voltage sensor caching -------------------------------------------------------------
+    // getVoltage() is a LynxGetADC command: a real hub round trip that the bulk read does NOT
+    // cover. Battery voltage does not move meaningfully inside one control loop, so we resolve
+    // the sensor once and re-read it on a timer instead of every single updateFlywheels() call.
+    private VoltageSensor voltageSensor = null;
+    private double cachedVoltage = 12.0;
+    private final ElapsedTime voltageTimer = new ElapsedTime();
+    /** How often to actually hit the hub for battery voltage. Set to 0 to read every call. */
+    public static double VOLTAGE_REFRESH_MS = 250.0;
+
+    /** Set false to skip this motor's per-loop telemetry writes (string building + boxing). */
+    private boolean telemetryEnabled = true;
+
+    public void setTelemetryEnabled(boolean on) {
+        this.telemetryEnabled = on;
+    }
+
+    private double getBatteryVoltage() {
+        if (voltageSensor == null) {
+            if (hardwareMap == null) return cachedVoltage; // ctor without a hardwareMap
+            voltageSensor = hardwareMap.voltageSensor.iterator().next();
+            cachedVoltage = voltageSensor.getVoltage();
+            voltageTimer.reset();
+            return cachedVoltage;
+        }
+        if (voltageTimer.milliseconds() >= VOLTAGE_REFRESH_MS) {
+            double v = voltageSensor.getVoltage();
+            if (v > 0) cachedVoltage = v; // never divide by a bogus 0 reading
+            voltageTimer.reset();
+        }
+        return cachedVoltage;
+    }
 
     public NGMotor(HardwareMap hardwareMap, Telemetry telemetry, String name) {
         this.telemetry = telemetry;
@@ -122,7 +155,7 @@ public class NGMotor extends Subsystem {
     public void updateFlywheels(boolean isFeederActive) {
 
         double rawVelocity = pid_motor.getVelocity();
-        double currentVoltage = hardwareMap.voltageSensor.iterator().next().getVoltage();
+        double currentVoltage = getBatteryVoltage();
         double loopTime = pidTimer.seconds();
         pidTimer.reset();
 
@@ -183,10 +216,12 @@ public class NGMotor extends Subsystem {
         pid_motor.setPower(finalPower);
 
         // Tuning Telemetry
-        telemetry.addData("Current Velocity", rawVelocity);
-        telemetry.addData("Error", error);
-        telemetry.addData("FeedForward Power: ", Load_Term*500);
-        //telemetry.addData("Load Boost", isFeederActive ? "ACTIVE" : "OFF");
+        if (telemetryEnabled) {
+            telemetry.addData("Current Velocity", rawVelocity);
+            telemetry.addData("Error", error);
+            telemetry.addData("FeedForward Power: ", Load_Term * 500);
+            //telemetry.addData("Load Boost", isFeederActive ? "ACTIVE" : "OFF");
+        }
     }
 
     public void loopTelemetry(double loopMs){
@@ -213,6 +248,7 @@ public class NGMotor extends Subsystem {
     public NGMotor(HardwareMap hardwareMap, Telemetry telemetry, String name, ElapsedTime timer) {
         this.telemetry = telemetry;
         this.name = name;
+        this.hardwareMap = hardwareMap; // was never assigned here; updateFlywheels() would NPE
         pid_motor = hardwareMap.get(DcMotorEx.class, name);
 
         pid_motor.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);

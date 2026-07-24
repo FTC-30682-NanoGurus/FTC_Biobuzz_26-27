@@ -48,6 +48,22 @@ public class DecodeCAM extends Subsystem{
 
 
     public void init(android.content.Context appContext, com.qualcomm.robotcore.hardware.HardwareMap hardwareMap, Telemetry telemetry) {
+        init(appContext, hardwareMap, telemetry, true);
+    }
+
+    /**
+     * @param drawAnnotations when false, skips the tag ID / outline / axes / cube overlays.
+     *
+     * Those overlays are rendered per camera frame on the vision thread, which competes with the
+     * opmode thread for the Control Hub's very limited CPU. They are purely a debugging aid - the
+     * pose maths in getAbsoluteRobotPose() does not read them - so turning them off for a
+     * competition teleop buys back CPU without changing a single robot decision.
+     *
+     * The camera resolution is pinned in this path. 640x480 is the VisionPortal default, so this
+     * is a no-op in the normal case; it just stops a webcam from silently negotiating something
+     * larger and much more expensive to decode.
+     */
+    public void init(android.content.Context appContext, com.qualcomm.robotcore.hardware.HardwareMap hardwareMap, Telemetry telemetry, boolean drawAnnotations) {
         this.telemetry = telemetry;
         if (aprilTagProcessor == null) {
             aprilTagProcessor = new AprilTagProcessor.Builder()
@@ -55,16 +71,21 @@ public class DecodeCAM extends Subsystem{
                     .setTagLibrary(org.firstinspires.ftc.vision.apriltag.AprilTagGameDatabase.getCurrentGameTagLibrary())
                     .setOutputUnits(INCH, AngleUnit.RADIANS)
                     .setCameraPose(new Position(INCH, 0, 5, 4, 0), new YawPitchRollAngles(AngleUnit.DEGREES, 0, 43.3, 0, 0))
-                    .setDrawTagID(true)
-                    .setDrawTagOutline(true)
-                    .setDrawAxes(true)
-                    .setDrawCubeProjection(true)
+                    .setDrawTagID(drawAnnotations)
+                    .setDrawTagOutline(drawAnnotations)
+                    .setDrawAxes(drawAnnotations)
+                    .setDrawCubeProjection(drawAnnotations)
                     .build();
 
-            visionPortal = new VisionPortal.Builder()
+            VisionPortal.Builder portalBuilder = new VisionPortal.Builder()
                     .setCamera(hardwareMap.get(WebcamName.class, "Webcam 1"))
-                    .addProcessor(aprilTagProcessor)
-                    .build();
+                    .addProcessor(aprilTagProcessor);
+
+            if (!drawAnnotations) {
+                portalBuilder.setCameraResolution(new android.util.Size(640, 480));
+            }
+
+            visionPortal = portalBuilder.build();
            boolean cameraReady = visionPortal.getCameraState() == VisionPortal.CameraState.CAMERA_DEVICE_READY;
             if(cameraReady) {
                 visionPortal.getCameraControl(ExposureControl.class).setMode(ExposureControl.Mode.Manual);
