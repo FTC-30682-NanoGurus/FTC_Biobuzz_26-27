@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(timeout 590 ./gradlew :TeamCode:compileDebugJavaWithJavac --offline -q)",
+      "Bash(timeout 590 ./gradlew :TeamCode:compileDebugJavaWithJavac -q)",
+      "Bash(export ANDROID_HOME=/mnt/c/Users/nikmu/AppData/Local/Android/Sdk)",
+      "Bash(export ANDROID_SDK_ROOT=$ANDROID_HOME)",
+      "Bash(timeout 590 ./gradlew :TeamCode:compileDebugJavaWithJavac)",
+      "Read(//mnt/c/Users/nikmu/AppData/Local/Android/Sdk/platforms/**)",
+      "Read(//home/nikhil_muniappan/.gradle/**)",
+      "Read(//home/nikhil_muniappan/.claude/jobs/eccc72cd/tmp/**)",
+      "Bash(python3 -)",
+      "Bash(timeout 550 ./gradlew :TeamCode:compileDebugJavaWithJavac)"
+    ]
+  }
+}
