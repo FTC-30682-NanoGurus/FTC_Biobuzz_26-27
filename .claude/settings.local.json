@@ -10,7 +10,21 @@
       "Read(//home/nikhil_muniappan/.gradle/**)",
       "Read(//home/nikhil_muniappan/.claude/jobs/eccc72cd/tmp/**)",
       "Bash(python3 -)",
-      "Bash(timeout 550 ./gradlew :TeamCode:compileDebugJavaWithJavac)"
+      "Bash(timeout 550 ./gradlew :TeamCode:compileDebugJavaWithJavac)",
+      "Bash(git config *)",
+      "Bash(git push *)",
+      "Bash(gh auth *)",
+      "Bash(echo \"\\(exit $?\\)\")",
+      "Bash(timeout 30 git ls-remote --heads github)",
+      "Bash(echo \"exit=$?\")",
+      "Bash(timeout 30 git ls-remote --heads origin)",
+      "Bash(command -v gh)",
+      "Bash(echo \"gh exit=$?\")",
+      "Bash(git --version)",
+      "Bash(git var *)",
+      "Bash(git add *)",
+      "Bash(git restore *)",
+      "Bash(git commit -q -m ' *)"
     ]
   }
 }
