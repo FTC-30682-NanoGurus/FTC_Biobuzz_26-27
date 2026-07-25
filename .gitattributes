@@ -1,0 +1,17 @@
+# Normalize all text files to LF in the repository.
+# Prevents CRLF churn when the same repo is edited from Windows (Android Studio)
+# and WSL/Linux.
+* text=auto eol=lf
+
+# Windows batch files must keep CRLF to run correctly.
+*.bat text eol=crlf
+
+# Explicitly binary — never touch these.
+*.png binary
+*.PNG binary
+*.wav binary
+*.jar binary
+*.pdf binary
+*.keystore binary
+*.apk binary
+*.aar binary
