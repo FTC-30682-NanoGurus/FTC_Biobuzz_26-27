@@ -36,7 +36,14 @@
       "Bash(git remote *)",
       "Bash(timeout 60 gh api repos/nikhilMuniappan/FTC_Biobuzz_26-27 --jq '{full_name, visibility, owner: .owner.login, owner_type: .owner.type, url: .html_url}')",
       "Bash(timeout 60 gh api user/orgs --jq '.[].login')",
-      "Bash(timeout 30 git ls-remote biobuzz main)"
+      "Bash(timeout 30 git ls-remote biobuzz main)",
+      "Read(//mnt/c/**)",
+      "Bash(timeout 60 cmd.exe /c \"cmdkey /list\")",
+      "Bash(timeout 60 gh api orgs/FTC-30682-NanoGurus/memberships/nikhilMuniappan --jq '{role, state}')",
+      "Bash(timeout 60 \"/mnt/c/Program Files/Git/cmd/git.exe\" --version)",
+      "Bash(timeout 60 git ls-remote --heads biobuzz)",
+      "Bash(timeout 60 git fetch biobuzz)",
+      "Bash(git rev-list *)"
     ]
   }
 }
