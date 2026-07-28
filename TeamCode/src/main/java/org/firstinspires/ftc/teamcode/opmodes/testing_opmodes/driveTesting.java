@@ -26,9 +26,6 @@ import org.firstinspires.ftc.teamcode.Biobuzz_subsystems.MecaTank;
  *   X ................... toggle heading hold       (default OFF - see sign note)
  *   Back ................ reset the heading reference
  *
- * The four inputs are passed through to MecaTank exactly as before, negations included. All the
- * shaping lives in MecaTank.setDrivePowersSmooth(), which is additive - the original
- * setDrivePowers() is untouched, so the other opmodes that call it are unaffected.
  *
  * SIGN WARNING: field centric, heading hold and traction control default to OFF because the
  * correct rotation sign cannot be confirmed without driving the robot. Enable them one at a time
