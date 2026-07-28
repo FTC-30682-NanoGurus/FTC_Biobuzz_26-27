@@ -24,7 +24,12 @@
       "Bash(git var *)",
       "Bash(git add *)",
       "Bash(git restore *)",
-      "Bash(git commit -q -m ' *)"
+      "Bash(git commit -q -m ' *)",
+      "Bash(timeout 60 apt-cache policy gh)",
+      "Bash(gh --version)",
+      "Bash(timeout 30 git ls-remote github main)",
+      "Bash(timeout 30 git ls-remote https://github.com/FTC-30682-NanoGurus/DECODE_25-26.git main)",
+      "Bash(xargs -0 du -h)"
     ]
   }
 }
