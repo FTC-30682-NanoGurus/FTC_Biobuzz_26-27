@@ -566,7 +566,7 @@ public class MecaTank extends Subsystem {
      * fight to continue it, flip HEADING_HOLD_SIGN to -1.
      */
     public static boolean HEADING_HOLD = false;
-    public static double HEADING_HOLD_KP = 0.8;
+    public static double HEADING_HOLD_KP = 0.66;
     public static double HEADING_HOLD_SIGN = -1.0;
 
     /** Rotates the (forward, strafe) command into field frame. Same sign caveat as above. */
