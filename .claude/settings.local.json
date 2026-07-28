@@ -43,7 +43,15 @@
       "Bash(timeout 60 \"/mnt/c/Program Files/Git/cmd/git.exe\" --version)",
       "Bash(timeout 60 git ls-remote --heads biobuzz)",
       "Bash(timeout 60 git fetch biobuzz)",
-      "Bash(git rev-list *)"
+      "Bash(git rev-list *)",
+      "Bash(command -v cron crontab)",
+      "Bash(service cron *)",
+      "Bash(ps -p 1 -o comm=)",
+      "Read(//etc/**)",
+      "Read(//usr/bin/**)",
+      "Read(//usr/lib/**)",
+      "Bash(chmod +x /home/nikhil_muniappan/.local/bin/ftc-autocommit.sh)",
+      "Bash(bash -n /home/nikhil_muniappan/.local/bin/ftc-autocommit.sh)"
     ]
   }
 }
