@@ -3,7 +3,7 @@ package org.firstinspires.ftc.teamcode.testing;
 import com.acmerobotics.dashboard.config.Config;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 
-import org.firstinspires.ftc.teamcode.subsystems.Intake;
+import org.firstinspires.ftc.teamcode.DECODE_subsystems.Intake;
 
 @TeleOp
 @Config

@@ -19,7 +19,7 @@ import com.qualcomm.robotcore.eventloop.opmode.Disabled;
 
 import org.firstinspires.ftc.teamcode.RobotConstants;
 import org.firstinspires.ftc.teamcode.library.NGAutoOpMode;
-import org.firstinspires.ftc.teamcode.subsystems.Distance;
+import org.firstinspires.ftc.teamcode.DECODE_subsystems.Distance;
 
 @Config
 @Disabled

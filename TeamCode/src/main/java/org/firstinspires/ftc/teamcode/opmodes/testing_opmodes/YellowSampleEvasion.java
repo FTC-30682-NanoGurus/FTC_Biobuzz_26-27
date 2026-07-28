@@ -18,8 +18,8 @@ import com.acmerobotics.roadrunner.ftc.Actions;
 
 import org.firstinspires.ftc.teamcode.library.BulkRead;
 import org.firstinspires.ftc.teamcode.testing.YellowSampleCamera;
-import org.firstinspires.ftc.teamcode.subsystems.Intake;
-import org.firstinspires.ftc.teamcode.subsystems.TrafficLight;
+import org.firstinspires.ftc.teamcode.DECODE_subsystems.Intake;
+import org.firstinspires.ftc.teamcode.DECODE_subsystems.TrafficLight;
 
 @Disabled
 @Autonomous

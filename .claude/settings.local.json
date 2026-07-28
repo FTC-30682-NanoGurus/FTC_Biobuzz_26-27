@@ -29,7 +29,14 @@
       "Bash(gh --version)",
       "Bash(timeout 30 git ls-remote github main)",
       "Bash(timeout 30 git ls-remote https://github.com/FTC-30682-NanoGurus/DECODE_25-26.git main)",
-      "Bash(xargs -0 du -h)"
+      "Bash(xargs -0 du -h)",
+      "Bash(timeout 60 gh api \"repos/nikhilMuniappan/FTC_Biobuzz_26-27/git/trees/main?recursive=1\" --jq '[.tree[] | select\\(.type==\"blob\"\\)] | length')",
+      "Bash(timeout 60 gh api \"repos/nikhilMuniappan/FTC_Biobuzz_26-27/git/trees/main?recursive=1\" --jq '.tree[].path')",
+      "Bash(grep -E '\\(MecaTank|MecanumDrive|\\\\.gitattributes|build\\\\.gradle\\)$')",
+      "Bash(git remote *)",
+      "Bash(timeout 60 gh api repos/nikhilMuniappan/FTC_Biobuzz_26-27 --jq '{full_name, visibility, owner: .owner.login, owner_type: .owner.type, url: .html_url}')",
+      "Bash(timeout 60 gh api user/orgs --jq '.[].login')",
+      "Bash(timeout 30 git ls-remote biobuzz main)"
     ]
   }
 }

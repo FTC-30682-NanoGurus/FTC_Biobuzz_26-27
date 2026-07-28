@@ -24,11 +24,11 @@ import com.qualcomm.robotcore.util.ElapsedTime;
 
 import org.firstinspires.ftc.teamcode.RobotConstants;
 import org.firstinspires.ftc.teamcode.roadrunner.MecanumDrive;
-import org.firstinspires.ftc.teamcode.subsystems.Camera;
-import org.firstinspires.ftc.teamcode.subsystems.Distance;
-import org.firstinspires.ftc.teamcode.subsystems.Intake;
-import org.firstinspires.ftc.teamcode.subsystems.Intake2_0;
-import org.firstinspires.ftc.teamcode.subsystems.VihasCameraArm;
+import org.firstinspires.ftc.teamcode.Biobuzz_subsystems.Camera;
+import org.firstinspires.ftc.teamcode.DECODE_subsystems.Distance;
+import org.firstinspires.ftc.teamcode.DECODE_subsystems.Intake;
+import org.firstinspires.ftc.teamcode.DECODE_subsystems.Intake2_0;
+import org.firstinspires.ftc.teamcode.DECODE_subsystems.VihasCameraArm;
 
 public abstract class NGAutoOpMode extends LinearOpMode {
     public static ElapsedTime timer;

@@ -9,7 +9,7 @@ import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.Servo;
 
 import org.firstinspires.ftc.teamcode.library.MultiClick;
-import org.firstinspires.ftc.teamcode.subsystems.Intake2_0;
+import org.firstinspires.ftc.teamcode.DECODE_subsystems.Intake2_0;
 
 @Config
 @TeleOp

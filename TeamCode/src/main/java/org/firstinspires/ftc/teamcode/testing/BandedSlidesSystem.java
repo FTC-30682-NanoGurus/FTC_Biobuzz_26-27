@@ -6,9 +6,8 @@ import com.acmerobotics.dashboard.telemetry.MultipleTelemetry;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.hardware.Gamepad;
 
-import org.firstinspires.ftc.teamcode.library.NGServo;
-import org.firstinspires.ftc.teamcode.subsystems.Rigging;
-import org.firstinspires.ftc.teamcode.subsystems.VihasCameraArm;
+import org.firstinspires.ftc.teamcode.DECODE_subsystems.Rigging;
+import org.firstinspires.ftc.teamcode.DECODE_subsystems.VihasCameraArm;
 
 
 @TeleOp

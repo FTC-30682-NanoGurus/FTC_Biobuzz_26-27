@@ -20,9 +20,9 @@ import org.firstinspires.ftc.teamcode.DECODERobotConstants;
 import org.firstinspires.ftc.teamcode.library.BulkRead;
 import org.firstinspires.ftc.teamcode.library.NGMotor;
 import org.firstinspires.ftc.teamcode.roadrunner.MecanumDrive;
-import org.firstinspires.ftc.teamcode.subsystems.DecodeCAM;
-import org.firstinspires.ftc.teamcode.subsystems.MecaTank;
-import org.firstinspires.ftc.teamcode.subsystems.TargetingComputer;
+import org.firstinspires.ftc.teamcode.DECODE_subsystems.DecodeCAM;
+import org.firstinspires.ftc.teamcode.Biobuzz_subsystems.MecaTank;
+import org.firstinspires.ftc.teamcode.DECODE_subsystems.TargetingComputer;
 
 import com.acmerobotics.roadrunner.Pose2d;
 

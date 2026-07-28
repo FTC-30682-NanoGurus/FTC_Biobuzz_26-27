@@ -5,9 +5,9 @@ import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.util.ElapsedTime;
 
 import org.firstinspires.ftc.teamcode.RobotConstants;
-import org.firstinspires.ftc.teamcode.subsystems.Intake;
-import org.firstinspires.ftc.teamcode.subsystems.MecaTank;
-import org.firstinspires.ftc.teamcode.subsystems.TrafficLight;
+import org.firstinspires.ftc.teamcode.DECODE_subsystems.Intake;
+import org.firstinspires.ftc.teamcode.Biobuzz_subsystems.MecaTank;
+import org.firstinspires.ftc.teamcode.DECODE_subsystems.TrafficLight;
 
 @TeleOp
 @Config

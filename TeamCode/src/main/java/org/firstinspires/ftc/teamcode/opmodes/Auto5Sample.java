@@ -18,7 +18,7 @@ import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
 
 import org.firstinspires.ftc.teamcode.RobotConstants;
 import org.firstinspires.ftc.teamcode.library.NGAutoOpMode;
-import org.firstinspires.ftc.teamcode.subsystems.Camera;
+import org.firstinspires.ftc.teamcode.Biobuzz_subsystems.Camera;
 import com.qualcomm.robotcore.eventloop.opmode.Disabled;
 @Disabled
 @Autonomous

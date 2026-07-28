@@ -13,12 +13,12 @@ import com.qualcomm.robotcore.util.ElapsedTime;
 import org.firstinspires.ftc.teamcode.RobotConstants;
 import org.firstinspires.ftc.teamcode.library.BulkRead;
 import org.firstinspires.ftc.teamcode.library.MultiClick;
-import org.firstinspires.ftc.teamcode.subsystems.Distance;
-import org.firstinspires.ftc.teamcode.subsystems.Intake;
-import org.firstinspires.ftc.teamcode.subsystems.MecaTank;
-import org.firstinspires.ftc.teamcode.subsystems.Rigging;
-import org.firstinspires.ftc.teamcode.subsystems.TrafficLight;
-import org.firstinspires.ftc.teamcode.subsystems.VihasCameraArm;
+import org.firstinspires.ftc.teamcode.DECODE_subsystems.Distance;
+import org.firstinspires.ftc.teamcode.DECODE_subsystems.Intake;
+import org.firstinspires.ftc.teamcode.Biobuzz_subsystems.MecaTank;
+import org.firstinspires.ftc.teamcode.DECODE_subsystems.Rigging;
+import org.firstinspires.ftc.teamcode.DECODE_subsystems.TrafficLight;
+import org.firstinspires.ftc.teamcode.DECODE_subsystems.VihasCameraArm;
 @Disabled
 @com.qualcomm.robotcore.eventloop.opmode.TeleOp
 @Config

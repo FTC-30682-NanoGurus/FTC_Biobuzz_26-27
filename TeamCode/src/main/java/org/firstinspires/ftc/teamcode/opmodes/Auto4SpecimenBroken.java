@@ -16,7 +16,7 @@ import com.acmerobotics.roadrunner.ftc.Actions;
 
 import org.firstinspires.ftc.teamcode.RobotConstants;
 import org.firstinspires.ftc.teamcode.library.NGAutoOpMode;
-import org.firstinspires.ftc.teamcode.subsystems.Distance;
+import org.firstinspires.ftc.teamcode.DECODE_subsystems.Distance;
 //@Config
 //@Autonomous
 public class Auto4SpecimenBroken extends NGAutoOpMode {

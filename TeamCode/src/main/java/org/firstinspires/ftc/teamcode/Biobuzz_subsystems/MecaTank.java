@@ -1,25 +1,19 @@
-package org.firstinspires.ftc.teamcode.subsystems;
+package org.firstinspires.ftc.teamcode.Biobuzz_subsystems;
 
 import static org.firstinspires.ftc.teamcode.roadrunner.MecanumDrive.PARAMS;
 
 import com.acmerobotics.dashboard.config.Config;
 import com.acmerobotics.roadrunner.Action;
-import com.acmerobotics.roadrunner.MecanumKinematics;
 import com.acmerobotics.roadrunner.Pose2d;
 import com.acmerobotics.roadrunner.PoseVelocity2d;
 import com.acmerobotics.roadrunner.Rotation2d;
 import com.acmerobotics.roadrunner.TranslationalVelConstraint;
 import com.acmerobotics.roadrunner.TurnConstraints;
 import com.acmerobotics.roadrunner.Vector2d;
-import com.acmerobotics.roadrunner.ftc.Encoder;
 import com.acmerobotics.roadrunner.ftc.LazyImu;
-import com.acmerobotics.roadrunner.ftc.OverflowEncoder;
-import com.acmerobotics.roadrunner.ftc.RawEncoder;
 import com.qualcomm.hardware.rev.RevHubOrientationOnRobot;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.hardware.DcMotor;
-import com.qualcomm.robotcore.hardware.DcMotorEx;
-import com.qualcomm.robotcore.hardware.DcMotorSimple;
 import com.qualcomm.robotcore.hardware.HardwareMap;
 import com.qualcomm.robotcore.util.ElapsedTime;
 import com.qualcomm.robotcore.util.Range;
@@ -27,6 +21,9 @@ import com.qualcomm.robotcore.util.Range;
 import org.firstinspires.ftc.robotcore.external.Telemetry;
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
 import org.firstinspires.ftc.teamcode.DECODERobotConstants;
+import org.firstinspires.ftc.teamcode.DECODE_subsystems.DecodeCAM;
+import org.firstinspires.ftc.teamcode.DECODE_subsystems.Distance;
+import org.firstinspires.ftc.teamcode.DECODE_subsystems.TrafficLight;
 import org.firstinspires.ftc.teamcode.library.Control;
 import org.firstinspires.ftc.teamcode.library.NGMotor;
 import org.firstinspires.ftc.teamcode.library.Subsystem;
@@ -37,7 +34,7 @@ import org.firstinspires.ftc.teamcode.roadrunner.MecanumDrive;
 public class MecaTank extends Subsystem {
     private NGMotor frontLeft, frontRight, backLeft, backRight;
 
-    public  TrafficLight trafficLight;
+    public TrafficLight trafficLight;
     private LazyImu imu; // IMU for field-centric control
 
     public Distance distance;

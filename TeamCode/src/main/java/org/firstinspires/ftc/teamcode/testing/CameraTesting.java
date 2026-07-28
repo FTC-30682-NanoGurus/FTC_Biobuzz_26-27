@@ -1,15 +1,12 @@
 package org.firstinspires.ftc.teamcode.testing;
 
-import com.acmerobotics.dashboard.config.Config;
-import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.util.ElapsedTime;
 
 import org.firstinspires.ftc.teamcode.RobotConstants;
 import org.firstinspires.ftc.teamcode.library.BulkRead;
-import org.firstinspires.ftc.teamcode.subsystems.Camera;
-import org.firstinspires.ftc.teamcode.subsystems.Intake;
-import org.firstinspires.ftc.teamcode.subsystems.MecaTank;
-import org.firstinspires.ftc.teamcode.subsystems.TrafficLight;
+import org.firstinspires.ftc.teamcode.Biobuzz_subsystems.Camera;
+import org.firstinspires.ftc.teamcode.DECODE_subsystems.Intake;
+import org.firstinspires.ftc.teamcode.DECODE_subsystems.TrafficLight;
 
 
 public class CameraTesting extends TestingOpMode {

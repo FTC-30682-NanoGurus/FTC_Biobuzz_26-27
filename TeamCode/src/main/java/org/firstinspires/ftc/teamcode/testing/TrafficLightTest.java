@@ -1,11 +1,10 @@
 package org.firstinspires.ftc.teamcode.testing;
 
 import com.acmerobotics.dashboard.config.Config;
-import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 
 import org.firstinspires.ftc.teamcode.RobotConstants;
-import org.firstinspires.ftc.teamcode.subsystems.TrafficLight;
+import org.firstinspires.ftc.teamcode.DECODE_subsystems.TrafficLight;
 
 @Config
 @TeleOp
