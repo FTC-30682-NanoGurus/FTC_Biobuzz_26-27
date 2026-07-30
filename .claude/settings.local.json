@@ -51,7 +51,9 @@
       "Read(//usr/bin/**)",
       "Read(//usr/lib/**)",
       "Bash(chmod +x /home/nikhil_muniappan/.local/bin/ftc-autocommit.sh)",
-      "Bash(bash -n /home/nikhil_muniappan/.local/bin/ftc-autocommit.sh)"
+      "Bash(bash -n /home/nikhil_muniappan/.local/bin/ftc-autocommit.sh)",
+      "Bash(timeout 120 /home/nikhil_muniappan/.local/bin/ftc-autocommit.sh)",
+      "Read(//home/nikhil_muniappan/.local/state/ftc-autocommit/**)"
     ]
   }
 }
