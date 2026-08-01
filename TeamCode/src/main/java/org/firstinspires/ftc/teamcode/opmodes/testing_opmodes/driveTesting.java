@@ -44,10 +44,10 @@ public class driveTesting extends LinearOpMode{
     MecaTank mecaTank;
     BulkRead bulkRead;
 
-    public static double TELEMETRY_INTERVAL_MS = 100.0;
+    public static double TELEMETRY_INTERVAL_MS = 200.0;
 
     private final ElapsedTime telemetryTimer = new ElapsedTime();
-    private boolean prevY, prevX, prevBack;
+    private boolean prevY, prevX, prevBack, prevA;
 
     @Override
     public void runOpMode() throws InterruptedException{
@@ -67,6 +67,7 @@ public class driveTesting extends LinearOpMode{
         telemetry.addLine("MECANUM DRIVE TEST");
         telemetry.addLine("LB = precision   RB = override");
         telemetry.addLine("Y = field centric   X = heading hold   Back = reset heading");
+        telemetry.addLine("A = translation hold (straight strafe while turning)");
         telemetry.update();
 
         waitForStart();
@@ -89,9 +90,11 @@ public class driveTesting extends LinearOpMode{
 
             if (gamepad1.y && !prevY) MecaTank.FIELD_CENTRIC = !MecaTank.FIELD_CENTRIC;
             if (gamepad1.x && !prevX) MecaTank.HEADING_HOLD = !MecaTank.HEADING_HOLD;
+            if (gamepad1.a && !prevA) MecaTank.TRANSLATION_HOLD = !MecaTank.TRANSLATION_HOLD;
             if (gamepad1.back && !prevBack) mecaTank.resetDriveHeading();
             prevY = gamepad1.y;
             prevX = gamepad1.x;
+            prevA = gamepad1.a;
             prevBack = gamepad1.back;
 
             // ALL FOUR WHEELS REVERSED, relative to what this opmode used to do.
@@ -121,6 +124,7 @@ public class driveTesting extends LinearOpMode{
                 telemetry.addData("Override", gamepad1.right_bumper);
                 telemetry.addData("Field centric", MecaTank.FIELD_CENTRIC);
                 telemetry.addData("Heading hold", MecaTank.HEADING_HOLD);
+                telemetry.addData("Translation hold", MecaTank.TRANSLATION_HOLD);
                 telemetry.addData("Traction control", MecaTank.TRACTION_CONTROL);
                 mecaTank.smoothDriveTelemetry();
                 telemetry.addData("Loop Time (ms)", loopMs);

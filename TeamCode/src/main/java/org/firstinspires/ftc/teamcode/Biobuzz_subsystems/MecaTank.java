@@ -121,10 +121,10 @@ public class MecaTank extends Subsystem {
         backLeft.setDirection(DcMotor.Direction.FORWARD);
         frontLeft.setDirection(DcMotor.Direction.FORWARD);
 
-        backRight.setZeroPowerBehaviour(DcMotor.ZeroPowerBehavior.BRAKE);
-        frontRight.setZeroPowerBehaviour(DcMotor.ZeroPowerBehavior.BRAKE);
-        backLeft.setZeroPowerBehaviour(DcMotor.ZeroPowerBehavior.BRAKE);
-        frontLeft.setZeroPowerBehaviour(DcMotor.ZeroPowerBehavior.BRAKE);
+        backRight.setZeroPowerBehaviour(DcMotor.ZeroPowerBehavior.FLOAT);
+        frontRight.setZeroPowerBehaviour(DcMotor.ZeroPowerBehavior.FLOAT);
+        backLeft.setZeroPowerBehaviour(DcMotor.ZeroPowerBehavior.FLOAT);
+        frontLeft.setZeroPowerBehaviour(DcMotor.ZeroPowerBehavior.FLOAT);
 
         timer = new ElapsedTime();
         this.telemetry = telemetry;
@@ -281,6 +281,18 @@ public class MecaTank extends Subsystem {
         if (measuredVelocity == null || measuredVelocity.linearVel == null) return 0.0;
 
         return measuredVelocity.linearVel.norm();
+    }
+
+    /**
+     * Measured chassis angular velocity, rad/s, from the last updatePoseEstimate().
+     *
+     * Used by heading hold both to damp (a real derivative measurement, not a differenced error)
+     * and to decide when the chassis has finished coasting out of a turn. Reads 0 unless
+     * updatePoseEstimate() is being called each loop - smoothDriveNeedsPose() covers that.
+     */
+    public double getMeasuredAngVel() {
+        if (measuredVelocity == null) return 0.0;
+        return measuredVelocity.angVel;
     }
 
     public void driveFieldCentric(double strafe, double forward, double turn, double currentHeading) {
@@ -522,7 +534,7 @@ public class MecaTank extends Subsystem {
     // ===========================================================================================
 
     /** Stick travel ignored around centre, then rescaled so output still starts at 0. */
-    public static double DRIVE_DEADBAND = 0.05;
+    public static double DRIVE_DEADBAND = 0.02;
     public static double TRIGGER_DEADBAND = 0.05;
 
     /**
@@ -532,17 +544,17 @@ public class MecaTank extends Subsystem {
      * for 32% power) and made low-speed control twitchy. The cubic blend compresses the bottom of
      * the range for fine control while still reaching 1.0 at full deflection.
      */
-    public static double CURVE_K = 0.7;
+    public static double CURVE_K = 0.53;
 
     /**
      * Strafe multiplier. Mecanum loses ~30-40% of its lateral authority to roller geometry, so an
      * uncorrected diagonal drifts toward the forward axis. Only bites on combined motion - a pure
      * strafe is already commanding full power and gets normalised straight back down.
      */
-    public static double LATERAL_GAIN = 1.25;
+    public static double LATERAL_GAIN = 1.5;
 
     /** Acceleration limit in command units per second. Deceleration is NOT limited. */
-    public static double ACCEL_LIMIT = 3.0;
+    public static double ACCEL_LIMIT = 6.0;
 
     /** Scaling while the precision button is held. */
     public static double PRECISION_SCALE = 0.35;
@@ -552,6 +564,16 @@ public class MecaTank extends Subsystem {
 
     /** Cap on commanded wheel speed, in/s. 0 = use whatever the battery can currently deliver. */
     public static double MAX_VEL_IN_S = 0.0;
+
+    /**
+     * Wheel commands smaller than this are zeroed before the feedforward runs.
+     *
+     * feedforwardPower() adds PARAMS.kS (0.763 V) to every nonzero command, so without this a
+     * 0.005 heading correction leaves as ~0.06 motor power - a 12x amplification. That step change
+     * at the zero crossing is what makes small corrections buzz and hunt. 0.02 of commanded speed
+     * is ~1.5 in/s, well below anything the driver can feel.
+     */
+    public static double FF_MIN_CMD = 0.02;
 
     // --- Features whose SIGN cannot be verified without driving the robot. Default OFF. --------
     /**
@@ -563,12 +585,89 @@ public class MecaTank extends Subsystem {
      * fight to continue it, flip HEADING_HOLD_SIGN to -1.
      */
     public static boolean HEADING_HOLD = false;
-    public static double HEADING_HOLD_KP = 0.66;
+    public static double HEADING_HOLD_KP = 0.6;
     public static double HEADING_HOLD_SIGN = -1.0;
+
+    /**
+     * Damping term, acting on MEASURED angular velocity rather than a differenced error, so it
+     * carries no numerical-derivative noise. A P-only hold on a chassis with backlash and stiction
+     * limit-cycles: the error builds until P beats stiction, the robot lurches, overshoots, repeats.
+     * This is what stops the side-to-side hunting while the sticks are untouched.
+     *
+     * Raise until the hunting stops. Too high and the hold feels sticky//notchy when pushed.
+     */
+    public static double HEADING_HOLD_KD = 0.07;
+
+    /** Heading errors under this are treated as zero, so the hold stops chasing sub-degree noise. */
+    public static double HEADING_HOLD_DEADBAND_DEG = 1.0;
+
+    /** Ceiling on the hold's turn command, so a large error cannot slam the chassis around. */
+    public static double HEADING_HOLD_MAX = 0.35;
+
+    /**
+     * rad/s below which the chassis counts as "done rotating".
+     *
+     * THIS IS THE FIX FOR THE SNAP-BACK. The old code latched the setpoint the instant the turn
+     * stick crossed its deadband, while the robot was still coasting through the rest of the turn.
+     * It then dutifully dragged the robot back to that mid-coast heading - which is exactly the
+     * "always turns back a little after a turn" symptom. Now the setpoint is only captured once
+     * the chassis has actually stopped, so it latches wherever the robot really ended up.
+     *
+     * 0.15 rad/s is about 8.6 deg/s. Raise it if the hold takes too long to re-engage; lower it if
+     * it still latches early and pulls back.
+     */
+    public static double HEADING_SETTLE_ANGVEL = 0.15;
+
+    /** How long angVel must stay under the threshold before latching. Stops latch-on-a-noise-dip. */
+    public static double HEADING_SETTLE_MS = 120.0;
 
     /** Rotates the (forward, strafe) command into field frame. Same sign caveat as above. */
     public static boolean FIELD_CENTRIC = false;
     public static double FIELD_CENTRIC_SIGN = 1.0;
+
+    /**
+     * Keeps the robot travelling in a straight FIELD-frame line while it rotates underneath.
+     *
+     * Without this, "strafe" is robot-relative: hold a strafe trigger and spin, and the travel
+     * direction spins with the robot, so you trace an arc instead of a line. This latches the
+     * field direction of the translation command when the driver starts translating, then
+     * counter-rotates the robot-frame command every loop so that field direction is held.
+     *
+     * Rotation is completely unaffected - the turn axis is never touched here. That is the point:
+     * translate straight and spin at the same time.
+     *
+     * Redundant when FIELD_CENTRIC is on (that already locks translation to the field), so it is
+     * skipped in that case rather than double-rotating.
+     *
+     * SIGN: if strafing while turning curves HARDER instead of going straight, flip the sign to -1.
+     */
+    public static boolean TRANSLATION_HOLD = false;
+    public static double TRANSLATION_HOLD_SIGN = -1.0;
+    /** Translation magnitude that counts as "the driver is asking to move" and latches the frame. */
+    public static double TRANSLATION_HOLD_MIN = 0.05;
+
+    /**
+     * Desaturation policy for when translation + rotation together ask for more than a wheel has.
+     *
+     * false = the original uniform normalisation. It preserves the translation:rotation RATIO but
+     * scales both down, so adding turn slows your strafe.
+     *
+     * true = reserve TURN_RESERVE of wheel authority for rotation, then give translation every bit
+     * of what is left. Your strafe speed stops collapsing the moment you add turn.
+     */
+    public static boolean PRESERVE_TRANSLATION = true;
+
+    /**
+     * Wheel authority always kept back for rotation, 0..1. Direct trade against strafe speed.
+     *
+     * Worked example, full strafe (1.5 after LATERAL_GAIN) plus half turn:
+     *   uniform normalisation -> strafe 0.71, turn 0.29
+     *   TURN_RESERVE = 0.25   -> strafe 0.75, turn 0.25
+     *   TURN_RESERVE = 0.15   -> strafe 0.85, turn 0.15
+     * Lower it if you want the strafe to stay fast; raise it if you cannot turn hard enough while
+     * strafing. 0 would mean no rotation at all at full translation.
+     */
+    public static double TURN_RESERVE = 0.25;
 
     /**
      * Traction control. Compares commanded ground speed against what the odometry pods actually
@@ -590,6 +689,23 @@ public class MecaTank extends Subsystem {
     private double headingSetpoint = 0;
     private boolean headingLatched = false;
     private double slipScale = 1.0;
+
+    /**
+     * Field-centric reference, kept SEPARATE from headingSetpoint.
+     *
+     * These used to be the same field, which was a real bug: heading hold WRITES the setpoint every
+     * time the driver releases the turn stick, and field centric READS it. So with both enabled,
+     * every turn release silently re-zeroed the field-centric frame and "forward" quietly changed
+     * meaning mid-match.
+     */
+    private double fieldCentricRef = 0;
+
+    /** Latched field direction for TRANSLATION_HOLD. */
+    private double translationRef = 0;
+    private boolean translationLatched = false;
+
+    private final ElapsedTime headingSettleTimer = new ElapsedTime();
+    private double lastHeadingCorrection = 0;
 
     private com.qualcomm.robotcore.hardware.VoltageSensor driveVoltageSensor = null;
     private double cachedDriveVoltage = 12.0;
@@ -623,11 +739,13 @@ public class MecaTank extends Subsystem {
         // 2. Tank pair -> chassis axes. Exactly invertible: L = forward+turn, R = forward-turn.
         double forward = (L + R) / 2.0;
         double turn = (L - R) / 2.0;
-        double strafe = S * LATERAL_GAIN;
+        double strafe = S;   // LATERAL_GAIN is applied in step 3c, AFTER any frame rotation
 
-        // 3. Field centric (optional). Needs updatePoseEstimate() to have run this loop.
+        double heading = drive.pose.heading.toDouble();
+
+        // 3a. Field centric (optional). Needs updatePoseEstimate() to have run this loop.
         if (FIELD_CENTRIC) {
-            double h = FIELD_CENTRIC_SIGN * (drive.pose.heading.toDouble() - headingSetpoint);
+            double h = FIELD_CENTRIC_SIGN * (heading - fieldCentricRef);
             double cos = Math.cos(-h), sin = Math.sin(-h);
             double fRot = forward * cos - strafe * sin;
             double sRot = forward * sin + strafe * cos;
@@ -635,23 +753,73 @@ public class MecaTank extends Subsystem {
             strafe = sRot;
         }
 
-        // 4. Heading hold (optional). Only engages once the driver lets go of the turn input.
+        // 3b. Translation hold - straight-line travel while rotating.
+        //     Skipped under FIELD_CENTRIC, which already locks translation to the field frame;
+        //     running both would rotate the command twice.
+        if (TRANSLATION_HOLD && !FIELD_CENTRIC) {
+            if (Math.hypot(forward, strafe) < TRANSLATION_HOLD_MIN) {
+                translationLatched = false;      // not translating - re-latch on the next press
+            } else {
+                if (!translationLatched) {
+                    translationRef = heading;    // capture the field direction we are setting off in
+                    translationLatched = true;
+                }
+                double h = TRANSLATION_HOLD_SIGN * (heading - translationRef);
+                double cos = Math.cos(-h), sin = Math.sin(-h);
+                double fRot = forward * cos - strafe * sin;
+                double sRot = forward * sin + strafe * cos;
+                forward = fRot;
+                strafe = sRot;
+            }
+        } else {
+            translationLatched = false;
+        }
+
+        // 3c. Lateral gain, on whatever the robot-frame lateral component actually ended up being.
+        //     Applying it before the rotation would have over-boosted an axis that is no longer
+        //     the lateral one once the robot has turned.
+        strafe *= LATERAL_GAIN;
+
+        // 4. Heading hold (optional). COMPUTED here, but deliberately not applied until after the
+        //    slew in step 6 - see the note there.
+        double headingCorrection = 0;
         if (HEADING_HOLD) {
-            double heading = drive.pose.heading.toDouble();
-            if (Math.abs(turn) > 0.02) {
-                headingLatched = false;          // driver owns rotation
+            double angVel = getMeasuredAngVel();
+            boolean driverTurning = Math.abs(turn) > 0.02;
+            boolean stillSpinning = Math.abs(angVel) > HEADING_SETTLE_ANGVEL;
+
+            if (driverTurning || stillSpinning) {
+                // Driver owns rotation, OR the chassis is still coasting out of a turn. Latching
+                // during the coast is what produced the snap-back, so hold off.
+                headingLatched = false;
+                headingSettleTimer.reset();
             } else if (!headingLatched) {
-                headingSetpoint = heading;       // just released - lock here
-                headingLatched = true;
+                if (headingSettleTimer.milliseconds() >= HEADING_SETTLE_MS) {
+                    headingSetpoint = heading;   // settled - lock in where we ACTUALLY ended up
+                    headingLatched = true;
+                }
             } else {
                 double err = headingSetpoint - heading;
                 while (err > Math.PI) err -= 2 * Math.PI;
                 while (err <= -Math.PI) err += 2 * Math.PI;
-                turn += HEADING_HOLD_SIGN * HEADING_HOLD_KP * err;
-            }
-        }
 
-        // 5. Precision scaling.
+                // Ignore sub-degree error so the hold is not permanently hunting for an exactness
+                // the odometry cannot even resolve.
+                if (Math.abs(err) < Math.toRadians(HEADING_HOLD_DEADBAND_DEG)) err = 0;
+
+                // d(err)/dt = -angVel, so the damping term is -KD*angVel in the P term's frame.
+                // Left live even inside the error deadband: that is what damps a push.
+                headingCorrection = HEADING_HOLD_SIGN
+                        * (HEADING_HOLD_KP * err - HEADING_HOLD_KD * angVel);
+                headingCorrection = Range.clip(headingCorrection, -HEADING_HOLD_MAX, HEADING_HOLD_MAX);
+            }
+        } else {
+            headingLatched = false;
+        }
+        lastHeadingCorrection = headingCorrection;
+
+        // 5. Precision scaling. Driver commands only - the hold should hold just as firmly in
+        //    precision mode as out of it.
         if (precision) {
             forward *= PRECISION_SCALE;
             strafe *= PRECISION_SCALE;
@@ -666,6 +834,14 @@ public class MecaTank extends Subsystem {
         prevForward = forward;
         prevStrafe = strafe;
         prevTurn = turn;
+
+        // 6b. Heading hold goes on AFTER the slew, and after prev* has been stored.
+        //
+        //     Rate-limiting a feedback correction is pure phase lag inside the control loop, and
+        //     phase lag is what turns a marginally-damped loop into an oscillating one. Storing it
+        //     into prevTurn would be worse still - the correction would feed back into next loop's
+        //     slew reference and integrate. Both were feeding the side-to-side hunting.
+        turn += headingCorrection;
 
         // 7. Traction control.
         if (TRACTION_CONTROL && !override) {
@@ -683,6 +859,31 @@ public class MecaTank extends Subsystem {
             turn *= slipScale;
         } else {
             slipScale = 1.0;
+        }
+
+        // 7b. Desaturate with translation priority.
+        //
+        //     The uniform normalisation in step 9 preserves the translation:rotation ratio, but
+        //     that means adding turn scales your STRAFE down too - full strafe plus half turn came
+        //     out as 0.71 strafe instead of 1.0. Here rotation is given a fixed reserve and
+        //     translation gets everything else, so strafe speed no longer collapses when you turn.
+        //
+        //     max|wheel| = max(|f+s|, |f-s|) + |turn| exactly, which is what makes the headroom
+        //     arithmetic below exact rather than approximate.
+        if (PRESERVE_TRANSLATION) {
+            double transMax = Math.max(Math.abs(forward + strafe), Math.abs(forward - strafe));
+            double reserved = Math.min(Math.abs(turn), Range.clip(TURN_RESERVE, 0.0, 1.0));
+            double transAllowed = 1.0 - reserved;
+            if (transMax > transAllowed && transMax > 1e-9) {
+                double k = transAllowed / transMax;
+                forward *= k;
+                strafe *= k;
+                transMax = transAllowed;
+            }
+            // Whatever translation did not use goes back to rotation, so turning is unrestricted
+            // whenever there is headroom for it.
+            double headroom = Math.max(0.0, 1.0 - transMax);
+            turn = Range.clip(turn, -headroom, headroom);
         }
 
         lastForward = forward;
@@ -757,7 +958,12 @@ public class MecaTank extends Subsystem {
      * buzzing without moving.
      */
     private double feedforwardPower(double cmd) {
-        if (cmd == 0.0) return 0.0;
+        // Anything under FF_MIN_CMD is zeroed rather than being handed the full kS kick. The old
+        // `cmd == 0.0` test only caught exact zero, so a 0.005 heading correction still collected
+        // the whole 0.763 V of kS and left as ~0.06 power. That step at the zero crossing is a
+        // classic limit-cycle driver: the hold commands a hair of turn, the wheels deliver 6%, the
+        // robot overshoots, the hold reverses, repeat.
+        if (Math.abs(cmd) < FF_MIN_CMD) return 0.0;
         double v = getDriveVoltage();
         double kVin = PARAMS.kV / PARAMS.inPerTick;
         double target = cmd * commandedMaxVel();          // in/s, signed
@@ -782,15 +988,20 @@ public class MecaTank extends Subsystem {
         return cachedDriveVoltage;
     }
 
-    /** Re-zeroes the field-centric / heading-hold reference to the robot's current heading. */
+    /** Re-zeroes every drive heading reference to the robot's current heading. */
     public void resetDriveHeading() {
-        headingSetpoint = drive.pose.heading.toDouble();
+        double h = drive.pose.heading.toDouble();
+        headingSetpoint = h;
+        fieldCentricRef = h;
+        translationRef = h;
         headingLatched = false;
+        translationLatched = false;
+        headingSettleTimer.reset();
     }
 
     /** True when any feature that needs updatePoseEstimate() every loop is switched on. */
     public boolean smoothDriveNeedsPose() {
-        return HEADING_HOLD || FIELD_CENTRIC || TRACTION_CONTROL;
+        return HEADING_HOLD || FIELD_CENTRIC || TRACTION_CONTROL || TRANSLATION_HOLD;
     }
 
     public void smoothDriveTelemetry() {
@@ -801,6 +1012,13 @@ public class MecaTank extends Subsystem {
         telemetry.addData("Drive vMax (in/s)", commandedMaxVel());
         telemetry.addData("Slip scale", slipScale);
         telemetry.addData("Heading (deg)", Math.toDegrees(drive.pose.heading.toDouble()));
+        // Tuning aids for heading hold. "Hold latched" going false mid-turn and only coming back
+        // once you have fully stopped is the settle gate doing its job.
+        telemetry.addData("Hold latched", headingLatched);
+        telemetry.addData("Hold setpoint (deg)", Math.toDegrees(headingSetpoint));
+        telemetry.addData("Hold correction", lastHeadingCorrection);
+        telemetry.addData("AngVel (rad/s)", getMeasuredAngVel());
+        telemetry.addData("Translation latched", translationLatched);
     }
     private double getHeading() {
         return imu.get().getRobotYawPitchRollAngles().getYaw(AngleUnit.DEGREES);
