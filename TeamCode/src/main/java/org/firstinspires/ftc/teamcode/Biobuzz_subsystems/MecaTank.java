@@ -566,14 +566,18 @@ public class MecaTank extends Subsystem {
     public static double MAX_VEL_IN_S = 0.0;
 
     /**
-     * Wheel commands smaller than this are zeroed before the feedforward runs.
+     * Band over which PARAMS.kS is ramped in, instead of being applied as a step at zero.
      *
-     * feedforwardPower() adds PARAMS.kS (0.763 V) to every nonzero command, so without this a
-     * 0.005 heading correction leaves as ~0.06 motor power - a 12x amplification. That step change
-     * at the zero crossing is what makes small corrections buzz and hunt. 0.02 of commanded speed
-     * is ~1.5 in/s, well below anything the driver can feel.
+     * feedforwardPower() adds the full kS (0.763 V) to every nonzero command, so a 0.005 command
+     * used to leave as ~0.06 motor power - a 12x amplification, and a discontinuity right at the
+     * zero crossing. That step is what makes small corrections buzz and hunt.
+     *
+     * A hard cutoff was the first attempt at this and it was wrong: it created a dead zone that
+     * silently swallowed every heading-hold correction under ~3 degrees of error, which is most of
+     * them. Ramping instead removes the step WITHOUT creating a dead zone - small commands still
+     * produce small, proportional, continuous output.
      */
-    public static double FF_MIN_CMD = 0.02;
+    public static double FF_KS_RAMP = 0.06;
 
     // --- Features whose SIGN cannot be verified without driving the robot. Default OFF. --------
     /**
@@ -616,10 +620,45 @@ public class MecaTank extends Subsystem {
      * 0.15 rad/s is about 8.6 deg/s. Raise it if the hold takes too long to re-engage; lower it if
      * it still latches early and pulls back.
      */
-    public static double HEADING_SETTLE_ANGVEL = 0.15;
+    public static double HEADING_SETTLE_DEG = 1.5;
 
-    /** How long angVel must stay under the threshold before latching. Stops latch-on-a-noise-dip. */
+    /** How long the heading must stay inside that band before latching. */
     public static double HEADING_SETTLE_MS = 120.0;
+
+    /**
+     * |turn| below this counts as the driver having let go of rotation.
+     *
+     * Raised off the old hard-coded 0.02 because DRIVE_DEADBAND is now 0.02 too, and a gamepad
+     * stick that rests slightly off centre can shape up to a turn command right around 0.02 - which
+     * would read as "driver is still turning" forever and block the latch permanently.
+     */
+    public static double HEADING_HOLD_TURN_RELEASE = 0.05;
+
+    /**
+     * Low-pass weight retained on the previous angular-rate estimate. Higher = smoother but laggier.
+     *
+     * This filters the POSE-DERIVED rate, which is now telemetry-only. It is not used by the settle
+     * gate, and that is the whole point of the current design:
+     *
+     * pose.heading is a STAIRCASE, not a smooth signal. The BNO055 reports yaw at 1/16 degree
+     * (0.0011 rad) and updates internally around 100 Hz, at or below the loop rate, so consecutive
+     * reads frequently return the identical value and then jump a step or two. Differentiating that
+     * turns a single two-LSB step into 0.22 rad/s over a 10 ms dt. Gating "has the chassis stopped"
+     * on that derivative meant quantization steps read as motion, every step reset the settle
+     * timer, the timer never reached its threshold, and the setpoint never latched - which is why
+     * heading hold did nothing at all.
+     *
+     * The settle gate now measures heading DISPLACEMENT over a window instead. Being an integral it
+     * averages quantization noise out rather than amplifying it.
+     */
+    public static double ANGVEL_FILTER = 0.7;
+
+    /**
+     * Sanity ceiling on the differentiated rate, rad/s. Anything above this is treated as a pose
+     * discontinuity - a stale sample after a toggle, or a setPoseEstimate() jump - and discarded
+     * rather than smeared through the filter. 4*PI is far faster than any FTC chassis spins.
+     */
+    public static double ANGVEL_SANE_MAX = 12.6;
 
     /** Rotates the (forward, strafe) command into field frame. Same sign caveat as above. */
     public static boolean FIELD_CENTRIC = false;
@@ -700,12 +739,22 @@ public class MecaTank extends Subsystem {
      */
     private double fieldCentricRef = 0;
 
-    /** Latched field direction for TRANSLATION_HOLD. */
+    /** Latched field direction of the STRAFE axis for TRANSLATION_HOLD. */
     private double translationRef = 0;
     private boolean translationLatched = false;
 
     private final ElapsedTime headingSettleTimer = new ElapsedTime();
     private double lastHeadingCorrection = 0;
+
+    // Differentiated heading rate - telemetry only, see ANGVEL_FILTER.
+    private double headingRate = 0;
+    private double prevHeadingSample = 0;
+    private boolean headingRateInit = false;
+
+    /** Heading the settle window is currently measured against. */
+    private double headingSettleAnchor = 0;
+    /** Why the hold is or is not acting, for telemetry. */
+    private String lastHoldState = "OFF";
 
     private com.qualcomm.robotcore.hardware.VoltageSensor driveVoltageSensor = null;
     private double cachedDriveVoltage = 12.0;
@@ -743,6 +792,10 @@ public class MecaTank extends Subsystem {
 
         double heading = drive.pose.heading.toDouble();
 
+        // Updated unconditionally, every loop, so the derivative never sees a stale gap when a
+        // feature is toggled on mid-match.
+        double angVel = updateHeadingRate(heading, dt);
+
         // 3a. Field centric (optional). Needs updatePoseEstimate() to have run this loop.
         if (FIELD_CENTRIC) {
             double h = FIELD_CENTRIC_SIGN * (heading - fieldCentricRef);
@@ -753,50 +806,84 @@ public class MecaTank extends Subsystem {
             strafe = sRot;
         }
 
-        // 3b. Translation hold - straight-line travel while rotating.
+        // 3b. Strafe hold - holds the FIELD direction of the TRIGGER STRAFE AXIS ONLY while the
+        //     chassis rotates under it, so strafe-plus-turn traces a straight line, not an arc.
+        //
+        //     ONLY the strafe axis, and that restriction is the whole point. The first version of
+        //     this held the entire translation vector, stick forward included, and that was wrong:
+        //     the sticks are a TANK pair, so their forward is inherently ROBOT-relative. Coming out
+        //     of a turn into a forward push, the reference latched while the chassis was still
+        //     rotating, and every further degree of rotation got counter-rotated into the command -
+        //     which is exactly why straight forward came out as a diagonal. Stick forward is never
+        //     touched by the hold now, so it is robot-relative no matter what the chassis is doing.
+        //
+        //     At latch the strafe command is the robot-frame vector (0, S). Once the chassis has
+        //     rotated by d, reproducing that same FIELD vector in the new robot frame means
+        //     rotating (0, S) by -d, giving (S*sin d, S*cos d) - so a held strafe legitimately
+        //     acquires a forward component. Identical rotation form and sign convention to before,
+        //     so TRANSLATION_HOLD_SIGN keeps whatever value you already validated.
+        //
         //     Skipped under FIELD_CENTRIC, which already locks translation to the field frame;
         //     running both would rotate the command twice.
-        if (TRANSLATION_HOLD && !FIELD_CENTRIC) {
-            if (Math.hypot(forward, strafe) < TRANSLATION_HOLD_MIN) {
-                translationLatched = false;      // not translating - re-latch on the next press
-            } else {
-                if (!translationLatched) {
-                    translationRef = heading;    // capture the field direction we are setting off in
-                    translationLatched = true;
-                }
-                double h = TRANSLATION_HOLD_SIGN * (heading - translationRef);
-                double cos = Math.cos(-h), sin = Math.sin(-h);
-                double fRot = forward * cos - strafe * sin;
-                double sRot = forward * sin + strafe * cos;
-                forward = fRot;
-                strafe = sRot;
+        //
+        //     No auto-release past a quarter turn on purpose. Beyond 90 degrees the held vector is
+        //     mostly forward and beyond 180 it reverses, which is CORRECT for holding a field line;
+        //     releasing at a threshold would instead inject a 90-degree jump in travel direction.
+        //     Let go of the trigger to re-reference.
+        double strafeHoldForward = 0;
+        if (TRANSLATION_HOLD && !FIELD_CENTRIC && Math.abs(strafe) >= TRANSLATION_HOLD_MIN) {
+            if (!translationLatched) {
+                translationRef = heading;    // capture the field direction we set off in
+                translationLatched = true;
             }
+            double d = heading - translationRef;
+            while (d > Math.PI) d -= 2 * Math.PI;
+            while (d <= -Math.PI) d += 2 * Math.PI;
+
+            double h = TRANSLATION_HOLD_SIGN * d;
+            strafeHoldForward = strafe * Math.sin(h);
+            strafe            = strafe * Math.cos(h);
         } else {
             translationLatched = false;
         }
 
-        // 3c. Lateral gain, on whatever the robot-frame lateral component actually ended up being.
-        //     Applying it before the rotation would have over-boosted an axis that is no longer
-        //     the lateral one once the robot has turned.
+        // 3c. Lateral gain, on the robot-frame LATERAL component only - that is the axis mecanum
+        //     rollers actually lose authority on. The forward component the hold injects is a
+        //     forward command and must not be scaled by a strafe correction factor, which is why
+        //     it is added after.
         strafe *= LATERAL_GAIN;
+        forward += strafeHoldForward;
 
         // 4. Heading hold (optional). COMPUTED here, but deliberately not applied until after the
         //    slew in step 6 - see the note there.
         double headingCorrection = 0;
         if (HEADING_HOLD) {
-            double angVel = getMeasuredAngVel();
-            boolean driverTurning = Math.abs(turn) > 0.02;
-            boolean stillSpinning = Math.abs(angVel) > HEADING_SETTLE_ANGVEL;
-
-            if (driverTurning || stillSpinning) {
-                // Driver owns rotation, OR the chassis is still coasting out of a turn. Latching
-                // during the coast is what produced the snap-back, so hold off.
+            if (Math.abs(turn) > HEADING_HOLD_TURN_RELEASE) {
+                // Driver owns rotation. Anchor here so the settle window starts from this heading.
                 headingLatched = false;
+                headingSettleAnchor = heading;
                 headingSettleTimer.reset();
+                lastHoldState = "driver turning";
             } else if (!headingLatched) {
-                if (headingSettleTimer.milliseconds() >= HEADING_SETTLE_MS) {
-                    headingSetpoint = heading;   // settled - lock in where we ACTUALLY ended up
+                // Settle test by DISPLACEMENT, not by a differentiated rate. The chassis counts as
+                // stopped once the heading has stayed inside a small band for HEADING_SETTLE_MS.
+                // 1.5 degrees is ~24 LSB of yaw resolution, so quantization cannot trip it, while
+                // any real coast-out of a turn leaves the band immediately - which is what still
+                // prevents the setpoint being captured mid-coast and snapping back.
+                double moved = heading - headingSettleAnchor;
+                while (moved > Math.PI) moved -= 2 * Math.PI;
+                while (moved <= -Math.PI) moved += 2 * Math.PI;
+
+                if (Math.abs(moved) > Math.toRadians(HEADING_SETTLE_DEG)) {
+                    headingSettleAnchor = heading;   // still moving - restart the window
+                    headingSettleTimer.reset();
+                    lastHoldState = "coasting";
+                } else if (headingSettleTimer.milliseconds() >= HEADING_SETTLE_MS) {
+                    headingSetpoint = heading;       // settled - lock in where we ACTUALLY ended up
                     headingLatched = true;
+                    lastHoldState = "LATCHED";
+                } else {
+                    lastHoldState = "settling";
                 }
             } else {
                 double err = headingSetpoint - heading;
@@ -804,17 +891,21 @@ public class MecaTank extends Subsystem {
                 while (err <= -Math.PI) err += 2 * Math.PI;
 
                 // Ignore sub-degree error so the hold is not permanently hunting for an exactness
-                // the odometry cannot even resolve.
+                // the sensor cannot even resolve.
                 if (Math.abs(err) < Math.toRadians(HEADING_HOLD_DEADBAND_DEG)) err = 0;
 
-                // d(err)/dt = -angVel, so the damping term is -KD*angVel in the P term's frame.
-                // Left live even inside the error deadband: that is what damps a push.
+                // Damping runs on the GYRO rate, not the differentiated heading: a gyro is a direct
+                // rate sensor, so it is neither quantization-limited nor noise-amplified the way a
+                // numerical derivative of yaw is. d(err)/dt = -rate, hence the minus sign.
+                // Left live even inside the error deadband - that is what damps a push.
                 headingCorrection = HEADING_HOLD_SIGN
-                        * (HEADING_HOLD_KP * err - HEADING_HOLD_KD * angVel);
+                        * (HEADING_HOLD_KP * err - HEADING_HOLD_KD * gyroRate());
                 headingCorrection = Range.clip(headingCorrection, -HEADING_HOLD_MAX, HEADING_HOLD_MAX);
+                lastHoldState = "holding";
             }
         } else {
             headingLatched = false;
+            lastHoldState = "OFF";
         }
         lastHeadingCorrection = headingCorrection;
 
@@ -916,6 +1007,54 @@ public class MecaTank extends Subsystem {
         backRight.setDrivePower(br * MAX_DRIVE_SPEED);
     }
 
+    /**
+     * Chassis yaw rate from the GYRO, rad/s, with the localizer's accumulated offset undone.
+     *
+     * TwoDeadWheelLocalizer.update() carries the FTC issue #617 workaround, which keeps a permanent
+     * accumulator: whenever the reported yaw rate changes by more than PI rad/s between consecutive
+     * loops it subtracts 2*PI from headingVelOffset, and never adds it back. A snappy tank turn or
+     * a loop-time hiccup during one trips it, after which the reported rate carries a ~6.28 rad/s
+     * bias for the rest of the opmode.
+     *
+     * Every offset it can accumulate is a whole multiple of 2*PI, so folding back into (-PI, PI]
+     * recovers the true rate exactly wherever the hold cares about it - near zero - no matter how
+     * many offsets have piled up. A genuinely fast spin past PI rad/s would fold to the wrong
+     * value, but the damping term only acts once the hold is latched, which is already near rest.
+     */
+    private double gyroRate() {
+        double r = getMeasuredAngVel();
+        if (!Double.isFinite(r)) return 0.0;
+        while (r > Math.PI) r -= 2 * Math.PI;
+        while (r <= -Math.PI) r += 2 * Math.PI;
+        return r;
+    }
+
+    /**
+     * Chassis angular rate, rad/s, differentiated from pose.heading and low-passed.
+     *
+     * Used instead of the localizer's reported angVel because that value can be permanently
+     * corrupted - see the ANGVEL_FILTER note. Must be called every loop so the derivative never
+     * spans a stale gap.
+     */
+    private double updateHeadingRate(double heading, double dt) {
+        if (!headingRateInit) {
+            prevHeadingSample = heading;
+            headingRateInit = true;
+            return 0.0;
+        }
+        double d = heading - prevHeadingSample;
+        while (d > Math.PI) d -= 2 * Math.PI;
+        while (d <= -Math.PI) d += 2 * Math.PI;
+        prevHeadingSample = heading;
+
+        double raw = d / dt;
+        // A pose discontinuity is not a rotation. Drop it rather than smear it through the filter.
+        if (Math.abs(raw) > ANGVEL_SANE_MAX) return headingRate;
+
+        headingRate = ANGVEL_FILTER * headingRate + (1.0 - ANGVEL_FILTER) * raw;
+        return headingRate;
+    }
+
     /** Deadband with rescale, then a cubic blend. Odd function, so sign is always preserved. */
     private double shapeInput(double x, double deadband) {
         double mag = Math.abs(x);
@@ -958,16 +1097,18 @@ public class MecaTank extends Subsystem {
      * buzzing without moving.
      */
     private double feedforwardPower(double cmd) {
-        // Anything under FF_MIN_CMD is zeroed rather than being handed the full kS kick. The old
-        // `cmd == 0.0` test only caught exact zero, so a 0.005 heading correction still collected
-        // the whole 0.763 V of kS and left as ~0.06 power. That step at the zero crossing is a
-        // classic limit-cycle driver: the hold commands a hair of turn, the wheels deliver 6%, the
-        // robot overshoots, the hold reverses, repeat.
-        if (Math.abs(cmd) < FF_MIN_CMD) return 0.0;
+        if (cmd == 0.0) return 0.0;
         double v = getDriveVoltage();
         double kVin = PARAMS.kV / PARAMS.inPerTick;
         double target = cmd * commandedMaxVel();          // in/s, signed
-        double volts = Math.signum(cmd) * PARAMS.kS + kVin * target;
+
+        // kS is ramped in across FF_KS_RAMP rather than applied as a step. Applying it whole meant
+        // the power curve jumped from 0 to ~0.06 the instant the command left zero - a classic
+        // limit-cycle driver, because the hold asks for a hair of turn, the wheels deliver 6%, the
+        // robot overshoots and the hold reverses. Ramping keeps the curve continuous through zero
+        // while still letting small commands through, which a hard cutoff did not.
+        double kSScale = Math.min(1.0, Math.abs(cmd) / Math.max(1e-9, FF_KS_RAMP));
+        double volts = Math.signum(cmd) * PARAMS.kS * kSScale + kVin * target;
         return Range.clip(volts / v, -1.0, 1.0);
     }
 
@@ -994,6 +1135,7 @@ public class MecaTank extends Subsystem {
         headingSetpoint = h;
         fieldCentricRef = h;
         translationRef = h;
+        headingSettleAnchor = h;
         headingLatched = false;
         translationLatched = false;
         headingSettleTimer.reset();
@@ -1014,11 +1156,24 @@ public class MecaTank extends Subsystem {
         telemetry.addData("Heading (deg)", Math.toDegrees(drive.pose.heading.toDouble()));
         // Tuning aids for heading hold. "Hold latched" going false mid-turn and only coming back
         // once you have fully stopped is the settle gate doing its job.
+        // Read "Hold state" FIRST when the hold misbehaves - it says exactly which branch it is
+        // stuck in. Sitting on "driver turning" with your thumbs off the sticks means a resting
+        // stick offset is above HEADING_HOLD_TURN_RELEASE. Sitting on "coasting" or "settling"
+        // while the robot is visibly still means HEADING_SETTLE_DEG is tighter than the sensor
+        // noise. "holding" with no visible effect is a gain problem, not a latching problem.
+        telemetry.addData("Hold state", lastHoldState);
         telemetry.addData("Hold latched", headingLatched);
         telemetry.addData("Hold setpoint (deg)", Math.toDegrees(headingSetpoint));
         telemetry.addData("Hold correction", lastHeadingCorrection);
-        telemetry.addData("AngVel (rad/s)", getMeasuredAngVel());
-        telemetry.addData("Translation latched", translationLatched);
+        telemetry.addData("Strafe hold latched", translationLatched);
+        // Three views of rotation. "gyro" is what damping runs on. "pose deriv" is the numerical
+        // derivative of yaw - expect it to look spiky, that is exactly why it no longer gates the
+        // latch. "raw localizer" differing from "gyro" by a multiple of 6.28 means the issue #617
+        // accumulator has tripped. If gyro and pose deriv have OPPOSITE signs while you turn,
+        // negate HEADING_HOLD_KD.
+        telemetry.addData("AngVel gyro (rad/s)", gyroRate());
+        telemetry.addData("AngVel pose deriv (rad/s)", headingRate);
+        telemetry.addData("AngVel raw localizer (rad/s)", getMeasuredAngVel());
     }
     private double getHeading() {
         return imu.get().getRobotYawPitchRollAngles().getYaw(AngleUnit.DEGREES);

@@ -54,16 +54,14 @@
       "Bash(bash -n /home/nikhil_muniappan/.local/bin/ftc-autocommit.sh)",
       "Bash(timeout 120 /home/nikhil_muniappan/.local/bin/ftc-autocommit.sh)",
       "Read(//home/nikhil_muniappan/.local/state/ftc-autocommit/**)",
-      "Bash(java -version)",
-      "Bash(timeout 20 curl -sSI https://repo1.maven.org/maven2/junit/junit/4.13.2/junit-4.13.2.jar)",
-      "Bash(echo \"EXIT:$?\")",
-      "Bash(mkdir -p libs)",
-      "Bash(curl -sL -o libs/junit-4.13.2.jar https://repo1.maven.org/maven2/junit/junit/4.13.2/junit-4.13.2.jar)",
-      "Bash(curl -sL -o libs/hamcrest-core-1.3.jar https://repo1.maven.org/maven2/org/hamcrest/hamcrest-core/1.3/hamcrest-core-1.3.jar)",
-      "Bash(javap -cp /mnt/c/Users/nikmu/.gradle/caches/modules-2/files-2.1/com.acmerobotics.roadrunner/core/1.0.1/a8c9ef12d43d3a416a0d3a624e6a1ca9e2b81fa8/core-1.0.1.jar com.acmerobotics.roadrunner.Vector2d com.acmerobotics.roadrunner.Pose2d)",
-      "Bash(java -cp /tmp/claude-1000/-mnt-c-Users-nikmu-StudioProjects-FTCIntoTheDeep/e94ce6a1-59ac-4420-a9ce-e451e1b503ce/scratchpad/out:/mnt/c/Users/nikmu/.gradle/caches/modules-2/files-2.1/com.acmerobotics.roadrunner/core/1.0.1/a8c9ef12d43d3a416a0d3a624e6a1ca9e2b81fa8/core-1.0.1.jar:/mnt/c/Users/nikmu/.gradle/caches/modules-2/files-2.1/org.jetbrains.kotlin/kotlin-stdlib/2.2.0/fdfc65fbc42fda253a26f61dac3c0aca335fae96/kotlin-stdlib-2.2.0.jar:/tmp/claude-1000/-mnt-c-Users-nikmu-StudioProjects-FTCIntoTheDeep/e94ce6a1-59ac-4420-a9ce-e451e1b503ce/scratchpad/libs/junit-4.13.2.jar:/tmp/claude-1000/-mnt-c-Users-nikmu-StudioProjects-FTCIntoTheDeep/e94ce6a1-59ac-4420-a9ce-e451e1b503ce/scratchpad/libs/hamcrest-core-1.3.jar org.junit.runner.JUnitCore org.firstinspires.ftc.teamcode.hivemind.grid.FieldGridTest)",
-      "Bash(javac -nowarn -source 8 -target 8 -d /tmp/claude-1000/-mnt-c-Users-nikmu-StudioProjects-FTCIntoTheDeep/e94ce6a1-59ac-4420-a9ce-e451e1b503ce/scratchpad/out -cp /mnt/c/Users/nikmu/.gradle/caches/modules-2/files-2.1/com.acmerobotics.roadrunner/core/1.0.1/a8c9ef12d43d3a416a0d3a624e6a1ca9e2b81fa8/core-1.0.1.jar:/mnt/c/Users/nikmu/.gradle/caches/modules-2/files-2.1/org.jetbrains.kotlin/kotlin-stdlib/2.2.0/fdfc65fbc42fda253a26f61dac3c0aca335fae96/kotlin-stdlib-2.2.0.jar:/tmp/claude-1000/-mnt-c-Users-nikmu-StudioProjects-FTCIntoTheDeep/e94ce6a1-59ac-4420-a9ce-e451e1b503ce/scratchpad/libs/junit-4.13.2.jar:/tmp/claude-1000/-mnt-c-Users-nikmu-StudioProjects-FTCIntoTheDeep/e94ce6a1-59ac-4420-a9ce-e451e1b503ce/scratchpad/libs/hamcrest-core-1.3.jar TeamCode/src/main/java/org/firstinspires/ftc/teamcode/hivemind/grid/*.java TeamCode/src/test/java/org/firstinspires/ftc/teamcode/hivemind/grid/*.java)",
-      "Bash(javac -Xlint:all -source 8 -target 8 -d /tmp/claude-1000/-mnt-c-Users-nikmu-StudioProjects-FTCIntoTheDeep/e94ce6a1-59ac-4420-a9ce-e451e1b503ce/scratchpad/out -cp /mnt/c/Users/nikmu/.gradle/caches/modules-2/files-2.1/com.acmerobotics.roadrunner/core/1.0.1/a8c9ef12d43d3a416a0d3a624e6a1ca9e2b81fa8/core-1.0.1.jar:/mnt/c/Users/nikmu/.gradle/caches/modules-2/files-2.1/org.jetbrains.kotlin/kotlin-stdlib/2.2.0/fdfc65fbc42fda253a26f61dac3c0aca335fae96/kotlin-stdlib-2.2.0.jar:/tmp/claude-1000/-mnt-c-Users-nikmu-StudioProjects-FTCIntoTheDeep/e94ce6a1-59ac-4420-a9ce-e451e1b503ce/scratchpad/libs/junit-4.13.2.jar:/tmp/claude-1000/-mnt-c-Users-nikmu-StudioProjects-FTCIntoTheDeep/e94ce6a1-59ac-4420-a9ce-e451e1b503ce/scratchpad/libs/hamcrest-core-1.3.jar TeamCode/src/main/java/org/firstinspires/ftc/teamcode/hivemind/grid/*.java TeamCode/src/test/java/org/firstinspires/ftc/teamcode/hivemind/grid/*.java)"
+      "WebSearch",
+      "WebFetch(domain:community.firstinspires.org)",
+      "Bash(timeout 60 grep -rn \"angVel\" --include=*.java TeamCode/src)",
+      "Bash(timeout 180 find /mnt/c/Users/nikmu/.gradle/caches/modules-2 -name \"*.jar\")",
+      "Bash(timeout 300 find /mnt/c/Users/nikmu/.gradle/caches -maxdepth 6 -name \"classes.jar\")",
+      "Bash(timeout 240 find /mnt/c/Users/nikmu/.gradle/caches/modules-2 -name \"*.aar\")",
+      "Bash(timeout 60 find /mnt/c/Users/nikmu/StudioProjects/FTCIntoTheDeep -name \"*.aar\" -not -path \"*/build/*\")",
+      "Bash(awk 'NR>=795 && NR<=960' Biobuzz_subsystems/MecaTank.java)"
     ]
   }
 }

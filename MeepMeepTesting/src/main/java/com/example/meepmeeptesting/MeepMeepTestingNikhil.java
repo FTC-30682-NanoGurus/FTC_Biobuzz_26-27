@@ -11,7 +11,6 @@ import com.acmerobotics.roadrunner.Vector2d;
 import com.noahbres.meepmeep.MeepMeep;
 import com.noahbres.meepmeep.core.colorscheme.ColorScheme;
 import com.noahbres.meepmeep.roadrunner.DefaultBotBuilder;
-import com.noahbres.meepmeep.roadrunner.DriveShim;
 import com.noahbres.meepmeep.roadrunner.entity.RoadRunnerBotEntity;
 
 import java.awt.Color;
@@ -33,7 +32,7 @@ import java.awt.Color;
  *  1. MeepMeep 0.1.7 depends on com.acmerobotics.roadrunner:core:1.0.1 and :actions:1.0.1 --
  *     the same versions TeamCode compiles against. Same solver, same code.
  *
- *  2. MeepMeep's DriveShim.actionBuilder() constructs
+ *  2. MeepMeep's getDrive().actionBuilder() constructs
  *         TrajectoryBuilderParams(1e-6, ProfileParams(0.25, 0.1, 0.01))
  *     which is byte-identical to MecanumDrive.actionBuilder()'s params, so path discretisation
  *     and profile resolution match exactly.
@@ -179,13 +178,13 @@ public class MeepMeepTestingNikhil {
         RoadRunnerBotEntity botAltWall = bot(meepMeep, new Color(215, 200, 40), new Color(245, 230, 60));
         RoadRunnerBotEntity botAltLow  = bot(meepMeep, new Color(215, 55, 55), new Color(250, 80, 80));
 
-        botFull.runAction(buildRoutine(botFull.getDrive(), 0));
-        botLines.runAction(buildRoutine(botLines.getDrive(), 1));
-        botBorder.runAction(buildRoutine(botBorder.getDrive(), 2));
-        botPile.runAction(buildRoutine(botPile.getDrive(), 3));
-        botPark.runAction(buildRoutine(botPark.getDrive(), 4));
-        botAltWall.runAction(buildRoutine(botAltWall.getDrive(), 5));
-        botAltLow.runAction(buildRoutine(botAltLow.getDrive(), 6));
+        botFull.runAction(buildRoutine(botFull, 0));
+        botLines.runAction(buildRoutine(botLines, 1));
+        botBorder.runAction(buildRoutine(botBorder, 2));
+        botPile.runAction(buildRoutine(botPile, 3));
+        botPark.runAction(buildRoutine(botPark, 4));
+        botAltWall.runAction(buildRoutine(botAltWall, 5));
+        botAltLow.runAction(buildRoutine(botAltLow, 6));
 
         meepMeep.setBackground(MeepMeep.Background.GRID_GRAY)
                 .setDarkMode(true)
@@ -211,7 +210,7 @@ public class MeepMeepTestingNikhil {
     // ============================================================================================
     // PATHS -- verbatim from Biobuzz_PathingAuto.runOpMode()
     // ============================================================================================
-    private static Action buildRoutine(DriveShim drive, int routine) {
+    private static Action buildRoutine(RoadRunnerBotEntity bot, int routine) {
         Pose2d beginPose = pose(START_GOAL_X, START_GOAL_Y, START_GOAL_H);
 
         // --- POSES (mirrored automatically when RED == true) ------------------------------------
@@ -242,64 +241,64 @@ public class MeepMeepTestingNikhil {
         Pose2d park = pose(PARK_X, PARK_Y, PARK_H);
 
         // --- PATH 0 -- randomization tag look ---------------------------------------------------
-        TrajectoryActionBuilder tagLook = drive.actionBuilder(beginPose)
+        TrajectoryActionBuilder tagLook = bot.getDrive().actionBuilder(beginPose)
                 .turnTo(heading(TAG_LOOK_H));
 
         // --- PATH 1 -- preload delivery ---------------------------------------------------------
-        TrajectoryActionBuilder preloadToScore = drive.actionBuilder(pose(START_GOAL_X, START_GOAL_Y, TAG_LOOK_H))
+        TrajectoryActionBuilder preloadToScore = bot.getDrive().actionBuilder(pose(START_GOAL_X, START_GOAL_Y, TAG_LOOK_H))
                 .strafeToSplineHeading(scoreClose.position, scoreClose.heading,
                         new TranslationalVelConstraint(VEL_TRANSIT),
                         new ProfileAccelConstraint(ACCEL_MIN, ACCEL_MAX));
 
-        TrajectoryActionBuilder startToScore = drive.actionBuilder(beginPose)
+        TrajectoryActionBuilder startToScore = bot.getDrive().actionBuilder(beginPose)
                 .strafeToSplineHeading(scoreClose.position, scoreClose.heading,
                         new TranslationalVelConstraint(VEL_TRANSIT),
                         new ProfileAccelConstraint(ACCEL_MIN, ACCEL_MAX));
 
         // --- PATH 2/3 -- LINE 1 -----------------------------------------------------------------
-        TrajectoryActionBuilder toLine1 = drive.actionBuilder(scoreClose)
+        TrajectoryActionBuilder toLine1 = bot.getDrive().actionBuilder(scoreClose)
                 .strafeToSplineHeading(line1Head.position, line1Head.heading,
                         new TranslationalVelConstraint(VEL_TRANSIT),
                         new ProfileAccelConstraint(ACCEL_MIN, ACCEL_MAX));
 
-        TrajectoryActionBuilder sweepLine1 = drive.actionBuilder(line1Head)
+        TrajectoryActionBuilder sweepLine1 = bot.getDrive().actionBuilder(line1Head)
                 .strafeToConstantHeading(line1Tail.position,
                         new TranslationalVelConstraint(VEL_INTAKE),
                         new ProfileAccelConstraint(ACCEL_MIN, 25));
 
-        TrajectoryActionBuilder line1ToScore = drive.actionBuilder(line1Tail)
+        TrajectoryActionBuilder line1ToScore = bot.getDrive().actionBuilder(line1Tail)
                 .strafeToSplineHeading(scoreClose.position, scoreClose.heading,
                         new TranslationalVelConstraint(VEL_TRANSIT),
                         new ProfileAccelConstraint(ACCEL_MIN, ACCEL_MAX));
 
         // --- PATH 4/5 -- LINE 2 -----------------------------------------------------------------
-        TrajectoryActionBuilder toLine2 = drive.actionBuilder(scoreClose)
+        TrajectoryActionBuilder toLine2 = bot.getDrive().actionBuilder(scoreClose)
                 .strafeToSplineHeading(line2Head.position, line2Head.heading,
                         new TranslationalVelConstraint(VEL_TRANSIT),
                         new ProfileAccelConstraint(ACCEL_MIN, ACCEL_MAX));
 
-        TrajectoryActionBuilder sweepLine2 = drive.actionBuilder(line2Head)
+        TrajectoryActionBuilder sweepLine2 = bot.getDrive().actionBuilder(line2Head)
                 .strafeToConstantHeading(line2Tail.position,
                         new TranslationalVelConstraint(VEL_INTAKE),
                         new ProfileAccelConstraint(ACCEL_MIN, 25));
 
-        TrajectoryActionBuilder line2ToScore = drive.actionBuilder(line2Tail)
+        TrajectoryActionBuilder line2ToScore = bot.getDrive().actionBuilder(line2Tail)
                 .strafeToSplineHeading(scoreFar.position, scoreFar.heading,
                         new TranslationalVelConstraint(VEL_TRANSIT),
                         new ProfileAccelConstraint(ACCEL_MIN, ACCEL_MAX));
 
         // --- PATH 6/7 -- LINE 3 -----------------------------------------------------------------
-        TrajectoryActionBuilder toLine3 = drive.actionBuilder(scoreFar)
+        TrajectoryActionBuilder toLine3 = bot.getDrive().actionBuilder(scoreFar)
                 .strafeToSplineHeading(line3Head.position, line3Head.heading,
                         new TranslationalVelConstraint(VEL_TRANSIT),
                         new ProfileAccelConstraint(ACCEL_MIN, ACCEL_MAX));
 
-        TrajectoryActionBuilder sweepLine3 = drive.actionBuilder(line3Head)
+        TrajectoryActionBuilder sweepLine3 = bot.getDrive().actionBuilder(line3Head)
                 .strafeToConstantHeading(line3Tail.position,
                         new TranslationalVelConstraint(VEL_INTAKE),
                         new ProfileAccelConstraint(ACCEL_MIN, 25));
 
-        TrajectoryActionBuilder line3ToScore = drive.actionBuilder(line3Tail)
+        TrajectoryActionBuilder line3ToScore = bot.getDrive().actionBuilder(line3Tail)
                 .strafeToSplineHeading(scoreFar.position, scoreFar.heading,
                         new TranslationalVelConstraint(VEL_TRANSIT),
                         new ProfileAccelConstraint(ACCEL_MIN, ACCEL_MAX));
@@ -308,118 +307,118 @@ public class MeepMeepTestingNikhil {
         Pose2d pileNearFace = facing(PILE_NEAR_X + 16, PILE_NEAR_Y + 16, PILE_NEAR_X, PILE_NEAR_Y);
         Pose2d pileNearDeep = alongHeading(pileNearFace, 16 + PILE_PLUNGE);
 
-        TrajectoryActionBuilder toPileNear = drive.actionBuilder(scoreClose)
+        TrajectoryActionBuilder toPileNear = bot.getDrive().actionBuilder(scoreClose)
                 .strafeToSplineHeading(pileNearFace.position, pileNearFace.heading,
                         new TranslationalVelConstraint(VEL_TRANSIT),
                         new ProfileAccelConstraint(ACCEL_MIN, ACCEL_MAX));
 
-        TrajectoryActionBuilder plungePileNear = drive.actionBuilder(pileNearFace)
+        TrajectoryActionBuilder plungePileNear = bot.getDrive().actionBuilder(pileNearFace)
                 .strafeToConstantHeading(pileNearDeep.position,
                         new TranslationalVelConstraint(VEL_INTAKE),
                         new ProfileAccelConstraint(-20, 20));
 
-        TrajectoryActionBuilder backOutPileNear = drive.actionBuilder(pileNearDeep)
+        TrajectoryActionBuilder backOutPileNear = bot.getDrive().actionBuilder(pileNearDeep)
                 .strafeToConstantHeading(pileNearFace.position,
                         new TranslationalVelConstraint(VEL_INTAKE),
                         new ProfileAccelConstraint(-20, 20));
 
-        TrajectoryActionBuilder pileToScore = drive.actionBuilder(pileNearFace)
+        TrajectoryActionBuilder pileToScore = bot.getDrive().actionBuilder(pileNearFace)
                 .strafeToSplineHeading(scoreClose.position, scoreClose.heading,
                         new TranslationalVelConstraint(VEL_TRANSIT),
                         new ProfileAccelConstraint(ACCEL_MIN, ACCEL_MAX));
 
         // --- PATH 9 -- AUDIENCE BORDER RUN ------------------------------------------------------
-        TrajectoryActionBuilder toAudWall = drive.actionBuilder(scoreClose)
+        TrajectoryActionBuilder toAudWall = bot.getDrive().actionBuilder(scoreClose)
                 .strafeToSplineHeading(audWallStart.position, audWallStart.heading,
                         new TranslationalVelConstraint(VEL_TRANSIT),
                         new ProfileAccelConstraint(ACCEL_MIN, ACCEL_MAX));
 
-        TrajectoryActionBuilder sweepAudWall = drive.actionBuilder(audWallStart)
+        TrajectoryActionBuilder sweepAudWall = bot.getDrive().actionBuilder(audWallStart)
                 .strafeToConstantHeading(audWallEnd.position,
                         new TranslationalVelConstraint(VEL_WALL),
                         new ProfileAccelConstraint(-18, 18));
 
-        TrajectoryActionBuilder audWallToScore = drive.actionBuilder(audWallEnd)
+        TrajectoryActionBuilder audWallToScore = bot.getDrive().actionBuilder(audWallEnd)
                 .strafeToSplineHeading(scoreFar.position, scoreFar.heading,
                         new TranslationalVelConstraint(VEL_TRANSIT),
                         new ProfileAccelConstraint(ACCEL_MIN, ACCEL_MAX));
 
         // --- PATH 10 -- ALLIANCE-SIDE BORDER RUN ------------------------------------------------
-        TrajectoryActionBuilder toSideWall = drive.actionBuilder(scoreClose)
+        TrajectoryActionBuilder toSideWall = bot.getDrive().actionBuilder(scoreClose)
                 .strafeToSplineHeading(sideWallStart.position, sideWallStart.heading,
                         new TranslationalVelConstraint(VEL_TRANSIT),
                         new ProfileAccelConstraint(ACCEL_MIN, ACCEL_MAX));
 
-        TrajectoryActionBuilder toSideWallFromFar = drive.actionBuilder(scoreFar)
+        TrajectoryActionBuilder toSideWallFromFar = bot.getDrive().actionBuilder(scoreFar)
                 .strafeToSplineHeading(sideWallStart.position, sideWallStart.heading,
                         new TranslationalVelConstraint(VEL_TRANSIT),
                         new ProfileAccelConstraint(ACCEL_MIN, ACCEL_MAX));
 
-        TrajectoryActionBuilder sweepSideWall = drive.actionBuilder(sideWallStart)
+        TrajectoryActionBuilder sweepSideWall = bot.getDrive().actionBuilder(sideWallStart)
                 .strafeToConstantHeading(sideWallEnd.position,
                         new TranslationalVelConstraint(VEL_WALL),
                         new ProfileAccelConstraint(-18, 18));
 
-        TrajectoryActionBuilder sideWallToScore = drive.actionBuilder(sideWallEnd)
+        TrajectoryActionBuilder sideWallToScore = bot.getDrive().actionBuilder(sideWallEnd)
                 .strafeToSplineHeading(scoreClose.position, scoreClose.heading,
                         new TranslationalVelConstraint(VEL_TRANSIT),
                         new ProfileAccelConstraint(ACCEL_MIN, ACCEL_MAX));
 
         // --- PATH 11 -- CORNER HARVEST (audience-side own corner) -------------------------------
-        TrajectoryActionBuilder toCornerAud = drive.actionBuilder(scoreClose)
+        TrajectoryActionBuilder toCornerAud = bot.getDrive().actionBuilder(scoreClose)
                 .strafeToSplineHeading(cornerAudApproach.position, cornerAudApproach.heading,
                         new TranslationalVelConstraint(VEL_TRANSIT),
                         new ProfileAccelConstraint(ACCEL_MIN, ACCEL_MAX));
 
-        TrajectoryActionBuilder cornerAudToWall = drive.actionBuilder(cornerAudApproach)
+        TrajectoryActionBuilder cornerAudToWall = bot.getDrive().actionBuilder(cornerAudApproach)
                 .strafeToSplineHeading(audWallStart.position, audWallStart.heading,
                         new TranslationalVelConstraint(VEL_CORNER),
                         new ProfileAccelConstraint(ACCEL_MIN, ACCEL_MAX));
 
-        TrajectoryActionBuilder intoCornerAud = drive.actionBuilder(cornerAudApproach)
+        TrajectoryActionBuilder intoCornerAud = bot.getDrive().actionBuilder(cornerAudApproach)
                 .strafeToConstantHeading(cornerAudPlunge.position,
                         new TranslationalVelConstraint(VEL_CORNER),
                         new ProfileAccelConstraint(-18, 18));
 
-        TrajectoryActionBuilder outOfCornerAud = drive.actionBuilder(cornerAudPlunge)
+        TrajectoryActionBuilder outOfCornerAud = bot.getDrive().actionBuilder(cornerAudPlunge)
                 .strafeToConstantHeading(cornerAudApproach.position,
                         new TranslationalVelConstraint(VEL_CORNER),
                         new ProfileAccelConstraint(-18, 18));
 
         // --- PATH 12 -- CORNER HARVEST (back own corner) ----------------------------------------
-        TrajectoryActionBuilder toCornerBack = drive.actionBuilder(scoreClose)
+        TrajectoryActionBuilder toCornerBack = bot.getDrive().actionBuilder(scoreClose)
                 .strafeToSplineHeading(cornerBackApproach.position, cornerBackApproach.heading,
                         new TranslationalVelConstraint(VEL_TRANSIT),
                         new ProfileAccelConstraint(ACCEL_MIN, ACCEL_MAX));
 
-        TrajectoryActionBuilder intoCornerBack = drive.actionBuilder(cornerBackApproach)
+        TrajectoryActionBuilder intoCornerBack = bot.getDrive().actionBuilder(cornerBackApproach)
                 .strafeToConstantHeading(cornerBackPlunge.position,
                         new TranslationalVelConstraint(VEL_CORNER),
                         new ProfileAccelConstraint(-18, 18));
 
-        TrajectoryActionBuilder outOfCornerBack = drive.actionBuilder(cornerBackPlunge)
+        TrajectoryActionBuilder outOfCornerBack = bot.getDrive().actionBuilder(cornerBackPlunge)
                 .strafeToSplineHeading(scoreClose.position, scoreClose.heading,
                         new TranslationalVelConstraint(VEL_CORNER),
                         new ProfileAccelConstraint(ACCEL_MIN, ACCEL_MAX));
 
         // --- PATH 13 -- LOW GOAL fallback -------------------------------------------------------
-        TrajectoryActionBuilder toLowGoal = drive.actionBuilder(line2Tail)
+        TrajectoryActionBuilder toLowGoal = bot.getDrive().actionBuilder(line2Tail)
                 .strafeToSplineHeading(lowGoal.position, lowGoal.heading,
                         new TranslationalVelConstraint(VEL_TRANSIT),
                         new ProfileAccelConstraint(ACCEL_MIN, ACCEL_MAX));
 
         // --- PATH 14 -- PARK --------------------------------------------------------------------
-        TrajectoryActionBuilder parkFromScore = drive.actionBuilder(scoreClose)
+        TrajectoryActionBuilder parkFromScore = bot.getDrive().actionBuilder(scoreClose)
                 .strafeToSplineHeading(park.position, park.heading,
                         new TranslationalVelConstraint(VEL_TRANSIT),
                         new ProfileAccelConstraint(ACCEL_MIN, ACCEL_MAX));
 
-        TrajectoryActionBuilder parkFromFar = drive.actionBuilder(scoreFar)
+        TrajectoryActionBuilder parkFromFar = bot.getDrive().actionBuilder(scoreFar)
                 .strafeToSplineHeading(park.position, park.heading,
                         new TranslationalVelConstraint(VEL_TRANSIT),
                         new ProfileAccelConstraint(ACCEL_MIN, ACCEL_MAX));
 
-        TrajectoryActionBuilder parkFromStart = drive.actionBuilder(beginPose)
+        TrajectoryActionBuilder parkFromStart = bot.getDrive().actionBuilder(beginPose)
                 .strafeToSplineHeading(park.position, park.heading,
                         new TranslationalVelConstraint(VEL_TRANSIT),
                         new ProfileAccelConstraint(ACCEL_MIN, ACCEL_MAX));
