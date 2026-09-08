@@ -335,6 +335,8 @@ public class PollenCamera extends Subsystem {
         telemetry.addData("Pollen cam", isAvailable() ? (isStreaming() ? "streaming" : status) : status);
         telemetry.addData("Pollen blobs / clusters", r.detections.size() + " / " + r.clusters.size());
         telemetry.addData("Pollen vision ms", "%.1f", r.processMs);
+        // The single most useful line when nothing is being detected: which gate ate the contours.
+        telemetry.addData("Pollen dropped", r.rejectionSummary());
         if (r.best != null) {
             telemetry.addData("Pollen best (raw)", "n=%d  %.1f in  %.0f deg  spread %.1f",
                     r.best.count, r.best.range, r.best.bearingDeg, r.best.spread);

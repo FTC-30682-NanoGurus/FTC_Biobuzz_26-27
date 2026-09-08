@@ -165,8 +165,32 @@ public class PollenPipeline implements VisionProcessor {
     public static double MIN_CIRCLE_FILL = 0.55;
     /** area / convex hull area. Applied to MERGED blobs, where circularity is meaningless. */
     public static double MIN_SOLIDITY = 0.72;
-    /** Blobs smaller than expected/this are discarded as too small to be a ball at that range. */
+    /**
+     * MASTER SWITCH for the geometry-based size test. OFF by default, and that default matters.
+     *
+     * When on, a blob is measured against the size a ball SHOULD be at the floor position the
+     * camera model projects it to, and rejected if it does not match. That is a genuinely good
+     * test - and it is only as good as CAM_HEIGHT_IN and CAM_PITCH_DEG, which start life as
+     * placeholders. With those wrong, the test throws away real balls in whole regions of the
+     * frame while passing everything in others, which looks exactly like "it only detects near
+     * the top edge".
+     *
+     * Worse, it is circular: the bring-up procedure calibrates the mount by reading the range of
+     * a DETECTED ball, so a geometry test that blocks detection also blocks the calibration that
+     * would fix it. Detection must not depend on the number you are trying to measure.
+     *
+     * So: leave this OFF until the range readout agrees with a tape measure at two distances.
+     * Then turn it on - it is what makes the merged-blob ball counts trustworthy.
+     */
+    public static boolean SIZE_GATE = false;
+    /** Blobs smaller than expected/this are discarded. Only applied when SIZE_GATE is on. */
     public static double MIN_SIZE_RATIO = 0.45;
+    /** Blobs larger than expected*this are discarded. Only applied when SIZE_GATE is on. */
+    public static double MAX_SIZE_RATIO = 20.0;
+    /** Absolute upper area bound, FULL-RES pixels. Geometry-free, so always applied. */
+    public static double MAX_AREA_PX = 90000;
+    /** Merged-blob count ceiling while SIZE_GATE is off and the counts cannot be trusted. */
+    public static int UNCALIBRATED_MAX_COUNT = 4;
     /** At or above this many single-ball areas, a blob is treated as several merged balls. */
     public static double MERGE_RATIO = 1.65;
     /** Ceiling on the estimated count from one blob. Stops a lighting flare scoring 40. */
@@ -175,7 +199,15 @@ public class PollenPipeline implements VisionProcessor {
     // =======================================================================================
     // RANGE GATES, inches from the robot's centre
     // =======================================================================================
-    public static double MIN_RANGE_IN = 4.0;
+    /**
+     * Lower range bound, inches from the robot's centre. Zero by default - deliberately no floor.
+     *
+     * This used to be 4.0, which is another silent veto in disguise: with a low, steeply aimed
+     * camera the whole lower half of the frame projects to under four inches, and every ball there
+     * vanishes with no explanation. Nothing downstream needs a floor - MAX_RANGE_IN is the bound
+     * that protects against the near-horizon nonsense, and the approach has its own MIN_MOVE_IN.
+     */
+    public static double MIN_RANGE_IN = 0.0;
     /** Beyond this the pitch-angle error in the range estimate is larger than it is worth. */
     public static double MAX_RANGE_IN = 78.0;
     /** Ignore anything further off the robot's nose than this, degrees. 180 = full field of view. */
@@ -252,6 +284,17 @@ public class PollenPipeline implements VisionProcessor {
         }
     }
 
+    // Why a contour was thrown away. Counted per frame and reported, because a detector that
+    // silently discards things is untunable - every failure looks identical from outside.
+    public static final int REJ_AREA = 0;
+    public static final int REJ_SHAPE = 1;
+    public static final int REJ_PROJECTION = 2;
+    public static final int REJ_RANGE = 3;
+    public static final int REJ_BEARING = 4;
+    public static final int REJ_SIZE = 5;
+    private static final int REJ_COUNT = 6;
+    private static final String[] REJ_NAMES = {"area", "shape", "horizon", "range", "bearing", "size"};
+
     /** An immutable snapshot of one frame. Safely published; never partially visible. */
     public static final class Result {
         public final long frameId;
@@ -261,20 +304,38 @@ public class PollenPipeline implements VisionProcessor {
         /** Best pile this frame, or null if nothing qualified. */
         public final Cluster best;
         public final double processMs;
+        /** Contours discarded this frame, indexed by REJ_*. */
+        public final int[] rejected;
+        /** Contours that passed MIN_AREA_PX and so were actually considered. */
+        public final int examined;
 
         Result(long frameId, long timestampNs, List<Detection> d, List<Cluster> c,
-               Cluster best, double processMs) {
+               Cluster best, double processMs, int[] rejected, int examined) {
             this.frameId = frameId;
             this.timestampNs = timestampNs;
             this.detections = Collections.unmodifiableList(d);
             this.clusters = Collections.unmodifiableList(c);
             this.best = best;
             this.processMs = processMs;
+            this.rejected = rejected;
+            this.examined = examined;
+        }
+
+        /** "3 range, 1 shape", or "-" when nothing was thrown away. Empty string never returned. */
+        public String rejectionSummary() {
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < rejected.length && i < REJ_NAMES.length; i++) {
+                if (rejected[i] <= 0) continue;
+                if (sb.length() > 0) sb.append(", ");
+                sb.append(rejected[i]).append(' ').append(REJ_NAMES[i]);
+            }
+            return sb.length() == 0 ? "-" : sb.toString();
         }
     }
 
     private static final Result EMPTY =
-            new Result(0, 0, new ArrayList<Detection>(), new ArrayList<Cluster>(), null, 0);
+            new Result(0, 0, new ArrayList<Detection>(), new ArrayList<Cluster>(), null, 0,
+                    new int[REJ_COUNT], 0);
 
     private volatile Result result = EMPTY;
     private long frameCounter = 0;
@@ -370,12 +431,15 @@ public class PollenPipeline implements VisionProcessor {
         Imgproc.findContours(mask, contours, hierarchy,
                 Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE);
 
+        int[] rej = new int[REJ_COUNT];
         List<Detection> detections = new ArrayList<>();
         for (MatOfPoint contour : contours) {
-            Detection d = evaluateContour(contour, model, invScale);
+            Detection d = evaluateContour(contour, model, invScale, rej);
             if (d != null) detections.add(d);
             contour.release();
         }
+        int examined = detections.size();
+        for (int r : rej) examined += r;
 
         // 5. Cluster and score.
         List<Cluster> clusters = cluster(detections);
@@ -387,7 +451,8 @@ public class PollenPipeline implements VisionProcessor {
 
         double ms = (System.nanoTime() - t0) / 1e6;
         frameCounter++;
-        Result r = new Result(frameCounter, System.nanoTime(), detections, clusters, best, ms);
+        Result r = new Result(frameCounter, System.nanoTime(), detections, clusters, best, ms,
+                rej, examined);
         result = r;
 
         if (DRAW_MASK) {
@@ -423,64 +488,86 @@ public class PollenPipeline implements VisionProcessor {
         }
     }
 
-    /** One contour -> a Detection, or null if it fails any gate. */
-    private Detection evaluateContour(MatOfPoint contour, PollenGeometry.Model model, double invScale) {
+    /**
+     * One contour -> a Detection, or null if it fails a gate. Every rejection is tallied into
+     * {@code rej} so the frame can report what it threw away and why.
+     *
+     * ORDER MATTERS HERE. The geometry-free tests run first - absolute size, then shape - so that
+     * a blob is classified as a ball or not a ball WITHOUT reference to the camera mount. Only
+     * then is it projected onto the floor to be placed. That ordering is the fix for detection
+     * that worked in one band of the frame and nowhere else: the camera model decides WHERE a ball
+     * is, never WHETHER it is one, unless SIZE_GATE is explicitly turned on after calibration.
+     */
+    private Detection evaluateContour(MatOfPoint contour, PollenGeometry.Model model,
+                                      double invScale, int[] rej) {
         double areaSmall = Imgproc.contourArea(contour);
         if (areaSmall <= 0) return null;
 
         // To full-res units. Area scales with the square of a length ratio.
         double area = areaSmall * invScale * invScale;
-        if (area < MIN_AREA_PX) return null;
+        if (area < MIN_AREA_PX || area > MAX_AREA_PX) { rej[REJ_AREA]++; return null; }
 
         org.opencv.imgproc.Moments m = Imgproc.moments(contour);
-        if (m.m00 <= 0) return null;
+        if (m.m00 <= 0) { rej[REJ_AREA]++; return null; }
         double u = (m.m10 / m.m00) * invScale;
         double v = (m.m01 / m.m00) * invScale;
 
-        // Project BEFORE the shape gates: the expected size that the gates compare against is a
-        // function of where on the floor the blob is, so there is nothing to test until the ray
-        // has been intersected with the ground plane.
-        double[] ground = model.pollenGroundPoint(u, v);
-        if (ground == null) return null;
-
-        double x = ground[0], y = ground[1];
-        double range = Math.hypot(x, y);
-        if (range < MIN_RANGE_IN || range > MAX_RANGE_IN) return null;
-        if (Math.abs(Math.toDegrees(Math.atan2(y, x))) > MAX_ABS_BEARING_DEG) return null;
-
-        double expectedR = model.expectedRadiusPx(x, y);
-        if (expectedR <= 0.5) return null;
-        double expectedArea = Math.PI * expectedR * expectedR;
-        double ratio = area / expectedArea;
-        if (ratio < MIN_SIZE_RATIO) return null;
-
+        // ---- geometry-free shape analysis -----------------------------------------------------
         MatOfPoint2f c2f = new MatOfPoint2f(contour.toArray());
         Point circleCentre = new Point();
         float[] circleRadius = new float[1];
         Imgproc.minEnclosingCircle(c2f, circleCentre, circleRadius);
         double rPx = circleRadius[0] * invScale;
 
-        boolean merged = ratio >= MERGE_RATIO;
-        int count = 1;
+        double perimSmall = Imgproc.arcLength(c2f, true);
+        double circularity = perimSmall <= 1e-6
+                ? 0 : 4.0 * Math.PI * areaSmall / (perimSmall * perimSmall);
+        double circleArea = Math.PI * rPx * rPx;
+        double fill = circleArea <= 0 ? 0 : area / circleArea;
 
+        // Round enough to be one ball? Decided by shape alone, at any distance.
+        boolean round = circularity >= MIN_CIRCULARITY && fill >= MIN_CIRCLE_FILL;
+
+        double solidity = round ? 1.0 : solidity(c2f, areaSmall);
+        c2f.release();
+
+        // A blob that is neither round nor a solid clump is not pollen - it is a shadow edge or a
+        // reflection off something green. This is the one shape rejection that always applies.
+        if (!round && solidity < MIN_SOLIDITY) { rej[REJ_SHAPE]++; return null; }
+
+        // ---- place it on the floor ------------------------------------------------------------
+        double[] ground = model.pollenGroundPoint(u, v);
+        if (ground == null) { rej[REJ_PROJECTION]++; return null; }
+
+        double x = ground[0], y = ground[1];
+        double range = Math.hypot(x, y);
+        if (range < MIN_RANGE_IN || range > MAX_RANGE_IN) { rej[REJ_RANGE]++; return null; }
+        if (Math.abs(Math.toDegrees(Math.atan2(y, x))) > MAX_ABS_BEARING_DEG) {
+            rej[REJ_BEARING]++;
+            return null;
+        }
+
+        // ---- ball count -----------------------------------------------------------------------
+        // ratio is how many single balls would fit in this blob's area, given where the camera
+        // model thinks the blob is. It is the only count estimator available, so it is used even
+        // when the geometry is not trusted - but then its output is capped hard, because an
+        // uncalibrated mount can inflate it without limit near the top of the frame and hand one
+        // bogus blob a score no real pile could beat.
+        double expectedR = model.expectedRadiusPx(x, y);
+        double ratio = (expectedR > 0.5) ? area / (Math.PI * expectedR * expectedR) : 1.0;
+
+        if (SIZE_GATE && expectedR > 0.5 && (ratio < MIN_SIZE_RATIO || ratio > MAX_SIZE_RATIO)) {
+            rej[REJ_SIZE]++;
+            return null;
+        }
+
+        boolean merged = !round;
+        int count = 1;
         if (merged) {
-            // A clump is not round. Solidity is the shape test that still means something: it is
-            // near 1 for any convex-ish pile of balls and low for the ragged, stringy blobs that
-            // reflections and shadow edges produce.
-            double solidity = solidity(c2f, areaSmall);
-            c2f.release();
-            if (solidity < MIN_SOLIDITY) return null;
             count = (int) Math.round(ratio);
             if (count < 2) count = 2;
-            if (count > MAX_MERGED_COUNT) count = MAX_MERGED_COUNT;
-        } else {
-            double perimSmall = Imgproc.arcLength(c2f, true);
-            c2f.release();
-            if (perimSmall <= 1e-6) return null;
-            double circularity = 4.0 * Math.PI * areaSmall / (perimSmall * perimSmall);
-            if (circularity < MIN_CIRCULARITY) return null;
-            double circleArea = Math.PI * rPx * rPx;
-            if (circleArea <= 0 || area / circleArea < MIN_CIRCLE_FILL) return null;
+            int cap = SIZE_GATE ? MAX_MERGED_COUNT : Math.min(MAX_MERGED_COUNT, UNCALIBRATED_MAX_COUNT);
+            if (count > cap) count = cap;
         }
 
         return new Detection(x, y, count, merged, u, v, rPx);
@@ -619,6 +706,14 @@ public class PollenPipeline implements VisionProcessor {
                 String.format(java.util.Locale.US, "blobs %d  clusters %d  %.1fms",
                         r.detections.size(), r.clusters.size(), r.processMs),
                 new Point(6, 18), Imgproc.FONT_HERSHEY_SIMPLEX, 0.5, new Scalar(230, 230, 230), 1);
+
+        // Second line only when something was discarded. This is the line that turns "it does not
+        // detect" into a specific gate to go and change.
+        if (r.examined > r.detections.size()) {
+            Imgproc.putText(frame, "dropped: " + r.rejectionSummary(),
+                    new Point(6, 36), Imgproc.FONT_HERSHEY_SIMPLEX, 0.45,
+                    new Scalar(255, 170, 90), 1);
+        }
     }
 
     @Override

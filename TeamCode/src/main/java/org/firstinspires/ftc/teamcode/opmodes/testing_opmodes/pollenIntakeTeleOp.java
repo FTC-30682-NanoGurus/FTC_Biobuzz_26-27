@@ -6,8 +6,11 @@ import com.acmerobotics.dashboard.telemetry.MultipleTelemetry;
 import com.acmerobotics.roadrunner.Pose2d;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
+import com.qualcomm.robotcore.hardware.DcMotor;
+import com.qualcomm.robotcore.hardware.DcMotorSimple;
 import com.qualcomm.robotcore.util.ElapsedTime;
 
+import org.firstinspires.ftc.teamcode.DECODERobotConstants;
 import org.firstinspires.ftc.teamcode.Biobuzz_subsystems.MecaTank;
 import org.firstinspires.ftc.teamcode.Biobuzz_subsystems.PollenApproach;
 import org.firstinspires.ftc.teamcode.Biobuzz_subsystems.PollenCamera;
@@ -69,6 +72,28 @@ public class pollenIntakeTeleOp extends LinearOpMode {
     /** Auto-approach can be disabled outright from the dashboard without editing the opmode. */
     public static boolean POLLEN_ENABLED = true;
 
+    // ---- intake roller -----------------------------------------------------------------------
+    /** Config name of the intake roller motor. */
+    public static String INTAKE_MOTOR = DECODERobotConstants.rollers;
+    /** Set true if the roller spins the wrong way. Cheaper than re-wiring in the pit. */
+    public static boolean INTAKE_REVERSED = false;
+    /** Power used by the hold-on toggle and by the auto-run. Triggers are proportional. */
+    public static double INTAKE_POWER = 1.0;
+    /** Eject power. Negative - it is the opposite direction from intake. */
+    public static double EJECT_POWER = -0.8;
+    /** Trigger travel below this counts as released. */
+    public static double INTAKE_TRIGGER_DEADBAND = 0.10;
+    /**
+     * Spin the roller automatically when an auto-approach reaches the pile.
+     *
+     * OFF by default on purpose: a mechanism that starts itself the first time you press the
+     * approach button is a surprise, and surprises near a moving robot are how fingers get caught.
+     * Turn it on once the approach is stopping where you want it.
+     */
+    public static boolean AUTO_INTAKE_ON_ARRIVAL = false;
+    /** How long the auto-run keeps the roller going, seconds. */
+    public static double AUTO_INTAKE_S = 1.5;
+
     MecaTank mecaTank;
     BulkRead bulkRead;
     PollenCamera pollenCamera;
@@ -78,6 +103,15 @@ public class pollenIntakeTeleOp extends LinearOpMode {
     private boolean prevY, prevX, prevBack, prevA, prevB;
     private boolean prevDpadUp, prevDpadDown, prevDpadRight;
     private boolean cameraOn = true;
+
+    private DcMotor intakeMotor;
+    private boolean intakeLatched = false;
+    private boolean autoIntakeRunning = false;
+    private double lastIntakePower = 0;
+    private String intakeStatus = "not initialised";
+    private boolean prevG2A, prevG1DpadLeft;
+    private PollenApproach.State prevApproachState = PollenApproach.State.IDLE;
+    private final ElapsedTime autoIntakeTimer = new ElapsedTime();
 
     // ---- init-time tuner -----------------------------------------------------------------
     /**
@@ -112,6 +146,19 @@ public class pollenIntakeTeleOp extends LinearOpMode {
         // This opmode drives the pose estimate itself - see the header.
         mecaTank.setAutoPoseUpdate(false);
 
+        // A missing roller must not take the drive and vision half of the opmode down with it -
+        // same rule the camera follows. Everything else stays usable; only the roller is lost.
+        try {
+            intakeMotor = hardwareMap.get(DcMotor.class, INTAKE_MOTOR);
+            intakeMotor.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
+            intakeMotor.setDirection(INTAKE_REVERSED
+                    ? DcMotorSimple.Direction.REVERSE : DcMotorSimple.Direction.FORWARD);
+            intakeStatus = "ready";
+        } catch (Exception e) {
+            intakeMotor = null;
+            intakeStatus = "NO MOTOR '" + INTAKE_MOTOR + "'";
+        }
+
         pollenCamera = new PollenCamera(hardwareMap, telemetry);
         pollenCamera.init();
         pollenApproach = new PollenApproach(mecaTank, pollenCamera, telemetry);
@@ -122,6 +169,8 @@ public class pollenIntakeTeleOp extends LinearOpMode {
         telemetry.addLine("A = translation hold");
         telemetry.addLine("DPAD UP = drive to pollen   B = cancel");
         telemetry.addLine("DPAD DOWN = camera on/off   DPAD RIGHT = mask view");
+        telemetry.addLine("INTAKE: gp2 RT = in, gp2 LT = eject, gp2 A / gp1 DPAD LEFT = hold on");
+        telemetry.addLine("Intake: " + intakeStatus);
         telemetry.addLine(pollenCamera.isAvailable()
                 ? "Camera opened. MEASURE PollenGeometry before trusting the range."
                 : "WARNING: camera failed to open - manual drive only");
@@ -260,8 +309,15 @@ public class pollenIntakeTeleOp extends LinearOpMode {
                 }
             }
 
-            // HOOK: the intake goes here. pollenApproach.getState() == ARRIVED means the robot is
-            // parked STANDOFF_IN short of the pile with the intake side facing it.
+            // The approach reaching ARRIVED is an EDGE, not a state to poll: it stays ARRIVED
+            // until the next run starts, so testing the state directly would re-trigger the
+            // auto-run every loop and the roller would never stop.
+            PollenApproach.State approachState = pollenApproach.getState();
+            boolean justArrived = approachState == PollenApproach.State.ARRIVED
+                    && prevApproachState != PollenApproach.State.ARRIVED;
+            prevApproachState = approachState;
+
+            updateIntake(justArrived);
 
             double now = System.nanoTime();
             double loopMs = (now - lastLoopTime) / 1e6;
@@ -276,6 +332,8 @@ public class pollenIntakeTeleOp extends LinearOpMode {
                 telemetry.addData("Translation hold", MecaTank.TRANSLATION_HOLD);
                 telemetry.addData("Traction control", MecaTank.TRACTION_CONTROL);
                 telemetry.addData("Camera stream", cameraOn);
+                telemetry.addData("Intake", "%s  power %.2f%s", intakeStatus, lastIntakePower,
+                        intakeLatched ? "  [HELD]" : (autoIntakeRunning ? "  [AUTO]" : ""));
                 telemetry.addLine();
                 pollenCamera.telemetry();
                 pollenApproach.telemetry();
@@ -292,8 +350,55 @@ public class pollenIntakeTeleOp extends LinearOpMode {
             }
         }
 
+        if (intakeMotor != null) intakeMotor.setPower(0);
         pollenApproach.cancel("opmode ended");
         pollenCamera.close();
+    }
+
+    /**
+     * Intake roller, driven from gamepad 2 so that nothing here can collide with the driving map
+     * on gamepad 1 - that map is deliberately identical to driveTesting.
+     *
+     *   gp2 right trigger .... intake, proportional
+     *   gp2 left trigger ..... eject, proportional
+     *   gp2 A ................ toggle hold-on at INTAKE_POWER
+     *   gp1 DPAD LEFT ........ same toggle, for testing with a single gamepad
+     *
+     * Eject always wins. If the roller has jammed on a ball, the driver reaching for reverse
+     * should not have to first remember to cancel a latch or wait out an auto-run.
+     */
+    private void updateIntake(boolean justArrived) {
+        if (intakeMotor == null) return;
+
+        boolean toggle = (gamepad2.a && !prevG2A) || (gamepad1.dpad_left && !prevG1DpadLeft);
+        prevG2A = gamepad2.a;
+        prevG1DpadLeft = gamepad1.dpad_left;
+        if (toggle) intakeLatched = !intakeLatched;
+
+        if (AUTO_INTAKE_ON_ARRIVAL && justArrived) {
+            autoIntakeRunning = true;
+            autoIntakeTimer.reset();
+        }
+        if (autoIntakeRunning && autoIntakeTimer.seconds() >= AUTO_INTAKE_S) {
+            autoIntakeRunning = false;
+        }
+
+        double power;
+        if (gamepad2.left_trigger > INTAKE_TRIGGER_DEADBAND) {
+            power = EJECT_POWER * gamepad2.left_trigger;
+            intakeLatched = false;      // eject cancels both automatic sources, so releasing the
+            autoIntakeRunning = false;  // trigger leaves the roller stopped rather than re-intaking
+        } else if (gamepad2.right_trigger > INTAKE_TRIGGER_DEADBAND) {
+            power = INTAKE_POWER * gamepad2.right_trigger;
+        } else if (intakeLatched || autoIntakeRunning) {
+            power = INTAKE_POWER;
+        } else {
+            power = 0;
+        }
+
+        power = Math.max(-1.0, Math.min(1.0, power));
+        intakeMotor.setPower(power);
+        lastIntakePower = power;
     }
 
     // ===========================================================================================
