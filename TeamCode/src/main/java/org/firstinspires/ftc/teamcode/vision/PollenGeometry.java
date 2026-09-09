@@ -58,13 +58,13 @@ public final class PollenGeometry {
     // Extrinsics - MEASURE THESE. All in inches / degrees, robot frame.
     // ---------------------------------------------------------------------------------------
     /** Height of the LENS above the floor. */
-    public static double CAM_HEIGHT_IN = 9.0;
+    public static double CAM_HEIGHT_IN = 10.0;
     /** Lens position ahead of the robot's centre of rotation. Negative if it is behind. */
-    public static double CAM_FORWARD_IN = 6.0;
+    public static double CAM_FORWARD_IN = 9.0;
     /** Lens position to the LEFT of centre. Negative for right of centre. */
-    public static double CAM_LEFT_IN = 0.0;
+    public static double CAM_LEFT_IN = 7.5;
     /** Downward tilt of the optical axis. 0 = dead level, 90 = staring at the floor. */
-    public static double CAM_PITCH_DEG = 25.0;
+    public static double CAM_PITCH_DEG = 0;
     /** Rotation of the camera about vertical. Positive = aimed to the robot's LEFT. */
     public static double CAM_YAW_DEG = 0.0;
 

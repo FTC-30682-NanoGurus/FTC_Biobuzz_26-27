@@ -13,6 +13,7 @@ import org.firstinspires.ftc.robotcore.external.Telemetry;
 import org.firstinspires.ftc.robotcore.external.hardware.camera.WebcamName;
 import org.firstinspires.ftc.robotcore.external.hardware.camera.controls.ExposureControl;
 import org.firstinspires.ftc.robotcore.external.hardware.camera.controls.GainControl;
+import org.firstinspires.ftc.robotcore.external.hardware.camera.controls.WhiteBalanceControl;
 import org.firstinspires.ftc.teamcode.RobotConstants;
 import org.firstinspires.ftc.teamcode.library.Subsystem;
 import org.firstinspires.ftc.teamcode.vision.PollenPipeline;
@@ -72,8 +73,38 @@ public class PollenCamera extends Subsystem {
      * circularity the pipeline gates on.
      */
     public static boolean MANUAL_EXPOSURE = true;
-    public static int EXPOSURE_MS = 6;
+    /**
+     * Exposure, ms. 22 - set from what actually reads well on the green artifact under match
+     * lighting, not from a formula.
+     *
+     * Be aware of the trade this buys. 22 ms is a long exposure by vision standards: a robot
+     * moving at the approach's 36 in/s smears a ball by nearly an inch across the frame, which
+     * rounds off its edges and drops the circularity the pipeline gates on. That does not matter
+     * here only because PollenApproach locks its target in field coordinates before it moves and
+     * no longer re-plans on the way in - the robot does not need to keep recognising the pile
+     * while it drives at it. Anything that DOES need detection while moving wants a shorter
+     * exposure and more gain.
+     */
+    public static int EXPOSURE_MS = 22;
+    /**
+     * Sensor gain. With a 22 ms exposure there is far more light per frame than at 6 ms, so this
+     * can usually come down - lower gain is less sensor noise, which is a cleaner mask and fewer
+     * speckle contours for the morphology to clean up. Try 120 and watch the 'dropped' line.
+     */
     public static int GAIN = 200;
+    /**
+     * Lock white balance as well as exposure.
+     *
+     * Auto white balance is the quieter half of the same problem manual exposure solves. It
+     * re-balances the whole frame when something large and coloured enters it - an opposing
+     * robot's bumper, an alliance-coloured field element - and every hue in the image shifts with
+     * it, including the green you tuned H_LOW and H_HIGH around. The mask then starts failing for
+     * reasons that have nothing to do with the artifact. Locking it costs nothing and removes a
+     * whole class of intermittent, unreproducible mask failures.
+     */
+    public static boolean MANUAL_WHITE_BALANCE = true;
+    /** White balance temperature, Kelvin. ~4000 suits typical indoor competition lighting. */
+    public static int WHITE_BALANCE_K = 4000;
 
     /** Frames that must agree before a target is offered to the drive code. */
     public static int MIN_STREAK = 3;
@@ -257,6 +288,20 @@ public class PollenCamera extends Subsystem {
             }
             GainControl gc = portal.getCameraControl(GainControl.class);
             if (gc != null) gc.setGain(GAIN);
+
+            // Best-effort and separately guarded: plenty of webcams expose exposure but not white
+            // balance, and losing the WB lock must not cost us the exposure lock as well.
+            if (MANUAL_WHITE_BALANCE) {
+                try {
+                    WhiteBalanceControl wb = portal.getCameraControl(WhiteBalanceControl.class);
+                    if (wb != null) {
+                        wb.setMode(WhiteBalanceControl.Mode.MANUAL);
+                        wb.setWhiteBalanceTemperature(WHITE_BALANCE_K);
+                    }
+                } catch (Exception ignored) {
+                    // Camera does not support it. Exposure is still locked, which is the big one.
+                }
+            }
             status = "streaming (manual exposure)";
         } catch (Exception e) {
             status = "streaming (exposure control unavailable)";

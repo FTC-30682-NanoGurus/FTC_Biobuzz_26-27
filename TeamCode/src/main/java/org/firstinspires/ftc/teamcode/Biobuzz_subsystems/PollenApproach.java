@@ -6,6 +6,7 @@ import com.acmerobotics.dashboard.telemetry.TelemetryPacket;
 import com.acmerobotics.roadrunner.Action;
 import com.acmerobotics.roadrunner.Pose2d;
 import com.acmerobotics.roadrunner.PoseVelocity2d;
+import com.acmerobotics.roadrunner.ProfileAccelConstraint;
 import com.acmerobotics.roadrunner.TranslationalVelConstraint;
 import com.acmerobotics.roadrunner.TurnConstraints;
 import com.acmerobotics.roadrunner.Vector2d;
@@ -49,15 +50,36 @@ import org.firstinspires.ftc.robotcore.external.Telemetry;
 public class PollenApproach {
 
     /** Stop this far short of the pile CENTROID, measured to the robot's centre of rotation. */
-    public static double STANDOFF_IN = 11.0;
+    public static double STANDOFF_IN = 9.5;
     /**
      * Added to the heading that points at the pile. 0 aims the robot's FRONT at it; use 180 if the
      * intake is on the back of the robot.
      */
     public static double APPROACH_HEADING_OFFSET_DEG = 0.0;
 
-    /** Translational speed cap for the approach, in/s. Deliberately below the auto speeds. */
-    public static double APPROACH_VEL_IN_S = 25.0;
+    /**
+     * Translational speed cap for the approach, in/s.
+     *
+     * 36 is roughly 70% of what the drivetrain can reach (PARAMS.maxWheelVel is 50 in/s), which
+     * is brisk without being at the edge of traction on a braking stop. Raise it if the approach
+     * still feels lazy; the limit you will hit first is the deceleration below, not this.
+     */
+    public static double APPROACH_VEL_IN_S = 36.0;
+    /**
+     * Acceleration and deceleration limits for the approach, in/s^2.
+     *
+     * Broken out from RoadRunner's defaults because they are what actually decides whether the
+     * move FEELS fast. On a 30 inch approach with an 11 inch standoff the robot only travels 19
+     * inches, and at these limits it spends nearly all of that ramping - it never reaches
+     * APPROACH_VEL_IN_S at all. Raising the speed cap alone would change nothing on a short move;
+     * raising the acceleration is what shortens it.
+     *
+     * Deceleration is kept gentler than acceleration on purpose. The profile ends at zero velocity
+     * exactly at the goal, so braking is what determines whether the robot stops where you tuned
+     * STANDOFF_IN for, and a hard stop is where mecanum wheels break traction and slide past it.
+     */
+    public static double APPROACH_ACCEL_IN_S2 = 50.0;
+    public static double APPROACH_DECEL_IN_S2 = -32.0;
     /** Turn constraints used when the robot only needs to pivot, rad/s and rad/s^2. */
     public static double TURN_VEL = 1.6;
     public static double TURN_ACCEL = 2.5;
@@ -76,7 +98,28 @@ public class PollenApproach {
     /** Any stick or trigger past this hands control straight back to the driver. */
     public static double ABORT_INPUT = 0.20;
 
-    public static boolean ALLOW_REPLAN = true;
+    /**
+     * Re-plan mid-approach as the estimate improves. OFF, and it should stay off.
+     *
+     * The idea was sound - the first sighting is made from as far away as the camera can see,
+     * which is where the range estimate is worst, so correcting it on the way in should help. In
+     * practice it makes the robot stutter its way to the pile, and the reason is structural rather
+     * than a tuning problem:
+     *
+     * A RoadRunner trajectory is a motion profile that BEGINS AT REST. Re-planning throws away the
+     * running profile and builds a fresh one from the current pose, so the follower stops
+     * commanding the cruise velocity it had built up and starts commanding a ramp from zero
+     * instead. The robot decelerates, re-accelerates, and does it again at the next re-plan. Three
+     * re-plans on one approach is three brake-and-go cycles, which reads exactly as the robot
+     * second-guessing itself - and it is also slower than simply committing, because the robot
+     * never spends any time at speed.
+     *
+     * Fixing it properly needs trajectory splicing with a non-zero initial velocity, which
+     * actionBuilder does not expose. Deciding once and committing is both simpler and faster, and
+     * the target is locked in field coordinates at start, so the robot does not need to keep
+     * seeing the pile to finish the drive.
+     */
+    public static boolean ALLOW_REPLAN = false;
     public static double REPLAN_TOL_IN = 4.0;
     public static double REPLAN_MIN_INTERVAL_S = 0.5;
     public static double REPLAN_LOCKOUT_IN = 16.0;
@@ -97,6 +140,15 @@ public class PollenApproach {
 
     /** Send the trajectory overlay to the dashboard field view while a run is active. */
     public static boolean DASHBOARD_OVERLAY = true;
+    /**
+     * Minimum gap between dashboard packets, ms.
+     *
+     * The packet carries the field overlay and the whole pose history, and it was being sent on
+     * every single loop. That is real work inside the control loop, and a follower that is stepped
+     * less often produces coarser, jerkier motion - so the debugging aid was degrading the thing
+     * it was there to help debug. 100 ms is smooth on screen and invisible to the controller.
+     */
+    public static double DASHBOARD_INTERVAL_MS = 100.0;
 
     public enum State { IDLE, DRIVING, AIMING, ARRIVED, ABORTED }
 
@@ -114,6 +166,7 @@ public class PollenApproach {
 
     private final ElapsedTime runTimer = new ElapsedTime();
     private final ElapsedTime planTimer = new ElapsedTime();
+    private final ElapsedTime dashTimer = new ElapsedTime();
 
     public PollenApproach(MecaTank mecaTank, PollenCamera camera, Telemetry telemetry) {
         this.mecaTank = mecaTank;
@@ -210,7 +263,10 @@ public class PollenApproach {
             finish(State.ABORTED, "follower error: " + e.getMessage());
             return;
         }
-        if (DASHBOARD_OVERLAY) FtcDashboard.getInstance().sendTelemetryPacket(packet);
+        if (DASHBOARD_OVERLAY && dashTimer.milliseconds() >= DASHBOARD_INTERVAL_MS) {
+            FtcDashboard.getInstance().sendTelemetryPacket(packet);
+            dashTimer.reset();
+        }
 
         if (!alive) {
             finish(State.ARRIVED, state == State.AIMING ? "aimed" : "arrived");
@@ -273,7 +329,10 @@ public class PollenApproach {
         try {
             action = mecaTank.drive.actionBuilder(pose)
                     .strafeToLinearHeading(goalPoint, finalHeading,
-                            new TranslationalVelConstraint(Math.max(2.0, APPROACH_VEL_IN_S)))
+                            new TranslationalVelConstraint(Math.max(2.0, APPROACH_VEL_IN_S)),
+                            new ProfileAccelConstraint(
+                                    Math.min(-1.0, APPROACH_DECEL_IN_S2),
+                                    Math.max(1.0, APPROACH_ACCEL_IN_S2)))
                     .build();
         } catch (Exception e) {
             finishNoAction("could not build path: " + e.getMessage());
