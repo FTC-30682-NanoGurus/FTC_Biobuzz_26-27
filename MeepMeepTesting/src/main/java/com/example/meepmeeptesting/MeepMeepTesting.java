@@ -246,7 +246,7 @@ public class MeepMeepTesting {
 
 
 
-        /*sampleBot.runAction(sampleBot.getDrive().actionBuilder(new Pose2d(-32.5, -64 , Math.toRadians(0)))
+        sampleBot.runAction(sampleBot.getDrive().actionBuilder(new Pose2d(-32.5, -64 , Math.toRadians(0)))
                 .setReversed(true)
 //                .afterTime(0.5, new InstantAction(() -> intake.moveWrist(RobotConstants.floor_pickup_position)))
                 .setTangent(Math.toRadians(90))
@@ -359,14 +359,14 @@ public class MeepMeepTesting {
 
                 .build());
 
-        meepMeep.setBackground(MeepMeep.Background.FIELD_INTO_THE_DEEP_OFFICIAL )
+        meepMeep.setBackground(MeepMeep.Background.FIELD_INTO_THE_DEEP_OFFICIAL)
                 .setDarkMode(true)
                 .setBackgroundAlpha(0.95f)
                 .addEntity(sampleBot)
                 .addEntity(sampleBot2)
                 .addEntity(specimenBot)
                 .start();
-    */
+
     }
 
 

@@ -27,7 +27,7 @@ import org.firstinspires.ftc.teamcode.roadrunner.MecanumDrive;
 import org.firstinspires.ftc.teamcode.Biobuzz_subsystems.Camera;
 import org.firstinspires.ftc.teamcode.DECODE_subsystems.Distance;
 import org.firstinspires.ftc.teamcode.DECODE_subsystems.Intake;
-import org.firstinspires.ftc.teamcode.DECODE_subsystems.Intake2_0;
+import org.firstinspires.ftc.teamcode.Biobuzz_subsystems.Intake2_0;
 import org.firstinspires.ftc.teamcode.DECODE_subsystems.VihasCameraArm;
 
 public abstract class NGAutoOpMode extends LinearOpMode {
