@@ -17,8 +17,13 @@ public class BiobuzzRobotConstants {
     public static String rollers = "rollers";
     public static String flicker = "flicker";
     public static String gate = "gate";
+    public static double
+        gateClosedPos = 0, // TODO: edit after testing gate positions
+        gateOpenPos = 0.65; // TODO: edit after testing gate positions
     //public static String transferRollers = "transferRollers";
     //public static String interTransfer = "interTransfer";
     public static String flywheels = "flywheels";
+    public static double
+        fixedShootingVel = 1100; // TODO: edit after testing shooting and tuning PIDF
     //public static String hoodAdjuster = "hoodAdjuster";
 }

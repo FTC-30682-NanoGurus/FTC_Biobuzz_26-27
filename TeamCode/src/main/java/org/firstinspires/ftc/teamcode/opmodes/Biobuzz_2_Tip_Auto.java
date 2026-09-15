@@ -46,7 +46,7 @@ public class Biobuzz_2_Tip_Auto extends NGAutoOpMode{
         TrajectoryActionBuilder turnToShoot = turnToFlowerOne.endTrajectory().fresh()
                 .lineToXLinearHeading(-54, Math.toRadians(360));
         TrajectoryActionBuilder strafeToParking = turnToShoot.endTrajectory().fresh()
-                .strafeToConstantHeading(new Vector2d(-35, -60), new TranslationalVelConstraint(60));
+                .strafeToConstantHeading(new Vector2d(-38, -55), new TranslationalVelConstraint(60));
 
         telemetry.addLine("Ready To Start");
         telemetry.update();
@@ -57,10 +57,38 @@ public class Biobuzz_2_Tip_Auto extends NGAutoOpMode{
         Action shootFlowerOnePollen = turnToShoot.build();
         Action park = strafeToParking.build();
 
-
-
         telemetry.addLine("Paths Built");
         telemetry.update();
 
+        double shootingVel = BiobuzzRobotConstants.fixedShootingVel;
+        waitForStart();
+
+        Actions.runBlocking(
+                new ParallelAction(
+                        bulkRead.update(),
+                        intake2_0.updateFlywheelPID(),
+                        new ParallelAction(
+                                intake2_0.runShooter(shootingVel, 30),
+                                new SequentialAction(
+                                        new ParallelAction(
+                                                moveForward,
+                                                intake2_0.transferUsingRollersForTime(2.5, 0.8)
+                                        ),
+                                        new SequentialAction(
+                                                IntakeWallSetandShoot,
+                                                intake2_0.transferUsingRollersForTime(2.0, 0.8)
+                                        ),
+                                        new SequentialAction(
+                                                IntakeFromFlowerOne,
+                                                shootFlowerOnePollen,
+                                                intake2_0.transferUsingRollersForTime(2.0, 0.8)
+                                        ),
+                                        new SequentialAction(
+                                                park
+                                        )
+                                )
+                        )
+                )
+        );
     }
 }

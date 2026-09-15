@@ -31,9 +31,12 @@ public class Intake2_0 {
     public static Servo hoodAdjuster;
     public NGMotor transferRollers;
     public NGServo gate;
-    public NGCRServo flicker;
+    //public NGCRServo flicker;
     public NGMotor interTransfer;
     public boolean autoFinished = false;
+
+    public double gateOpenPos = BiobuzzRobotConstants.gateOpenPos;
+    public double gateClosedPos = BiobuzzRobotConstants.gateClosedPos;
 
     public Intake2_0(HardwareMap hardwareMap, Telemetry telemetry){
         this.hardwareMap = hardwareMap;
@@ -42,7 +45,7 @@ public class Intake2_0 {
         rollers = new NGMotor(hardwareMap, telemetry, BiobuzzRobotConstants.rollers);
         flywheels = new NGMotor(hardwareMap, telemetry, BiobuzzRobotConstants.flywheels);
         gate = new NGServo(hardwareMap, telemetry, BiobuzzRobotConstants.gate);
-        flicker = new NGCRServo(hardwareMap, telemetry, BiobuzzRobotConstants.flicker);
+        //flicker = new NGCRServo(hardwareMap, telemetry, BiobuzzRobotConstants.flicker);
         //transferRollers = new NGMotor(hardwareMap, telemetry, BiobuzzRobotConstants.transferRollers);
         //interTransfer = new NGMotor(hardwareMap, telemetry, BiobuzzRobotConstants.interTransfer);
         interTransfer.setDirection(DcMotor.Direction.FORWARD);
@@ -76,7 +79,10 @@ public class Intake2_0 {
         interTransfer.setPower(0);
     }
     public void openGate(){
-        gate.setPosition();
+        gate.setPosition(gateOpenPos);
+    }
+    public void closeGate(){
+        gate.setPosition(gateClosedPos);
     }
     public void runFlywheels(double vel){
         flywheels.setCustomVelocityPID(vel, 0.0085, 0.015, 0.0001, 0.000426);
@@ -197,10 +203,10 @@ public class Intake2_0 {
     }
     public Action transferUsingRollersForTime(double time, double p){
         return new SequentialAction(
-
+                new InstantAction(() -> openGate()),
                 new InstantAction(() -> runRollers(p)),
                 new SleepAction(time),
-                // Gate code here
+                new InstantAction(() -> closeGate()),
                 new InstantAction(() -> stopRollers())
         );
     }
