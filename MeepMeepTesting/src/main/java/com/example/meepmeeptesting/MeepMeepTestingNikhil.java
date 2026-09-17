@@ -247,6 +247,7 @@ public class MeepMeepTestingNikhil {
             }
         };
 
+        // Red side
         sampleBot.runAction(sampleBot.getDrive().actionBuilder(new Pose2d(61, -12, Math.toRadians(180)))
                 .lineToX(55)
                     .waitSeconds(2)
@@ -265,6 +266,26 @@ public class MeepMeepTestingNikhil {
                                 //.splineToLinearHeading()
                 //.splineToSplineHeading()
                 .build());
+
+        // Blue side
+        /*sampleBot2.runAction(sampleBot2.getDrive().actionBuilder(new Pose2d(5, 12, Math.toRadians(180)))
+                .lineToX(55)
+                    .waitSeconds(2)
+                    .setReversed(false)
+                .splineToLinearHeading(new Pose2d(62, -58, Math.toRadians(360)), Math.toRadians(25), intakeVel)
+                    .setReversed(true)
+                .splineToLinearHeading(new Pose2d(-26, -40, Math.toRadians(360)), Math.toRadians(170), new TranslationalVelConstraint(55))
+                .splineToLinearHeading(new Pose2d(-54, -12, Math.toRadians(360)), Math.toRadians(-220), new TranslationalVelConstraint(45))
+                    .waitSeconds(2)
+                .lineToXLinearHeading(-58, Math.toRadians(180))
+                    .waitSeconds(5)
+                .lineToXLinearHeading(-54, Math.toRadians(360))
+                    .waitSeconds(2)
+                .strafeToConstantHeading(new Vector2d(-38, -55), new TranslationalVelConstraint(60))
+                //.splineToLinearHeading(new Pose2d(-35, -63, Math.toRadians(-90)), Math.toRadians(-90))
+                                //.splineToLinearHeading()
+                //.splineToSplineHeading()
+                .build());*/
 
         // Load the 2026-27 BioBuzz field image from disk.
         // >>> Change this path to wherever you saved the BioBuzz field PNG. <<<

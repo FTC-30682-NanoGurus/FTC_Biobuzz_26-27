@@ -130,12 +130,12 @@ public class colorSensorTesting extends LinearOpMode {
     public static double BLUE_H_MIN = 170;
     public static double BLUE_H_MAX = 250;
 
-    public static double YELLOW_H_MIN = 45;
-    public static double YELLOW_H_MAX = 90;
+    public static double YELLOW_H_MIN = 44;
+    public static double YELLOW_H_MAX = 62;
 
     /** Shared by all three: below these the hue is not trustworthy enough to classify. */
-    public static double S_MIN = 0.5;
-    public static double V_MIN = 0.25;
+    public static double S_MIN = 0.3;
+    public static double V_MIN = 0.2;
 
     // ---- sensor setup ----------------------------------------------------------------------
     /**
@@ -152,7 +152,7 @@ public class colorSensorTesting extends LinearOpMode {
      * Deliberately generous for the V2, whose distance reading is reflectance-based and so reads
      * dark elements as further away than bright ones. Tune it against red nectar, not yellow.
      */
-    public static double MAX_DISTANCE_MM = 50.0;
+    public static double MAX_DISTANCE_MM = 100.0;
 
     // ---- detection debounce ----------------------------------------------------------------
     /** How long one colour must hold steady before it is counted as a piece. */
