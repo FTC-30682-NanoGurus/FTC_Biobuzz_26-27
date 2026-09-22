@@ -775,10 +775,7 @@ public class MecaTank extends Subsystem {
                                      double left_trigger, double right_trigger,
                                      boolean precision, boolean override) {
 
-        double dt = driveTimer.seconds();
-        driveTimer.reset();
-        if (dt <= 0) dt = 0.001;
-        if (dt > 0.1) dt = 0.1;   // a breakpoint must not let the slew jump
+        double dt = beginSmoothDrive();
 
         // 1. Shape the inputs. Same negations as the original, different curve.
         double L = shapeInput(-left_stick_y, DRIVE_DEADBAND);
@@ -790,6 +787,80 @@ public class MecaTank extends Subsystem {
         double forward = (L + R) / 2.0;
         double turn = (L - R) / 2.0;
         double strafe = S;   // LATERAL_GAIN is applied in step 3c, AFTER any frame rotation
+
+        smoothDriveCore(forward, turn, strafe, dt, precision, override);
+    }
+
+    /**
+     * ARCADE input mapping: LEFT stick translates, RIGHT stick turns. The conventional layout for
+     * field-centric driving, and the one the drivers asked for.
+     *
+     * Everything downstream of the sticks is IDENTICAL to {@link #setDrivePowersSmooth} - the same
+     * input curve, the same field-centric rotation, the same strafe hold, traction control,
+     * acceleration limiter and voltage-compensated feedforward. Only the three numbers fed in at
+     * the top differ, which is the whole point: the tank mapping stays available and unchanged for
+     * anything already tuned against it.
+     *
+     * The triggers are NOT read here. Strafe comes from the left stick's X axis instead, so the
+     * triggers are free for other bindings.
+     *
+     * @param left_stick_x  strafe, raw stick units; stick RIGHT is positive
+     * @param left_stick_y  forward, raw stick units; stick UP is NEGATIVE, as the SDK reports it
+     * @param right_stick_x turn, raw stick units; stick RIGHT is positive
+     * @param precision     hold-to-slow
+     * @param override      bypass the acceleration limiter and traction control
+     */
+    public void setDrivePowersSmoothArcade(double left_stick_x, double left_stick_y,
+                                           double right_stick_x,
+                                           boolean precision, boolean override) {
+
+        double dt = beginSmoothDrive();
+
+        // Shaped with the same curve and deadband as the tank path, so the feel matches.
+        // The Y negation matches the tank path: the SDK reports stick UP as negative.
+        double forward = shapeInput(-left_stick_y, DRIVE_DEADBAND);
+        double strafe  = ARCADE_STRAFE_SIGN * shapeInput(left_stick_x, DRIVE_DEADBAND);
+        double turn    = ARCADE_TURN_SIGN * shapeInput(right_stick_x, DRIVE_DEADBAND);
+
+        smoothDriveCore(forward, turn, strafe, dt, precision, override);
+    }
+
+    /**
+     * Sign flips for the arcade mapping, unitless, +1 or -1.
+     *
+     * These exist for the same reason FIELD_CENTRIC_SIGN and HEADING_HOLD_SIGN do: the chassis
+     * convention cannot be confirmed without driving the robot. If the robot strafes the wrong way
+     * when the left stick goes right, flip ARCADE_STRAFE_SIGN. If it turns the wrong way when the
+     * right stick goes right, flip ARCADE_TURN_SIGN. Both are dashboard-editable, so this is a
+     * five-second fix on the field rather than a rebuild.
+     */
+    public static double ARCADE_STRAFE_SIGN = 1.0;
+    public static double ARCADE_TURN_SIGN = 1.0;
+
+    /** Shared loop-timing step for both input mappings. Returns the clamped loop dt, seconds. */
+    private double beginSmoothDrive() {
+        double dt = driveTimer.seconds();
+        driveTimer.reset();
+        if (dt <= 0) dt = 0.001;
+        if (dt > 0.1) dt = 0.1;   // a breakpoint must not let the slew jump
+        return dt;
+    }
+
+    /**
+     * Everything after the sticks: field-centric rotation, strafe hold, mecanum kinematics,
+     * traction control, the acceleration limiter and the feedforward.
+     *
+     * Extracted verbatim out of setDrivePowersSmooth so that the tank and arcade entry points are
+     * guaranteed to behave identically rather than merely looking like they do. Nothing in here
+     * was changed by the extraction.
+     *
+     * @param forward  chassis forward command, shaped, -1..1
+     * @param turn     chassis turn command, shaped, -1..1
+     * @param strafe   chassis strafe command, shaped, -1..1, positive to the RIGHT
+     * @param dt       loop time, seconds
+     */
+    private void smoothDriveCore(double forward, double turn, double strafe, double dt,
+                                 boolean precision, boolean override) {
 
         double heading = drive.pose.heading.toDouble();
 

@@ -24,6 +24,6 @@ public class BiobuzzRobotConstants {
     //public static String interTransfer = "interTransfer";
     public static String flywheels = "flywheels";
     public static double
-        fixedShootingVel = 1100; // TODO: edit after testing shooting and tuning PIDF
+        fixedShootingVel = 1500; // TODO: edit after testing shooting and tuning PIDF
     //public static String hoodAdjuster = "hoodAdjuster";
 }

@@ -15,23 +15,51 @@ import org.firstinspires.ftc.teamcode.Biobuzz_subsystems.MecaTank;
 /**
  * Mecanum drive test opmode.
  *
- * CONTROLS - stick and trigger mapping and signs are UNCHANGED from the original
- *   Left stick Y ........ left side  (tank)
- *   Right stick Y ....... right side (tank)
- *   Left trigger ........ strafe left   - now COMBINES with the sticks instead of overriding them
- *   Right trigger ....... strafe right  - now COMBINES with the sticks instead of overriding them
+ * CONTROLS - ARCADE mapping, the conventional field-centric layout
+ *   Left stick X ........ strafe   (translation)
+ *   Left stick Y ........ forward  (translation)
+ *   Right stick X ....... turn
+ *   Triggers ............ unused for driving now; the left stick handles strafe
  *   Left bumper (hold) .. precision mode, 35%
  *   Right bumper (hold).. override - bypasses the accel limiter and traction control
- *   Y ................... toggle field centric      (default OFF - see sign note)
+ *   Y ................... toggle field centric      (now default ON - see below)
  *   X ................... toggle heading hold       (default OFF - see sign note)
  *   Back ................ reset the heading reference
+ *   Options ............. reset the heading reference (same action, thumb-reachable)
  *
  *
- * SIGN WARNING: field centric, heading hold and traction control default to OFF because the
- * correct rotation sign cannot be confirmed without driving the robot. Enable them one at a time
- * from the dashboard. For heading hold, lift the wheels off the ground and twist the chassis by
- * hand: the wheels should spin so as to UNDO the twist. If they fight to continue it, flip
- * MecaTank.HEADING_HOLD_SIGN to -1.
+ * INPUT MAPPING CHANGED: this opmode used to be TANK (left stick Y drove the left side, right
+ * stick Y the right side, triggers strafed). It is now ARCADE, because field-centric driving with
+ * a tank stick pair is close to unusable - "forward" stops being a direction the two sticks can
+ * express once the frame is rotating under them. The tank entry point still exists on MecaTank,
+ * unchanged, for anything already tuned against it.
+ *
+ * FIELD CENTRIC IS NOW THE DEFAULT. It is switched on at init below rather than left to the Y
+ * toggle, so the driver's stick directions are field-relative from the moment the opmode starts.
+ *
+ * The transform itself is NOT duplicated here. MecaTank.smoothDriveCore() already rotates the
+ * translation vector by the negative of the heading, sourcing that heading from the tuned localizer
+ * (drive.pose.heading) - see MecaTank step 3a. Re-applying the same rotation in this opmode would
+ * rotate the sticks TWICE and the robot would drive off at an angle that changed as it turned.
+ *
+ * "Forward" is defined by MecaTank.fieldCentricRef, not by the raw odometry heading, so resetting
+ * it re-zeroes the DRIVER's reference only and leaves odometry x/y and the pose estimate untouched.
+ * That is what Back and Options both do, via mecaTank.resetDriveHeading().
+ *
+ * SIGN WARNING - STILL UNVALIDATED, READ BEFORE THE FIRST DRIVE. Field centric, heading hold and
+ * traction control were all written with a rotation sign that has never been confirmed on the real
+ * robot. Field centric is now on by default, so check IT first: put the robot on blocks, drive the
+ * left stick forward, then rotate the chassis 90 degrees by hand. The commanded wheel direction
+ * should stay pointing the same way in the ROOM. If it instead swings the wrong way, flip
+ * MecaTank.FIELD_CENTRIC_SIGN to -1 from the dashboard. For heading hold, lift the wheels and twist
+ * the chassis by hand: the wheels should spin so as to UNDO the twist. If they fight to continue
+ * it, flip MecaTank.HEADING_HOLD_SIGN to -1.
+ *
+ * The arcade mapping adds two more unvalidated signs. On blocks: push the left stick RIGHT and the
+ * robot should strafe right - if not, flip MecaTank.ARCADE_STRAFE_SIGN. Push the right stick RIGHT
+ * and the robot should turn clockwise seen from above - if not, flip MecaTank.ARCADE_TURN_SIGN.
+ * Check these two BEFORE field centric, because a wrong translation sign will make the
+ * field-centric check above look broken when it is fine.
  */
 
 @Config
@@ -47,7 +75,7 @@ public class driveTesting extends LinearOpMode{
     public static double TELEMETRY_INTERVAL_MS = 200.0;
 
     private final ElapsedTime telemetryTimer = new ElapsedTime();
-    private boolean prevY, prevX, prevBack, prevA;
+    private boolean prevY, prevX, prevBack, prevA, prevOptions;
 
     @Override
     public void runOpMode() throws InterruptedException{
@@ -64,9 +92,25 @@ public class driveTesting extends LinearOpMode{
         // This opmode drives the pose estimate itself, and only when a feature actually needs it.
         mecaTank.setAutoPoseUpdate(false);
 
-        telemetry.addLine("MECANUM DRIVE TEST");
+        // FIELD CENTRIC ON BY DEFAULT. This is the whole of the change - the rotation is already
+        // implemented inside MecaTank.smoothDriveCore(), which reads drive.pose.heading from
+        // the tuned localizer every loop. Switching the flag on here also makes
+        // smoothDriveNeedsPose() return true, which is what causes updatePoseEstimate() to run each
+        // loop below, so the heading the transform uses is never a loop stale.
+        //
+        // Y still toggles it off for back-to-back comparison while validating the sign.
+        MecaTank.FIELD_CENTRIC = true;
+
+        // Define "forward" as wherever the robot is pointing when the opmode starts. Without this
+        // the reference is whatever a previous opmode left in the static, which is a confusing way
+        // to start a match.
+        mecaTank.updatePoseEstimate();
+        mecaTank.resetDriveHeading();
+
+        telemetry.addLine("MECANUM DRIVE TEST - FIELD CENTRIC");
         telemetry.addLine("LB = precision   RB = override");
-        telemetry.addLine("Y = field centric   X = heading hold   Back = reset heading");
+        telemetry.addLine("Y = field centric (ON)   X = heading hold");
+        telemetry.addLine("Back / Options = reset heading reference");
         telemetry.addLine("A = translation hold (straight strafe while turning)");
         telemetry.update();
 
@@ -91,11 +135,16 @@ public class driveTesting extends LinearOpMode{
             if (gamepad1.y && !prevY) MecaTank.FIELD_CENTRIC = !MecaTank.FIELD_CENTRIC;
             if (gamepad1.x && !prevX) MecaTank.HEADING_HOLD = !MecaTank.HEADING_HOLD;
             if (gamepad1.a && !prevA) MecaTank.TRANSLATION_HOLD = !MecaTank.TRANSLATION_HOLD;
+            // Heading reset on either button. Re-zeroes the DRIVER's field-centric reference
+            // (MecaTank.fieldCentricRef) so the driver can redefine "forward"; odometry x/y and the
+            // pose estimate are not touched, so autos and the turret's geometry stay valid.
             if (gamepad1.back && !prevBack) mecaTank.resetDriveHeading();
+            if (gamepad1.options && !prevOptions) mecaTank.resetDriveHeading();
             prevY = gamepad1.y;
             prevX = gamepad1.x;
             prevA = gamepad1.a;
             prevBack = gamepad1.back;
+            prevOptions = gamepad1.options;
 
             // ALL FOUR WHEELS REVERSED, relative to what this opmode used to do.
             //
@@ -109,9 +158,15 @@ public class driveTesting extends LinearOpMode{
             //
             // This also brings the opmode in line with the rest of the codebase: every other
             // opmode already passes these four values un-negated.
-            mecaTank.setDrivePowersSmooth(
-                    gamepad1.left_stick_y, gamepad1.right_stick_y,
-                    gamepad1.left_trigger, gamepad1.right_trigger,
+            // ARCADE mapping: LEFT stick translates (x = strafe, y = forward), RIGHT stick turns.
+            // This is the conventional field-centric layout. Everything downstream of the sticks is
+            // the same code the tank mapping used - see MecaTank.smoothDriveCore() - so the curve,
+            // the field-centric rotation, traction control and the accel limiter are unchanged.
+            //
+            // The triggers no longer strafe; the left stick's X axis does. They are free now.
+            mecaTank.setDrivePowersSmoothArcade(
+                    gamepad1.left_stick_x, gamepad1.left_stick_y,
+                    gamepad1.right_stick_x,
                     gamepad1.left_bumper, gamepad1.right_bumper);
 
             double now = System.nanoTime();
