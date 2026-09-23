@@ -6,6 +6,7 @@ import com.acmerobotics.dashboard.FtcDashboard;
 import com.acmerobotics.dashboard.config.Config;
 import com.acmerobotics.dashboard.telemetry.MultipleTelemetry;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
+import com.qualcomm.hardware.rev.RevColorSensorV3;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.hardware.DistanceSensor;
 import com.qualcomm.robotcore.hardware.Light;
@@ -17,7 +18,7 @@ import com.qualcomm.robotcore.util.ElapsedTime;
 import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit;
 
 /**
- * REV Color Sensor V2 game-element classifier and counter for BIOBUZZ (2026-27).
+ * REV Color Sensor V3 game-element classifier and counter for BIOBUZZ (2026-27).
  *
  * Sorts whatever is in front of the sensor into one of three game elements by hue, and keeps a
  * running count of how many separate pieces have passed it. The count is the point: it is what an
@@ -26,35 +27,56 @@ import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit;
  *
  * HARDWARE
  * --------
- * One REV Color Sensor V2, configured in the robot config as "REV Color/Range Sensor" with the
- * name {@link #SENSOR_NAME}. Nothing else - no drivetrain, no intake. Safe to run on a bench with
- * the sensor in your hand.
+ * One REV Color Sensor V3, configured in the robot config as "REV Color Sensor V3" with the name
+ * {@link #SENSOR_NAME}. Nothing else - no drivetrain, no intake. Safe to run on a bench with the
+ * sensor in your hand.
  *
- * Under the hood the V2 is the SDK's LynxI2cColorRangeSensor, an AMS TCS34725 colour chip plus a
- * reflectance-based proximity reading. Both halves are used here: colour through
- * {@link NormalizedColorSensor}, and proximity through {@link DistanceSensor} as a gate. Neither is
- * reached by its concrete class, so this opmode also runs unmodified on a V3.
+ * CHECK THE CONFIGURATION TYPE FIRST. The V2 and the V3 are DIFFERENT entries on the Driver
+ * Station: the V2 is "REV Color/Range Sensor" and the V3 is "REV Color Sensor V3". They load
+ * different drivers for different chips and are not interchangeable. If the config still says
+ * V2 while a V3 is plugged in, the readings will be wrong or absent long before any threshold here
+ * matters. This is the first thing to fix after swapping the hardware.
  *
- * THREE WAYS THE V2 DIFFERS FROM THE V3 THAT ACTUALLY MATTER HERE
- * ---------------------------------------------------------------
- * 1. ITS DISTANCE IS REFLECTANCE, NOT TIME OF FLIGHT. getDistance() is a curve fit over the raw
- *    optical reading, so how far away a thing measures depends on how much light it bounces back -
- *    which is to say, on its colour. A dark red nectar reads as FURTHER AWAY than a yellow pollen
- *    sitting at the same physical distance. A proximity gate tuned against yellow will therefore
+ * Under the hood the V3 is the SDK's RevColorSensorV3, a Broadcom APDS-9151 - a different chip
+ * from the V2's AMS TCS34725, with its own driver stack (BroadcomColorSensorImpl rather than
+ * AMSColorSensorImpl). Colour is read through {@link NormalizedColorSensor} and proximity through
+ * {@link DistanceSensor}, both generic interfaces, so the sensing code itself is unchanged.
+ *
+ * WHAT CHANGED COMING BACK FROM THE V2
+ * ------------------------------------
+ * 1. THE HUE THRESHOLDS ARE NOW SUSPECT AND MUST BE RE-MEASURED. This is the important one. The
+ *    bands below were measured on the V2's TCS34725. The V3's APDS-9151 has a different spectral
+ *    response, so the same physical piece reports a different hue. Nothing will crash; the counts
+ *    will just be wrong in ways that look like a logic bug. Hold each element at the working
+ *    distance on the init screen, read the H value off telemetry, and reset the bands from what
+ *    you actually see before trusting a single count.
+ *
+ * 2. THE LED CAN NOW BE SWITCHED FROM CODE, and this opmode does it (press X while running).
+ *    Neither sensor implements SwitchableLight, so the generic interface route does not work, but
+ *    the concrete RevColorSensorV3 inherits a public enableLed(boolean) from
+ *    BroadcomColorSensorImpl. That is why this file now holds a {@link RevColorSensorV3} reference
+ *    alongside the generic one. Turning the LED off is a genuine diagnostic: if the classification
+ *    barely changes with it off, the sensor is reading room light rather than the element, and the
+ *    real fix is a shroud or a shorter working distance.
+ *
+ * 3. DISTANCE IS STILL REFLECTANCE, NOT TIME OF FLIGHT. The V3's proximity comes from its own IR
+ *    channel rather than the colour channels, so it is cleaner than the V2's, but it is still
+ *    measuring how much light bounces back. A dark red nectar therefore reads as FURTHER AWAY than
+ *    a yellow pollen at the same physical distance, and a proximity gate tuned against yellow will
  *    quietly reject red. Tune MAX_DISTANCE_MM against the DARKEST element you care about, or press
- *    Y to switch the gate off and let the V floor do the work alone. This is the single most
+ *    Y to switch the gate off and let the V floor do the work alone. This is still the single most
  *    likely reason for "it counts pollen fine but never sees nectar".
  *
- * 2. ITS LED IS NOT SWITCHABLE FROM CODE. In SDK 10.1 neither the V2 nor the V3 implements
- *    SwitchableLight - they implement the read-only Light, so the LED state can be reported but
- *    not changed. The telemetry says which you have; there is no toggle because there is nothing
- *    to toggle. The LED is on, and readings are therefore already independent of venue lighting.
+ *    The V3's useful proximity span is roughly 10-100 mm and its driver caps the reported value at
+ *    an internal maxDist, so anything past that pins rather than rising smoothly. Do not read a
+ *    large steady number as "far away"; read it as "out of range".
  *
- * 3. setGain() IS A SOFTWARE MULTIPLIER, not the chip's hardware gain. It scales R, G and B by the
- *    same factor inside getNormalizedColors(). That is good news for the thresholds - scaling all
- *    three channels equally leaves H and S untouched and moves only V - but it means gain
- *    amplifies sensor noise along with signal, so the smallest gain that clears the V floor is the
- *    right one.
+ * 4. setGain() IS STILL A SOFTWARE MULTIPLIER on both sensors, not the chip's hardware gain. It
+ *    scales R, G and B by the same factor inside getNormalizedColors(). That is good news for the
+ *    thresholds - scaling all three channels equally leaves H and S untouched and moves only V -
+ *    but it means gain amplifies sensor noise along with signal, so the smallest gain that clears
+ *    the V floor is the right one. Expect to re-tune GAIN for the V3 as well: a different chip at
+ *    the same gain lands at a different V.
  *
  * CONTROLS
  * --------
@@ -62,6 +84,7 @@ import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit;
  *           X ......... alliance = BLUE
  *   RUN     A ......... reset the counts to zero
  *           Y ......... toggle the proximity gate
+ *           X ......... toggle the sensor's white LED (V3 only)
  *
  * HOW A "DETECTION" IS DEFINED
  * ----------------------------
@@ -97,7 +120,8 @@ import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit;
  * 1.00. A clipped channel destroys the hue, because hue is defined by the RATIO between channels,
  * and two different colours that both clip red become the same hue with no way back.
  *
- * H is 0-360 degrees, S and V are 0-1, matching the V2 thresholds measured for the season:
+ * H is 0-360 degrees, S and V are 0-1. The bands below are the ones measured on the OLD V2 and
+ * are kept only as a starting point - see point 1 above, they need re-measuring on the V3:
  *
  *   Red nectar ...... H <= 20 or H >= 340   (the hue wheel wraps through 0 at red)
  *   Blue nectar ..... 170 <= H <= 250
@@ -113,15 +137,16 @@ import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit;
  * {@link #COUNT_OPPONENT_NECTAR} true.
  */
 @Config
-@TeleOp(name = "Color Sensor V2 Testing (Pollen/Nectar)", group = "testing")
+@TeleOp(name = "Color Sensor V3 Testing (Pollen/Nectar)", group = "testing")
 public class colorSensorTesting extends LinearOpMode {
 
-    /** Robot-config name of the REV Color Sensor V2 ("REV Color/Range Sensor"). */
+    /** Robot-config name of the REV Color Sensor V3 (config type "REV Color Sensor V3"). */
     public static String SENSOR_NAME = "colorSensor";
 
     // ---- hue / saturation / value bands ----------------------------------------------------
     // H in degrees 0-360, S and V in 0-1, as produced by Color.colorToHSV().
-    // Measured on a REV Color Sensor V2 - a V3 reads slightly differently, see the class header.
+    // TODO-REMEASURE: these were measured on the V2's AMS TCS34725. The V3's Broadcom APDS-9151
+    // has a different spectral response and will report different hues for the same elements.
 
     /** Red wraps through 0, so it needs two bounds instead of a low/high pair. */
     public static double RED_H_MAX = 20;    // H <= this counts as red ...
@@ -149,8 +174,13 @@ public class colorSensorTesting extends LinearOpMode {
     /**
      * Anything read further away than this is treated as empty, whatever colour it looks like.
      *
-     * Deliberately generous for the V2, whose distance reading is reflectance-based and so reads
-     * dark elements as further away than bright ones. Tune it against red nectar, not yellow.
+     * Still reflectance-based on the V3, so dark elements read as further away than bright ones.
+     * Tune it against red nectar, not yellow.
+     *
+     * TODO-RETUNE for the V3, whose useful span is roughly 10-100 mm and whose driver pins the
+     * reading at an internal maxDist beyond that. 100 mm sits right at the top of that span, so
+     * this gate is currently close to no gate at all. Measure what a piece actually reads at the
+     * working distance and set this a little above it.
      */
     public static double MAX_DISTANCE_MM = 100.0;
 
@@ -172,6 +202,19 @@ public class colorSensorTesting extends LinearOpMode {
 
     private NormalizedColorSensor colorSensor;
     private DistanceSensor distanceSensor;   // null if this sensor has no range half
+
+    /**
+     * The same device as {@link #colorSensor}, typed concretely, or null if what is plugged in is
+     * not a V3. Held ONLY for enableLed(): that method lives on the concrete Broadcom driver and
+     * is not reachable through NormalizedColorSensor, and neither REV sensor implements
+     * SwitchableLight. Every actual reading still goes through the generic interfaces, so a
+     * mis-configured or swapped sensor costs the LED toggle and nothing else.
+     */
+    private RevColorSensorV3 revV3;
+
+    /** Desired LED state. The sensor powers up with it on, which is what the thresholds assume. */
+    private boolean ledOn = true;
+
     private Alliance alliance = Alliance.RED;
 
     // ---- the counts, kept as fields so another opmode can read them straight off this class --
@@ -189,7 +232,7 @@ public class colorSensorTesting extends LinearOpMode {
     private final ElapsedTime clearTimer = new ElapsedTime();    // how long NONE has held
 
     private final ElapsedTime telemetryTimer = new ElapsedTime();
-    private boolean prevA, prevY;
+    private boolean prevA, prevY, prevX;
     private boolean prevInitB, prevInitX;
 
     // Scratch array for Color.colorToHSV, reused every loop - allocating a new float[3] a few
@@ -211,10 +254,15 @@ public class colorSensorTesting extends LinearOpMode {
         colorSensor = hardwareMap.get(NormalizedColorSensor.class, SENSOR_NAME);
         colorSensor.setGain(GAIN);
 
-        // The V2 reports distance too, but a bare colour sensor configured under the same name
+        // The V3 reports proximity too, but a bare colour sensor configured under the same name
         // would not. Asking for the cast rather than assuming it means a wrong config entry
         // degrades to "no proximity gate" instead of crashing on the first loop.
         distanceSensor = (colorSensor instanceof DistanceSensor) ? (DistanceSensor) colorSensor : null;
+
+        // Same check, same reason, for the LED. A V2 left in the config, or a plain colour sensor,
+        // leaves this null and simply disables the X toggle rather than failing at runtime.
+        revV3 = (colorSensor instanceof RevColorSensorV3) ? (RevColorSensorV3) colorSensor : null;
+        setLed(ledOn);
 
         // ---- INIT LOOP: pick the alliance ---------------------------------------------------
         // This has to be a loop rather than a bare waitForStart(), because the answer comes from
@@ -250,6 +298,10 @@ public class colorSensorTesting extends LinearOpMode {
         waitForStart();
         if (isStopRequested()) return;
 
+        // Seed the edge detector from the CURRENT state. X selects BLUE on the init screen, so
+        // without this a driver still holding X at START would immediately toggle the LED off.
+        prevX = gamepad1.x;
+
         stableTimer.reset();
         clearTimer.reset();
         telemetryTimer.reset();
@@ -258,11 +310,14 @@ public class colorSensorTesting extends LinearOpMode {
 
             boolean aPressed = gamepad1.a && !prevA;
             boolean yPressed = gamepad1.y && !prevY;
+            boolean xPressed = gamepad1.x && !prevX;
             prevA = gamepad1.a;
             prevY = gamepad1.y;
+            prevX = gamepad1.x;
 
             if (aPressed) resetCounts();
             if (yPressed) USE_DISTANCE_GATE = !USE_DISTANCE_GATE;
+            if (xPressed) setLed(!ledOn);
 
             colorSensor.setGain(GAIN);
 
@@ -286,7 +341,7 @@ public class colorSensorTesting extends LinearOpMode {
                 telemetry.addData("Armed", armed ? "yes - ready to count"
                         : "no - waiting for the sensor to clear");
                 telemetry.addLine();
-                telemetry.addLine("A = reset counts   Y = proximity gate");
+                telemetry.addLine("A = reset counts   Y = proximity gate   X = LED");
                 telemetry.update();
                 telemetryTimer.reset();
             }
@@ -314,11 +369,11 @@ public class colorSensorTesting extends LinearOpMode {
     /**
      * Distance in mm, or {@link Double#MAX_VALUE} when there is no usable reading.
      *
-     * On the V2 this is a curve fit over the raw optical reading, and the fit can go imaginary when
-     * almost nothing is reflected back - which surfaces as NaN. Both NaN and "no sensor" have to
-     * collapse to a large number rather than being passed through, because every comparison
-     * against NaN is false, so a raw NaN would slip through the gate's `>` test and be treated as
-     * close enough to classify.
+     * On the V3 this is a curve fit (inFromOptical) over the raw IR proximity reading, and the fit
+     * can go imaginary when almost nothing is reflected back - which surfaces as NaN. Both NaN and
+     * "no sensor" have to collapse to a large number rather than being passed through, because
+     * every comparison against NaN is false, so a raw NaN would slip through the gate's `>` test
+     * and be treated as close enough to classify.
      */
     private double readDistanceMm() {
         if (distanceSensor == null) return Double.MAX_VALUE;
@@ -404,6 +459,26 @@ public class colorSensorTesting extends LinearOpMode {
         if (ours || COUNT_OPPONENT_NECTAR) totalCount++;
     }
 
+    /**
+     * Turns the sensor's white illumination LED on or off.
+     *
+     * Goes through the concrete {@link RevColorSensorV3}, because enableLed() is not on any generic
+     * interface and neither REV sensor implements SwitchableLight. Falls back to SwitchableLight
+     * for any other device that does implement it, and is a silent no-op when neither applies, so
+     * nothing here can fail on a swapped sensor.
+     *
+     * Remember that the thresholds were measured with the LED ON. Turning it off is a diagnostic,
+     * not a mode: every band below will need different numbers under ambient light alone.
+     */
+    private void setLed(boolean on) {
+        ledOn = on;
+        if (revV3 != null) {
+            revV3.enableLed(on);
+        } else if (colorSensor instanceof SwitchableLight) {
+            ((SwitchableLight) colorSensor).enableLight(on);
+        }
+    }
+
     private void resetCounts() {
         totalCount = 0;
         pollenCount = 0;
@@ -439,7 +514,7 @@ public class colorSensorTesting extends LinearOpMode {
         } else if (lastDistanceMm == Double.MAX_VALUE) {
             telemetry.addData("Distance", "out of range");
         } else {
-            telemetry.addData("Distance", "%.1f mm (reflectance - darker reads further)",
+            telemetry.addData("Distance", "%.1f mm (IR reflectance - darker reads further)",
                     lastDistanceMm);
         }
 
@@ -449,14 +524,27 @@ public class colorSensorTesting extends LinearOpMode {
             telemetry.addData("Proximity gate", "OFF");
         }
 
-        // Read-only on the V2 and the V3 alike: the SDK exposes Light, not SwitchableLight, so
-        // there is a state to report but no switch to throw. Reported anyway because a dark LED
-        // is a real failure mode and this is the only place it would show up.
-        if (colorSensor instanceof SwitchableLight) {
-            telemetry.addData("LED", ((Light) colorSensor).isLightOn() ? "on" : "OFF");
-        } else if (colorSensor instanceof Light) {
-            telemetry.addData("LED", "%s (fixed - not switchable from code)",
-                    ((Light) colorSensor).isLightOn() ? "on" : "OFF");
+        // The LED state is read back from the device rather than echoed from our own flag, so a
+        // driver that silently refused the write shows up here instead of being believed. A dark
+        // LED is a real failure mode and this is the only place it would surface.
+        String ledState = (colorSensor instanceof Light)
+                ? (((Light) colorSensor).isLightOn() ? "on" : "OFF")
+                : "unknown";
+
+        if (revV3 != null) {
+            telemetry.addData("LED", "%s  (X toggles)", ledState);
+        } else if (colorSensor instanceof SwitchableLight) {
+            telemetry.addData("LED", "%s  (X toggles)", ledState);
+        } else {
+            telemetry.addData("LED", "%s  (no control on this device)", ledState);
         }
+
+        // Says outright whether a V3 is really what is plugged in. Getting this wrong is the most
+        // likely single cause of bad readings after swapping sensors, and it is invisible
+        // otherwise - a V2 under a V3 config still returns numbers, just wrong ones.
+        telemetry.addData("Driver", revV3 != null
+                ? "RevColorSensorV3 - correct"
+                : "NOT a V3: " + colorSensor.getClass().getSimpleName()
+                  + " - check the config type is 'REV Color Sensor V3'");
     }
 }

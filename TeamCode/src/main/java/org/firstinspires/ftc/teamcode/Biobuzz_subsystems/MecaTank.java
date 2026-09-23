@@ -663,7 +663,7 @@ public class MecaTank extends Subsystem {
 
     /** Rotates the (forward, strafe) command into field frame. Same sign caveat as above. */
     public static boolean FIELD_CENTRIC = false;
-    public static double FIELD_CENTRIC_SIGN = 1.0;
+    public static double FIELD_CENTRIC_SIGN = -1.0;
 
     /**
      * Keeps the robot travelling in a straight FIELD-frame line while it rotates underneath.
