@@ -554,8 +554,99 @@ public class MecaTank extends Subsystem {
      */
     public static double LATERAL_GAIN = 1.5;
 
-    /** Acceleration limit in command units per second. Deceleration is NOT limited. */
-    public static double ACCEL_LIMIT = 6.0;
+    /**
+     * Acceleration limit in command units per second, used when a command is growing in magnitude.
+     * Unchanged - this is the number that was already tuned for feel.
+     */
+    public static double ACCEL_LIMIT = 3.0;
+
+    // ---- Belt-drive protection ------------------------------------------------------------------
+    //
+    // A toothed belt transmits torque through a handful of teeth in mesh. Its weak point is not
+    // steady load, it is a fast CHANGE of load, and the worst change of all is a reversal: the
+    // slack side of the belt becomes the tight side, the backlash in the pulleys takes up all at
+    // once, and for a few milliseconds every bit of that torque lands on the tooth flanks. If the
+    // peak beats what the teeth can carry, the belt ratchets a tooth - that is the grinding noise.
+    //
+    // The same instant is a current spike. Commanding reverse while the robot is still rolling
+    // forward puts the supply voltage and the motor's back-EMF in series across the windings, so
+    // the current approaches stall current on all four motors at once. That is the voltage sag, and
+    // the hub's current limiting is the brief slowdown that follows.
+    //
+    // Software cannot make a belt stronger. What it can do is stop the command from asking for the
+    // torque step in the first place, which is what everything below does.
+
+    /**
+     * Deceleration limit in command units per second - how fast a command may SHRINK.
+     *
+     * Previously deceleration was not limited at all, on the theory that slowing down is always
+     * safe. For a geared or chain drive that is true. For a BELT drive it is not: dropping the
+     * command quickly while the robot is still moving hands the load over to the robot's own
+     * inertia back-driving the motor, which flips which face of each belt tooth is carrying, and
+     * does it in one loop. Limiting it costs almost nothing in feel and removes a torque reversal
+     * from every single stick release.
+     *
+     * Higher than ACCEL_LIMIT on purpose. Shedding torque is still gentler than applying it, and
+     * making stops sluggish is a good way to get a driver to turn this off.
+     */
+    public static double DECEL_LIMIT = 3.5;
+
+    /**
+     * Rate limit in command units per second while a command is CROSSING ZERO, i.e. genuinely
+     * reversing direction.
+     *
+     * Kept separate from ACCEL_LIMIT because a reversal is not the same event as a standing start.
+     * From rest the motor sees supply voltage alone; reversing while rolling, it sees supply plus
+     * back-EMF, so roughly twice the current and roughly twice the torque step for the same
+     * commanded change. Lower this first if the grinding persists.
+     */
+    public static double REVERSAL_LIMIT = 3.0;
+
+    /**
+     * How long the command is pinned at exactly zero on the way through a reversal, MILLISECONDS.
+     *
+     * This is the specific anti-tooth-skip measure. Ramping smoothly through zero still means the
+     * belt goes from loaded one way to loaded the other with no unloaded interval, so the backlash
+     * is taken up while torque is already being applied. Pausing at zero lets the belt go slack,
+     * the pulley backlash settle, and the back-EMF decay, before any torque is applied the other
+     * way.
+     *
+     * 40 ms is about two control loops - long enough to unload, short enough that a driver cannot
+     * feel it. Set to 0 to disable. Raise it before lowering REVERSAL_LIMIT if the noise is a
+     * distinct single click rather than a sustained rasp.
+     */
+    public static double REVERSAL_DWELL_MS = 40.0;
+
+    /**
+     * Hard cap on how fast any single WHEEL's motor power may change, power units per second.
+     * Zero or negative disables it.
+     *
+     * The three limits above act on the chassis axes, which is right for preserving the commanded
+     * direction but leaves a gap: a wheel power is a SUM of those axes, so two axes each moving
+     * within their own limits can still swing one wheel much faster than either. Holding forward at
+     * +0.2 and snapping turn to +0.8 reverses the right-hand wheels without either axis ever
+     * changing sign. This is the backstop that catches those combinations, and it sits on the final
+     * motor powers, which is the quantity that actually sets motor current.
+     *
+     * Applied as a UNIFORM scaling of all four wheel deltas rather than per wheel. Clamping wheels
+     * individually would change the ratio between them, which is a change of driving DIRECTION
+     * mid-transient; scaling the whole step keeps the robot moving the way the driver asked and
+     * only slows how fast it gets there.
+     *
+     * Deliberately looser than the axis limits so it only bites on genuine combined transients and
+     * stays out of the way of normal driving.
+     */
+    public static double WHEEL_POWER_SLEW = 8.0;
+
+    /**
+     * Whether the wheel-power backstop stays active while the override button is held.
+     *
+     * True by default, and that is a deliberate difference from the other limiters. Override exists
+     * so a driver can shove in a pushing match without the accel limiter fighting them, which is
+     * about FEEL. This one is about not shearing belt teeth, and a pushing match is exactly when
+     * the drivetrain is most loaded. Set false to restore the old all-or-nothing behaviour.
+     */
+    public static boolean WHEEL_SLEW_DURING_OVERRIDE = true;
 
     /** Scaling while the precision button is held. */
     public static double PRECISION_SCALE = 0.35;
@@ -725,7 +816,27 @@ public class MecaTank extends Subsystem {
 
     // --- state ---------------------------------------------------------------------------------
     private final ElapsedTime driveTimer = new ElapsedTime();
-    private double prevForward = 0, prevStrafe = 0, prevTurn = 0;
+    /**
+     * Rate-limiter state for one chassis axis: the last command issued, plus any zero-dwell still
+     * owed. Per axis because forward, strafe and turn reverse independently.
+     */
+    private static final class AxisLimiter {
+        double prev = 0.0;
+        double dwellRemainingS = 0.0;
+        /** Sign the axis was travelling in when the dwell began; 0 when no dwell is running. */
+        double dwellFromSign = 0.0;
+    }
+
+    private final AxisLimiter limForward = new AxisLimiter();
+    private final AxisLimiter limStrafe = new AxisLimiter();
+    private final AxisLimiter limTurn = new AxisLimiter();
+
+    /** Last motor powers actually written, for the wheel-level backstop. */
+    private double prevFl = 0, prevBl = 0, prevFr = 0, prevBr = 0;
+
+    /** Telemetry only: true on any loop where a limiter actually held the command back. */
+    private boolean axisLimitActive = false;
+    private boolean wheelLimitActive = false;
     private double headingSetpoint = 0;
     private boolean headingLatched = false;
     private double slipScale = 1.0;
@@ -991,12 +1102,11 @@ public class MecaTank extends Subsystem {
 
         // 6. Acceleration limit, applied on the chassis axes so the commanded DIRECTION is not
         //    distorted the way per-wheel limiting would distort it.
-        forward = slew(prevForward, forward, dt, override);
-        strafe = slew(prevStrafe, strafe, dt, override);
-        turn = slew(prevTurn, turn, dt, override);
-        prevForward = forward;
-        prevStrafe = strafe;
-        prevTurn = turn;
+        axisLimitActive = false;
+        wheelLimitActive = false;
+        forward = slew(limForward, forward, dt, override);
+        strafe = slew(limStrafe, strafe, dt, override);
+        turn = slew(limTurn, turn, dt, override);
 
         // 6b. Heading hold goes on AFTER the slew, and after prev* has been stored.
         //
@@ -1073,10 +1183,17 @@ public class MecaTank extends Subsystem {
             br = feedforwardPower(br);
         }
 
-        frontLeft.setDrivePower(fl * MAX_DRIVE_SPEED);
-        backLeft.setDrivePower(bl * MAX_DRIVE_SPEED);
-        frontRight.setDrivePower(fr * MAX_DRIVE_SPEED);
-        backRight.setDrivePower(br * MAX_DRIVE_SPEED);
+        // 11. Belt-drive backstop on the FINAL motor powers. Last thing before the hardware, so
+        //     nothing upstream - axis limits, heading hold, traction control, the feedforward -
+        //     can route around it. Power is the right quantity to limit here because motor current,
+        //     and therefore belt torque, follows the applied voltage directly.
+        double[] wheels = {fl, bl, fr, br};
+        limitWheelPowerRate(wheels, dt, override);
+
+        frontLeft.setDrivePower(wheels[0] * MAX_DRIVE_SPEED);
+        backLeft.setDrivePower(wheels[1] * MAX_DRIVE_SPEED);
+        frontRight.setDrivePower(wheels[2] * MAX_DRIVE_SPEED);
+        backRight.setDrivePower(wheels[3] * MAX_DRIVE_SPEED);
     }
 
     /**
@@ -1137,18 +1254,120 @@ public class MecaTank extends Subsystem {
         return Math.copySign(curved, x);
     }
 
-    /** Limits acceleration only. Slowing down toward zero is always instant. */
-    private double slew(double prev, double target, double dt, boolean bypass) {
-        if (bypass) return target;
-        // Same direction and smaller magnitude = decelerating. Let it through untouched.
-        if (Math.signum(target) == Math.signum(prev) && Math.abs(target) <= Math.abs(prev)) {
+    /**
+     * Rate-limits one chassis axis, with a separate limit for speeding up, slowing down and
+     * reversing, plus a brief pause at zero on the way through a reversal.
+     *
+     * A reversal is handled as TWO moves, never one: drive the command to exactly zero, pause there
+     * for REVERSAL_DWELL_MS, and only then build up in the new direction. Going straight through
+     * zero in one ramp would mean the belt is loaded one way and then the other with no unloaded
+     * interval between, so the pulley backlash gets taken up while torque is already applied - and
+     * that is the moment a tooth skips.
+     *
+     * @param st     this axis's own state; updated in place
+     * @param bypass the override button - skips limiting entirely and resyncs the state, so
+     *               releasing override does not produce a jump from a stale reference
+     */
+    private double slew(AxisLimiter st, double target, double dt, boolean bypass) {
+        if (bypass) {
+            st.prev = target;
+            st.dwellRemainingS = 0.0;
+            st.dwellFromSign = 0.0;
             return target;
         }
-        double maxStep = ACCEL_LIMIT * dt;
-        double delta = target - prev;
-        if (delta > maxStep) delta = maxStep;
-        else if (delta < -maxStep) delta = -maxStep;
-        return prev + delta;
+
+        double prev = st.prev;
+        double out;
+
+        // A dwell in progress outranks everything else. It ends early if the driver changes their
+        // mind and asks for the ORIGINAL direction again, because there is no reversal left to
+        // protect against and holding zero would just feel like a dropout.
+        if (st.dwellRemainingS > 0.0) {
+            st.dwellRemainingS -= dt;
+
+            // Compared against the direction the axis was travelling in when the dwell STARTED,
+            // not against prev - prev is zero all the way through a dwell, so its sign carries no
+            // information and comparing with it would make the dwell impossible to leave early.
+            boolean wantsOldDirection = (target != 0.0)
+                    && (Math.signum(target) == st.dwellFromSign);
+
+            if (st.dwellRemainingS > 0.0 && !wantsOldDirection) {
+                st.prev = 0.0;
+                axisLimitActive = true;
+                return 0.0;
+            }
+            st.dwellRemainingS = 0.0;
+            st.dwellFromSign = 0.0;
+            prev = 0.0;
+        }
+
+        // Strictly opposite signs, both non-zero: a real reversal, not a pass through zero.
+        boolean reversing = (prev * target) < 0.0;
+
+        if (reversing) {
+            double step = Math.max(1e-9, REVERSAL_LIMIT) * dt;
+            if (Math.abs(prev) <= step) {
+                // Close enough to zero to land on it this loop. Stop here and start the dwell.
+                out = 0.0;
+                st.dwellRemainingS = Math.max(0.0, REVERSAL_DWELL_MS / 1000.0);
+                st.dwellFromSign = Math.signum(prev);
+            } else {
+                out = prev - Math.copySign(step, prev);   // walk toward zero, never past it
+            }
+            axisLimitActive = true;
+        } else {
+            boolean decelerating = Math.abs(target) < Math.abs(prev);
+            double limit = decelerating ? DECEL_LIMIT : ACCEL_LIMIT;
+            double step = Math.max(1e-9, limit) * dt;
+            double delta = target - prev;
+            if (delta > step) {
+                delta = step;
+                axisLimitActive = true;
+            } else if (delta < -step) {
+                delta = -step;
+                axisLimitActive = true;
+            }
+            out = prev + delta;
+        }
+
+        st.prev = out;
+        return out;
+    }
+
+    /**
+     * Caps how fast the four motor powers may change, as a backstop behind the per-axis limits.
+     *
+     * Scales the whole four-wheel step by one common factor instead of clamping wheels one by one.
+     * That distinction matters: clamping individually changes the ratios between the wheels, which
+     * is a change of driving direction partway through the transient, and the robot would visibly
+     * veer while recovering. Scaling the step uniformly moves the command along the straight line
+     * from where it was to where it was asked to go, so only the speed of the change is affected.
+     *
+     * @param w   the four powers, in place, as {fl, bl, fr, br}
+     */
+    private void limitWheelPowerRate(double[] w, double dt, boolean override) {
+        if (WHEEL_POWER_SLEW <= 0.0 || (override && !WHEEL_SLEW_DURING_OVERRIDE)) {
+            prevFl = w[0]; prevBl = w[1]; prevFr = w[2]; prevBr = w[3];
+            return;
+        }
+
+        double step = WHEEL_POWER_SLEW * dt;
+        double dFl = w[0] - prevFl, dBl = w[1] - prevBl;
+        double dFr = w[2] - prevFr, dBr = w[3] - prevBr;
+
+        double worst = Math.max(Math.max(Math.abs(dFl), Math.abs(dBl)),
+                                Math.max(Math.abs(dFr), Math.abs(dBr)));
+
+        if (worst > step && worst > 1e-9) {
+            double k = step / worst;
+            w[0] = prevFl + dFl * k;
+            w[1] = prevBl + dBl * k;
+            w[2] = prevFr + dFr * k;
+            w[3] = prevBr + dBr * k;
+            wheelLimitActive = true;
+        }
+
+        prevFl = w[0]; prevBl = w[1]; prevFr = w[2]; prevBr = w[3];
     }
 
     /** in/s the drivetrain can currently reach, from the feedforward model and live voltage. */
@@ -1223,6 +1442,15 @@ public class MecaTank extends Subsystem {
         telemetry.addData("Drive strafe", lastStrafe);
         telemetry.addData("Drive turn", lastTurn);
         telemetry.addData("Drive voltage", getDriveVoltage());
+        // Watch these while provoking the grinding. If neither says ACTIVE at the moment it
+        // happens, the command was never the problem and the fault is mechanical - go and check
+        // belt tension and pulley set screws rather than turning these numbers down further.
+        telemetry.addData("Belt guard", "axis %s   wheel %s",
+                axisLimitActive ? "ACTIVE" : "-", wheelLimitActive ? "ACTIVE" : "-");
+        telemetry.addData("Dwell (fwd/str/turn ms)", "%.0f / %.0f / %.0f",
+                limForward.dwellRemainingS * 1000.0,
+                limStrafe.dwellRemainingS * 1000.0,
+                limTurn.dwellRemainingS * 1000.0);
         telemetry.addData("Drive vMax (in/s)", commandedMaxVel());
         telemetry.addData("Slip scale", slipScale);
         telemetry.addData("Heading (deg)", Math.toDegrees(drive.pose.heading.toDouble()));
