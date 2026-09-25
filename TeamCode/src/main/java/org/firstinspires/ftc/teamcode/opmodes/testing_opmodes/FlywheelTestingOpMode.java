@@ -168,12 +168,12 @@ public class FlywheelTestingOpMode extends LinearOpMode {
      * two that are in ticks/second.
      */
     private static final double[] PARAM_STEPS = {
-            0.0003,  // kF        - power per tick/s; sane range is ~0.0003-0.0009
-            0.0005,   // kP_Stable - power per tick/s
-            0.005,    // kP_Recovery
-            0.002,    // kI
+            0.00005,  // kF        - power per tick/s; sane range is ~0.0003-0.0009
+            0.000025,   // kP_Stable - power per tick/s
+            0.0005,    // kP_Recovery
+            0.00005,    // kI
             0.00005,  // kD
-            5.0,      // RECOVERY_THRESHOLD - ticks/s
+            10.0,      // RECOVERY_THRESHOLD - ticks/s
             0.05,     // ALPHA     - unitless 0..1
             0.05,     // kLoad     - power
             0.1       // kRamp     - power per second
