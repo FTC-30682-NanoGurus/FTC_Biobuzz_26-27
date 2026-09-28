@@ -31,7 +31,7 @@ public class Intake2_0 {
     public static Servo hoodAdjuster;
     public NGMotor transferRollers;
     public NGServo gate;
-    //public NGCRServo flicker;
+    public NGCRServo flicker;
     public NGMotor interTransfer;
     public boolean autoFinished = false;
 
@@ -46,13 +46,13 @@ public class Intake2_0 {
         flywheels = new NGMotor(hardwareMap, telemetry, BiobuzzRobotConstants.flywheels);
         gate = new NGServo(hardwareMap, telemetry, BiobuzzRobotConstants.gate);
         //flicker = new NGCRServo(hardwareMap, telemetry, BiobuzzRobotConstants.flicker);
-        //transferRollers = new NGMotor(hardwareMap, telemetry, BiobuzzRobotConstants.transferRollers);
+        transferRollers = new NGMotor(hardwareMap, telemetry, BiobuzzRobotConstants.transferRollers);
         //interTransfer = new NGMotor(hardwareMap, telemetry, BiobuzzRobotConstants.interTransfer);
-        interTransfer.setDirection(DcMotor.Direction.FORWARD);
+        //interTransfer.setDirection(DcMotor.Direction.FORWARD);
         transferRollers.setDirection(DcMotor.Direction.REVERSE);
         flywheels.init();
         flywheels.setZeroPowerBehavior_Brake();
-        hoodAdjuster = hardwareMap.get(Servo.class, DECODERobotConstants.hoodAdjuster);
+        //hoodAdjuster = hardwareMap.get(Servo.class, DECODERobotConstants.hoodAdjuster);
     }
     public Intake2_0(HardwareMap hardwareMap, Telemetry telemetry, ElapsedTime timer) {
         this(hardwareMap, telemetry);
@@ -72,11 +72,11 @@ public class Intake2_0 {
 
     public void runRollers(double power){
         rollers.setPower(power);
-        interTransfer.setPower(power);
+        //interTransfer.setPower(power);
     }
     public void stopRollers(){
         rollers.setPower(0);
-        interTransfer.setPower(0);
+        //interTransfer.setPower(0);
     }
     public void openGate(){
         gate.setPosition(gateOpenPos);

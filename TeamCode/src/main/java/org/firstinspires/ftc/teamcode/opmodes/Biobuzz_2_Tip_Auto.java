@@ -1,8 +1,13 @@
 package org.firstinspires.ftc.teamcode.opmodes;
 
+import androidx.annotation.NonNull;
+
 import com.acmerobotics.roadrunner.Action;
+import com.acmerobotics.roadrunner.Arclength;
 import com.acmerobotics.roadrunner.ParallelAction;
 import com.acmerobotics.roadrunner.Pose2d;
+import com.acmerobotics.roadrunner.Pose2dDual;
+import com.acmerobotics.roadrunner.PosePath;
 import com.acmerobotics.roadrunner.SequentialAction;
 import com.acmerobotics.roadrunner.TrajectoryActionBuilder;
 import com.acmerobotics.roadrunner.TranslationalVelConstraint;
@@ -21,7 +26,7 @@ public class Biobuzz_2_Tip_Auto extends NGAutoOpMode{
     public void runOpMode() throws InterruptedException{
 
         VelConstraint intakeVel = (robotPose, _path, _disp) -> {
-            if (robotPose.position.x.value() > 52.0) {
+            if (robotPose.position.x.value() > 49.0) {
                 return 15;
             } else {
                 return 40;
@@ -33,18 +38,28 @@ public class Biobuzz_2_Tip_Auto extends NGAutoOpMode{
 
         TrajectoryActionBuilder moveForwardPath = drive.actionBuilder(beginPose)
                 .lineToX(55);
+
         TrajectoryActionBuilder ToWallSetandShooting = moveForwardPath.endTrajectory().fresh()
                 .setReversed(false)
-                .splineToLinearHeading(new Pose2d(62, -58, Math.toRadians(360)), Math.toRadians(25), intakeVel)
-                .afterTime(0.7, intake2_0.collect(6))
+                .splineToLinearHeading(new Pose2d(61, -55, Math.toRadians(360)), Math.toRadians(25), intakeVel)
+                .afterTime(0.7, intake2_0.collect(4))
                 .setReversed(true)
-                .splineToLinearHeading(new Pose2d(-26, -40, Math.toRadians(360)), Math.toRadians(170), new TranslationalVelConstraint(55))
+                .splineToLinearHeading(new Pose2d(20, -48, Math.toRadians(360)), Math.toRadians(-180), new TranslationalVelConstraint(40))
+                .splineToLinearHeading(new Pose2d(-33, -44, Math.toRadians(360)), Math.toRadians(170), new TranslationalVelConstraint(55))
                 .splineToLinearHeading(new Pose2d(-54, -12, Math.toRadians(360)), Math.toRadians(-220), new TranslationalVelConstraint(45));
+
         TrajectoryActionBuilder turnToFlowerOne = ToWallSetandShooting.endTrajectory().fresh()
-                .lineToXLinearHeading(-58, Math.toRadians(180))
-                .afterTime(0.4, intake2_0.collect(5));
+                .lineToXLinearHeading(-58, Math.toRadians(180), new VelConstraint() {
+                    @Override
+                    public double maxRobotVel(@NonNull Pose2dDual<Arclength> pose2dDual, @NonNull PosePath posePath, double v) {
+                        return 4;
+                    }
+                })
+                .afterTime(0.4, intake2_0.collect(3));
+
         TrajectoryActionBuilder turnToShoot = turnToFlowerOne.endTrajectory().fresh()
                 .lineToXLinearHeading(-54, Math.toRadians(360));
+
         TrajectoryActionBuilder strafeToParking = turnToShoot.endTrajectory().fresh()
                 .strafeToConstantHeading(new Vector2d(-38, -55), new TranslationalVelConstraint(60));
 
@@ -72,16 +87,16 @@ public class Biobuzz_2_Tip_Auto extends NGAutoOpMode{
                                 new SequentialAction(
                                         new ParallelAction(
                                                 moveForward,
-                                                intake2_0.transferUsingRollersForTime(2.5, 0.8)
+                                                intake2_0.transferUsingRollersForTime(1.5, 0.8)
                                         ),
                                         new SequentialAction(
                                                 IntakeWallSetandShoot,
-                                                intake2_0.transferUsingRollersForTime(2.0, 0.8)
+                                                intake2_0.transferUsingRollersForTime(1.5, 0.8)
                                         ),
                                         new SequentialAction(
                                                 IntakeFromFlowerOne,
                                                 shootFlowerOnePollen,
-                                                intake2_0.transferUsingRollersForTime(2.0, 0.8)
+                                                intake2_0.transferUsingRollersForTime(1.5, 0.8)
                                         ),
                                         new SequentialAction(
                                                 park

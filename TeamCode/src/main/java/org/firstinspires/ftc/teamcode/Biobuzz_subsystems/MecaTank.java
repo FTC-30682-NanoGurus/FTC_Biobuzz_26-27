@@ -115,17 +115,17 @@ public class MecaTank extends Subsystem {
         //distance = new Distance(hardwareMap, telemetry, RobotConstants.distance);
 //        rear_distance = new Distance(hardwareMap, telemetry, RobotConstants.rear_distance);
         imu = new LazyImu(hardwareMap, "imu", new RevHubOrientationOnRobot(
-                RevHubOrientationOnRobot.LogoFacingDirection.LEFT, RevHubOrientationOnRobot.UsbFacingDirection.BACKWARD));
+                RevHubOrientationOnRobot.LogoFacingDirection.LEFT, RevHubOrientationOnRobot.UsbFacingDirection.FORWARD));
         //trafficLight = new TrafficLight("Traffic Light", hardwareMap, telemetry, RobotConstants.red_led, RobotConstants.green_led);
         backRight.setDirection(DcMotor.Direction.FORWARD);
         frontRight.setDirection(DcMotor.Direction.FORWARD);
         backLeft.setDirection(DcMotor.Direction.REVERSE);
         frontLeft.setDirection(DcMotor.Direction.REVERSE);
 
-        backRight.setZeroPowerBehaviour(DcMotor.ZeroPowerBehavior.FLOAT);
-        frontRight.setZeroPowerBehaviour(DcMotor.ZeroPowerBehavior.FLOAT);
-        backLeft.setZeroPowerBehaviour(DcMotor.ZeroPowerBehavior.FLOAT);
-        frontLeft.setZeroPowerBehaviour(DcMotor.ZeroPowerBehavior.FLOAT);
+        backRight.setZeroPowerBehaviour(DcMotor.ZeroPowerBehavior.BRAKE);
+        frontRight.setZeroPowerBehaviour(DcMotor.ZeroPowerBehavior.BRAKE);
+        backLeft.setZeroPowerBehaviour(DcMotor.ZeroPowerBehavior.BRAKE);
+        frontLeft.setZeroPowerBehaviour(DcMotor.ZeroPowerBehavior.BRAKE);
 
         timer = new ElapsedTime();
         this.telemetry = telemetry;

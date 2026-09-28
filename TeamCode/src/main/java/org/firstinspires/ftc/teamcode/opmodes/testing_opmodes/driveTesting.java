@@ -7,10 +7,14 @@ import com.acmerobotics.roadrunner.Pose2d;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.hardware.DcMotor;
+import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.util.ElapsedTime;
 
+import org.firstinspires.ftc.teamcode.BiobuzzRobotConstants;
+import org.firstinspires.ftc.teamcode.DECODERobotConstants;
 import org.firstinspires.ftc.teamcode.library.BulkRead;
 import org.firstinspires.ftc.teamcode.Biobuzz_subsystems.MecaTank;
+import org.firstinspires.ftc.teamcode.library.NGServo;
 
 /**
  * Mecanum drive test opmode.
@@ -69,8 +73,14 @@ public class driveTesting extends LinearOpMode{
     private DcMotor FrontRight;
     private DcMotor BackLeft;
     private DcMotor BackRight;
+    private DcMotorEx intake;
+    private NGServo intakeLifter;
     MecaTank mecaTank;
     BulkRead bulkRead;
+
+    private double liftedPos = 0.6;
+
+    private double loweredPos = 0.02;
 
     public static double TELEMETRY_INTERVAL_MS = 200.0;
 
@@ -83,6 +93,11 @@ public class driveTesting extends LinearOpMode{
         telemetry = new MultipleTelemetry(telemetry, FtcDashboard.getInstance().getTelemetry());
 
         mecaTank = new MecaTank(hardwareMap, telemetry, new Pose2d(0, 0, 0));
+
+        intake = hardwareMap.get(DcMotorEx.class, BiobuzzRobotConstants.rollers);
+
+        intakeLifter = new NGServo(hardwareMap, telemetry, "intakeLifter");
+
 
         // MecaTank's internal MecanumDrive forces every hub to AUTO, so take MANUAL back and let
         // one clearCache() per loop define the read cycle.
@@ -106,6 +121,8 @@ public class driveTesting extends LinearOpMode{
         // to start a match.
         mecaTank.updatePoseEstimate();
         mecaTank.resetDriveHeading();
+
+        intakeLifter.setPosition(loweredPos);
 
         telemetry.addLine("MECANUM DRIVE TEST - FIELD CENTRIC");
         telemetry.addLine("LB = precision   RB = override");
@@ -168,6 +185,24 @@ public class driveTesting extends LinearOpMode{
                     gamepad1.left_stick_x, gamepad1.left_stick_y,
                     gamepad1.right_stick_x,
                     gamepad1.left_bumper, gamepad1.right_bumper);
+
+
+            if(gamepad1.right_stick_button){
+                intake.setPower(1.0);
+            }
+            if(gamepad1.left_stick_button){
+                intake.setPower(0);
+            }
+            if(gamepad1.b){
+                intake.setPower(-1.0);
+            }
+
+            if(gamepad1.dpad_up){
+                intakeLifter.setPosition(liftedPos);
+            }
+            if(gamepad1.dpad_down){
+                intakeLifter.setPosition(loweredPos);
+            }
 
             double now = System.nanoTime();
             double loopMs = (now - lastLoopTime) / 1e6;

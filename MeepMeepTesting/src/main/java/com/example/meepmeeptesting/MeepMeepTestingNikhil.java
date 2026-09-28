@@ -1,8 +1,11 @@
 package com.example.meepmeeptesting;
 
 import com.acmerobotics.roadrunner.AccelConstraint;
+import com.acmerobotics.roadrunner.Arclength;
 import com.acmerobotics.roadrunner.MinMax;
 import com.acmerobotics.roadrunner.Pose2d;
+import com.acmerobotics.roadrunner.Pose2dDual;
+import com.acmerobotics.roadrunner.PosePath;
 import com.acmerobotics.roadrunner.TranslationalVelConstraint;
 import com.acmerobotics.roadrunner.Vector2d;
 import com.acmerobotics.roadrunner.VelConstraint;
@@ -240,7 +243,7 @@ public class MeepMeepTestingNikhil {
             }
         };
         VelConstraint intakeVel = (robotPose, _path, _disp) -> {
-            if (robotPose.position.x.value() > 52.0) {
+            if (robotPose.position.x.value() > 49.0) {
                 return 15;
             } else {
                 return 40;
@@ -250,14 +253,20 @@ public class MeepMeepTestingNikhil {
         // Red side
         sampleBot.runAction(sampleBot.getDrive().actionBuilder(new Pose2d(61, -12, Math.toRadians(180)))
                 .lineToX(55)
-                    .waitSeconds(2)
+                    .waitSeconds(1.5)
                     .setReversed(false)
                 .splineToLinearHeading(new Pose2d(62, -58, Math.toRadians(360)), Math.toRadians(25), intakeVel)
                     .setReversed(true)
-                .splineToLinearHeading(new Pose2d(-26, -40, Math.toRadians(360)), Math.toRadians(170), new TranslationalVelConstraint(55))
+                .splineToLinearHeading(new Pose2d(20, -48, Math.toRadians(360)), Math.toRadians(-180), new TranslationalVelConstraint(40))
+                .splineToLinearHeading(new Pose2d(-33, -44, Math.toRadians(360)), Math.toRadians(170), new TranslationalVelConstraint(55))
                 .splineToLinearHeading(new Pose2d(-54, -12, Math.toRadians(360)), Math.toRadians(-220), new TranslationalVelConstraint(45))
-                    .waitSeconds(2)
-                .lineToXLinearHeading(-58, Math.toRadians(180))
+                    .waitSeconds(1.5)
+                .lineToXLinearHeading(-58, Math.toRadians(180), new VelConstraint() {
+                    @Override
+                    public double maxRobotVel(@NotNull Pose2dDual<Arclength> pose2dDual, @NotNull PosePath posePath, double v) {
+                        return 4;
+                    }
+                })
                     .waitSeconds(5)
                 .lineToXLinearHeading(-54, Math.toRadians(360))
                     .waitSeconds(2)
