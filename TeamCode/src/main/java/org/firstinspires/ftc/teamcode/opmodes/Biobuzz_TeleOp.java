@@ -127,7 +127,7 @@ import org.firstinspires.ftc.teamcode.library.NGServo;
  * arcade strafe/turn signs are all still unvalidated, and this file inherits every one of them.
  * Then re-measure the colour bands on the V3 and fill in the two velocity tables; both ship flat
  * and untuned on purpose, so telemetry shows plainly that nothing has been measured yet.
- */ 
+ */
 @Config
 @TeleOp(name = "BioBuzz TeleOp", group = "competition")
 public class Biobuzz_TeleOp extends LinearOpMode {
