@@ -149,18 +149,28 @@ public class colorSensorTesting extends LinearOpMode {
     // has a different spectral response and will report different hues for the same elements.
 
     /** Red wraps through 0, so it needs two bounds instead of a low/high pair. */
-    public static double RED_H_MAX = 20;    // H <= this counts as red ...
-    public static double RED_H_MIN = 340;   // ... and so does H >= this
+    public static double RED_H_MAX = 30;    // H <= this counts as red ...
+    public static double RED_H_MIN = 15;   // ... and so does H >= this
 
-    public static double BLUE_H_MIN = 170;
-    public static double BLUE_H_MAX = 250;
+    public static double BLUE_H_MIN = 210;
+    public static double BLUE_H_MAX = 240;
 
-    public static double YELLOW_H_MIN = 44;
-    public static double YELLOW_H_MAX = 62;
+    public static double YELLOW_H_MIN = 90;
+    public static double YELLOW_H_MAX = 100;
+
+    // H: 90 - 100
+// S: 0.65 - 0.75
+// V: 0.016 - 0.09
+
+// R: 0.03 - 0.110
+// G: 0.015 - 0.04
+// B: 0.015 - 0.035
+
+// Dist: 45 mm
 
     /** Shared by all three: below these the hue is not trustworthy enough to classify. */
-    public static double S_MIN = 0.3;
-    public static double V_MIN = 0.2;
+    public static double S_MIN = 0.65;
+    public static double V_MIN = 0.016;
 
     // ---- sensor setup ----------------------------------------------------------------------
     /**
@@ -182,13 +192,13 @@ public class colorSensorTesting extends LinearOpMode {
      * this gate is currently close to no gate at all. Measure what a piece actually reads at the
      * working distance and set this a little above it.
      */
-    public static double MAX_DISTANCE_MM = 100.0;
+    public static double MAX_DISTANCE_MM = 60.0; //TODO: Check on actual robot after built
 
     // ---- detection debounce ----------------------------------------------------------------
     /** How long one colour must hold steady before it is counted as a piece. */
-    public static double CONFIRM_MS = 60.0;
+    public static double CONFIRM_MS = 30.0;
     /** How long the sensor must read empty afterwards before the next piece can be counted. */
-    public static double CLEAR_MS = 120.0;
+    public static double CLEAR_MS = 80.0;
 
     /** True makes totalCount include the opposing alliance's nectar as well. */
     public static boolean COUNT_OPPONENT_NECTAR = false;
@@ -440,7 +450,15 @@ public class colorSensorTesting extends LinearOpMode {
             armed = false;
         }
     }
+// H: 90 - 100
+// S: 0.65 - 0.75
+// V: 0.016 - 0.09
 
+// R: 0.03 - 0.110
+// G: 0.015 - 0.04
+// B: 0.015 - 0.035
+
+// Dist: 45 mm
     private void count(Element e) {
         lastCounted = e;
 

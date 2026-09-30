@@ -178,30 +178,40 @@ public class Biobuzz_TeleOp extends LinearOpMode {
     // =============================================================================================
 
     /** Red wraps through 0, so it needs two bounds instead of a low/high pair. */
-    public static double RED_H_MAX = 20;
-    public static double RED_H_MIN = 340;
 
-    public static double BLUE_H_MIN = 170;
-    public static double BLUE_H_MAX = 250;
+    // H: 90 - 100
+// S: 0.65 - 0.75
+// V: 0.016 - 0.09
 
-    public static double YELLOW_H_MIN = 44;
-    public static double YELLOW_H_MAX = 62;
+// R: 0.03 - 0.110
+// G: 0.015 - 0.04
+// B: 0.015 - 0.035
+
+// Dist: 45 mm
+    public static double RED_H_MAX = 30;
+    public static double RED_H_MIN = 15;
+
+    public static double BLUE_H_MIN = 210;
+    public static double BLUE_H_MAX = 240;
+
+    public static double YELLOW_H_MIN = 90;
+    public static double YELLOW_H_MAX = 100;
 
     /** Shared by all three: below these the hue is not trustworthy enough to classify. */
-    public static double S_MIN = 0.3;
-    public static double V_MIN = 0.2;
+    public static double S_MIN = 0.65;
+    public static double V_MIN = 0.016;
 
     /** Colour gain. A SOFTWARE multiplier on R, G and B - tune it on the init screen. */
     public static float GAIN = 4.0f;
 
     /** Reflectance-based, so dark nectar reads further away than bright pollen. Tune against red. */
     public static boolean USE_DISTANCE_GATE = true;
-    public static double MAX_DISTANCE_MM = 100.0;
+    public static double MAX_DISTANCE_MM = 60.0; //TODO: Check on actual robot after built
 
     /** How long one colour must hold steady before it is counted as an artifact. */
-    public static double CONFIRM_MS = 60.0;
+    public static double CONFIRM_MS = 30.0;
     /** How long the sensor must read empty afterwards before the next artifact can be counted. */
-    public static double CLEAR_MS = 120.0;
+    public static double CLEAR_MS = 80.0;
 
     /** True makes the lift count include the opposing alliance's nectar as well. */
     public static boolean COUNT_OPPONENT_NECTAR = false;
