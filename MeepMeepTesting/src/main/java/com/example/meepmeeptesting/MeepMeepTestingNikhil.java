@@ -250,7 +250,7 @@ public class MeepMeepTestingNikhil {
             }
         };
 
-        // Red side
+        // Red side (Hive-up side start)
         sampleBot.runAction(sampleBot.getDrive().actionBuilder(new Pose2d(61, -12, Math.toRadians(180)))
                 .lineToX(55)
                     .waitSeconds(1.5)
@@ -275,6 +275,10 @@ public class MeepMeepTestingNikhil {
                                 //.splineToLinearHeading()
                 //.splineToSplineHeading()
                 .build());
+
+        // Red side (Hive-down side start)
+        
+
 
         // Blue side
         /*sampleBot2.runAction(sampleBot2.getDrive().actionBuilder(new Pose2d(5, 12, Math.toRadians(180)))
