@@ -6,8 +6,8 @@ import com.acmerobotics.roadrunner.MinMax;
 import com.acmerobotics.roadrunner.Pose2d;
 import com.acmerobotics.roadrunner.Pose2dDual;
 import com.acmerobotics.roadrunner.PosePath;
+import com.acmerobotics.roadrunner.ProfileAccelConstraint;
 import com.acmerobotics.roadrunner.TranslationalVelConstraint;
-import com.acmerobotics.roadrunner.Vector2d;
 import com.acmerobotics.roadrunner.VelConstraint;
 import com.noahbres.meepmeep.MeepMeep;
 import com.noahbres.meepmeep.core.colorscheme.ColorScheme;
@@ -243,12 +243,21 @@ public class MeepMeepTestingNikhil {
             }
         };
         VelConstraint intakeVel = (robotPose, _path, _disp) -> {
-            if (robotPose.position.x.value() > 49.0) {
+            if (robotPose.position.x.value() > 50.0) {
                 return 15;
             } else {
-                return 40;
+                return 60;
             }
         };
+
+        VelConstraint fastShootVel = (robotPose, _path, _disp) -> {
+            return 65;
+        };
+
+        VelConstraint parkTurnVel = (robotPose, _path, _disp) -> {
+            return 25;
+        };
+
 
         // Red side (Hive-up side start)
         sampleBot.runAction(sampleBot.getDrive().actionBuilder(new Pose2d(61, -12, Math.toRadians(180)))
@@ -257,10 +266,11 @@ public class MeepMeepTestingNikhil {
                     .setReversed(false)
                 .splineToLinearHeading(new Pose2d(62, -58, Math.toRadians(360)), Math.toRadians(25), intakeVel)
                     .setReversed(true)
-                .splineToLinearHeading(new Pose2d(20, -48, Math.toRadians(360)), Math.toRadians(-180), new TranslationalVelConstraint(40))
-                .splineToLinearHeading(new Pose2d(-33, -44, Math.toRadians(360)), Math.toRadians(170), new TranslationalVelConstraint(55))
+                .splineToLinearHeading(new Pose2d(20, -48, Math.toRadians(360)), Math.toRadians(-180), fastShootVel)
+                .splineToLinearHeading(new Pose2d(-33, -44, Math.toRadians(360)), Math.toRadians(170), fastShootVel)
                 .splineToLinearHeading(new Pose2d(-54, -12, Math.toRadians(360)), Math.toRadians(-220), new TranslationalVelConstraint(45))
                     .waitSeconds(1.5)
+                    .setReversed(false)
                 .lineToXLinearHeading(-58, Math.toRadians(180), new VelConstraint() {
                     @Override
                     public double maxRobotVel(@NotNull Pose2dDual<Arclength> pose2dDual, @NotNull PosePath posePath, double v) {
@@ -270,14 +280,15 @@ public class MeepMeepTestingNikhil {
                     .waitSeconds(5)
                 .lineToXLinearHeading(-54, Math.toRadians(360))
                     .waitSeconds(2)
-                .strafeToConstantHeading(new Vector2d(-38, -55), new TranslationalVelConstraint(60))
+                .splineToSplineHeading(new Pose2d(-50, -17, Math.toRadians(-90)), Math.toRadians(-90), parkTurnVel)
+                .splineToLinearHeading(new Pose2d(-50, -57, Math.toRadians(-90)), Math.toRadians(-90), new TranslationalVelConstraint(70))
                 //.splineToLinearHeading(new Pose2d(-35, -63, Math.toRadians(-90)), Math.toRadians(-90))
                                 //.splineToLinearHeading()
                 //.splineToSplineHeading()
                 .build());
 
         // Red side (Hive-down side start)
-        
+        //sampleBot2.runAction(sampleBot2.getDrive().actionBuilder(new Pose2d(61, -12, Math.toRadians(180)))
 
 
         // Blue side
