@@ -197,6 +197,8 @@ public class PollenCamera extends Subsystem {
 
     public void close() {
         if (portal != null) {
+            // Stop the dashboard pulling frames BEFORE the portal closes underneath it.
+            if (DASHBOARD_STREAM) FtcDashboard.getInstance().stopCameraStream();
             portal.close();
             portal = null;
         }

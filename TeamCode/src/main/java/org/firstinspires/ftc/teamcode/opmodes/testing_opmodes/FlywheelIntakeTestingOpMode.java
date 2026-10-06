@@ -122,7 +122,7 @@ public class FlywheelIntakeTestingOpMode extends LinearOpMode {
     //Target vel: 1500
     public static double START_KI = 0;
     public static double START_KD = 0;
-    public static double START_KF = 0.0007;
+    public static double START_KF = 0.000410;
 
     /** Step sizes for the gamepad editor, in each constant's own units. */
     public static double TARGET_STEP = 25.0;
@@ -178,7 +178,7 @@ public class FlywheelIntakeTestingOpMode extends LinearOpMode {
      * two that are in ticks/second.
      */
     private static final double[] PARAM_STEPS = {
-            0.00005,  // kF        - power per tick/s; sane range is ~0.0003-0.0009
+            0.0000025,  // kF        - power per tick/s; sane range is ~0.0003-0.0009
             0.000025,   // kP_Stable - power per tick/s
             0.0005,    // kP_Recovery
             0.00005,    // kI
@@ -198,6 +198,10 @@ public class FlywheelIntakeTestingOpMode extends LinearOpMode {
     private final ElapsedTime dipTimer = new ElapsedTime();
     private double lastDipDepth = Double.NaN;
     private double lastRecoveryMs = Double.NaN;
+
+    //kF: 0.000425
+    //kP Stable: 0
+    //kP Recovery: 0
 
     @Override
     public void runOpMode() throws InterruptedException {

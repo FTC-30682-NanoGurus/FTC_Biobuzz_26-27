@@ -91,7 +91,9 @@ public class TurretTuningOpMode extends LinearOpMode {
         // laptop, not just on the Driver Station preview.
         // Null-guarded: a camera that failed to open must not take the opmode down.
         if (vision.getCameraStreamSource() != null) {
-            FtcDashboard.getInstance().startCameraStream(vision.getCameraStreamSource(), 0);
+            // Capped: 0 means UNLIMITED, which pushes every frame over the hub's WiFi and starves the
+            // Driver Station link until it drops.
+            FtcDashboard.getInstance().startCameraStream(vision.getCameraStreamSource(), 10);
         }
 
         telemetry.addLine("TURRET TUNING");
@@ -233,6 +235,8 @@ public class TurretTuningOpMode extends LinearOpMode {
             telemetry.update();
         }
 
+        // Stop the dashboard pulling frames BEFORE the portal closes underneath it.
+        FtcDashboard.getInstance().stopCameraStream();
         vision.close();
     }
 }

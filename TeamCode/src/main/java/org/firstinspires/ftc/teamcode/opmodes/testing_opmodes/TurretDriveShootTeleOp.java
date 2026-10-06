@@ -172,7 +172,9 @@ public class TurretDriveShootTeleOp extends LinearOpMode {
         // Mirror the live stream (with the crosshair overlay) to the dashboard.
         // Null-guarded: a camera that failed to open must not take the opmode down.
         if (vision.getCameraStreamSource() != null) {
-            FtcDashboard.getInstance().startCameraStream(vision.getCameraStreamSource(), 0);
+            // Capped: 0 means UNLIMITED, which pushes every frame over the hub's WiFi and starves the
+            // Driver Station link until it drops.
+            FtcDashboard.getInstance().startCameraStream(vision.getCameraStreamSource(), 10);
         }
 
         // ---- INIT LOOP: pick the alliance -------------------------------------------------------
@@ -447,6 +449,8 @@ public class TurretDriveShootTeleOp extends LinearOpMode {
 
         launcher.stop();
         intake.stop();
+        // Stop the dashboard pulling frames BEFORE the portal closes underneath it.
+        FtcDashboard.getInstance().stopCameraStream();
         vision.close();
     }
 }

@@ -113,9 +113,12 @@ import org.firstinspires.ftc.teamcode.library.NGServo;
  *   Dpad up ............. intake lifter to LIFTED   (manual override)
  *   Dpad down ........... intake lifter to LOWERED, and reset the artifact count
  *
- * GAMEPAD 2 - SHOOTER
- *   Right trigger (hold)  POLLEN: spin up, then gate + transfer once at speed
- *   Left trigger (hold) . NECTAR: spin up, then gate + transfer once at speed
+ * SHOOTER - EITHER PAD, same buttons on both
+ *   Dpad right .......... toggle BOTH flywheels on / off (holds them at speed between shots)
+ *   Right trigger (hold)  POLLEN: spin up if needed, then gate + transfer once at speed
+ *   Left trigger (hold) . NECTAR: spin up if needed, then gate + transfer once at speed
+ *
+ * GAMEPAD 2 - SHOOTER EXTRAS
  *   Right bumper (hold).. POLLEN: spin up ONLY, gate stays shut (pre-spin before a shot)
  *   Left bumper (hold) .. NECTAR: spin up ONLY, gate stays shut
  *   X ................... reset the artifact count without moving the lifter
@@ -168,6 +171,10 @@ public class Biobuzz_TeleOp extends LinearOpMode {
     private boolean lifterLifted = false;
 
     private boolean prevA1, prevA2, prevUp, prevDown, g2PrevUp, g2PrevDown;
+
+    /** Dpad-right toggle state: both flywheels held at speed. Starts OFF, like the intake. */
+    private boolean flywheelsOn = false;
+    private boolean prevRight1, prevRight2;
 
     // =============================================================================================
     // COLOUR SENSOR - bands, gain, gate and debounce copied from colorSensorTesting.java
@@ -746,17 +753,29 @@ public class Biobuzz_TeleOp extends LinearOpMode {
             g2PrevY = gamepad2.y;
 
             // =========================================================================================
-            // SHOOTER - gamepad2 triggers and bumpers
+            // SHOOTER - flywheel toggle and triggers on EITHER pad, pre-spin bumpers on gamepad2
             // =========================================================================================
             double distanceIn = getShotDistanceInches();
 
-            // Bumper = spin up only. Trigger = spin up AND ask to feed. A trigger therefore implies
-            // its own spin-up, so pre-spinning on the bumper and then pulling the trigger never
-            // drops the wheel.
-            boolean pollenFeed = gamepad2.right_trigger > TRIGGER_THRESHOLD;
-            boolean nectarFeed = gamepad2.left_trigger > TRIGGER_THRESHOLD;
-            boolean pollenSpin = pollenFeed || gamepad2.right_bumper;
-            boolean nectarSpin = nectarFeed || gamepad2.left_bumper;
+            // Dpad right toggles BOTH flywheels on and off, from either pad. Edge-detected on each
+            // pad separately so both pressing in the same loop is still one toggle.
+            boolean flywheelToggle = (gamepad1.dpad_right && !prevRight1)
+                    || (gamepad2.dpad_right && !prevRight2);
+            prevRight1 = gamepad1.dpad_right;
+            prevRight2 = gamepad2.dpad_right;
+            if (flywheelToggle) flywheelsOn = !flywheelsOn;
+
+            // Trigger = spin up AND ask to feed, right for pollen, left for nectar, on either pad
+            // (gamepad1's triggers are free since the drive moved to arcade). A trigger implies its
+            // own spin-up, so it shoots even with the toggle off, and pre-spinning with the toggle
+            // or a gamepad2 bumper then pulling the trigger never drops the wheel.
+            boolean pollenFeed = gamepad1.right_trigger > TRIGGER_THRESHOLD
+                    || gamepad2.right_trigger > TRIGGER_THRESHOLD;
+            boolean nectarFeed = gamepad1.left_trigger > TRIGGER_THRESHOLD
+                    || gamepad2.left_trigger > TRIGGER_THRESHOLD;
+            // gamepad2's bumpers keep their one-side pre-spin; gamepad1's bumpers are drive modes.
+            boolean pollenSpin = flywheelsOn || pollenFeed || gamepad2.right_bumper;
+            boolean nectarSpin = flywheelsOn || nectarFeed || gamepad2.left_bumper;
 
             pollenShooter.update(distanceIn, pollenSpin, pollenFeed);
             nectarShooter.update(distanceIn, nectarSpin, nectarFeed);
@@ -829,6 +848,8 @@ public class Biobuzz_TeleOp extends LinearOpMode {
                         : "no - waiting for the sensor to clear");
 
                 telemetry.addLine("--- SHOOTER ---");
+                telemetry.addData("Flywheels", flywheelsOn ? "ON (dpad right to stop)"
+                        : "off (dpad right to start)");
                 telemetry.addData("Distance (in)", "%.1f  [%s]", distanceIn, distanceSourceName());
                 pollenShooter.telemetry();
                 nectarShooter.telemetry();
