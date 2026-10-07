@@ -1432,6 +1432,77 @@ public class MecaTank extends Subsystem {
         headingSettleTimer.reset();
     }
 
+    /**
+     * Writes four wheel powers computed OUTSIDE the smooth-drive pipeline (e.g. an aim-assist
+     * controller), still through the belt-drive backstop and still through the NGMotors.
+     *
+     * Going through the NGMotors is the important part. NGMotor.setDrivePower() caches the last
+     * power and skips any write within its caching tolerance, so if a caller wrote the DcMotorEx
+     * directly and then handed back to setDrivePowersSmooth*(), a smooth-drive command close to
+     * the stale cached value would be skipped and the motor would keep running at the outside
+     * caller's power. Routing every write through here keeps the cache, prevFl..prevBr and the loop
+     * timer all describing what the motors are actually doing.
+     *
+     * @param fl front left power, -1..1, same sign convention as the smooth-drive mix
+     */
+    public void setWheelPowersGuarded(double fl, double bl, double fr, double br) {
+        double dt = beginSmoothDrive();
+        wheelLimitActive = false;
+        double[] wheels = {
+                Range.clip(fl, -1.0, 1.0), Range.clip(bl, -1.0, 1.0),
+                Range.clip(fr, -1.0, 1.0), Range.clip(br, -1.0, 1.0)};
+        limitWheelPowerRate(wheels, dt, false);
+
+        frontLeft.setDrivePower(wheels[0] * MAX_DRIVE_SPEED);
+        backLeft.setDrivePower(wheels[1] * MAX_DRIVE_SPEED);
+        frontRight.setDrivePower(wheels[2] * MAX_DRIVE_SPEED);
+        backRight.setDrivePower(wheels[3] * MAX_DRIVE_SPEED);
+    }
+
+    /**
+     * Re-seeds the smooth-drive state after something else has been driving the chassis, so the
+     * next setDrivePowersSmooth*() call continues from the robot's actual motion instead of from
+     * whatever the axis limiters held before the hand-off.
+     *
+     * Without this, the axis limiters would still hold the last driver command from before the
+     * hand-off and slew away from it (a lurch), and heading hold would still be latched to the old
+     * heading and snap the robot back to it.
+     *
+     * @param robotVel measured ROBOT-frame velocity (RoadRunner convention: x forward, y left,
+     *                 angVel CCW), in/s and rad/s - see {@link #getMeasuredRobotVelocity()}
+     */
+    public void resetSmoothDriveState(PoseVelocity2d robotVel) {
+        double vMax = commandedMaxVel();
+        double fwd = 0, strafe = 0, turn = 0;
+        if (robotVel != null && robotVel.linearVel != null) {
+            // Inverse of the mix in smoothDriveCore: a wheel command of 1 is vMax in/s at the
+            // wheel. Strafe is positive RIGHT there, turn positive CLOCKWISE, and the mecanum
+            // lateral multiplier scales how much wheel speed a given sideways speed needs.
+            fwd = robotVel.linearVel.x / vMax;
+            strafe = -drive.kinematics.lateralMultiplier * robotVel.linearVel.y / vMax;
+            turn = -robotVel.angVel * drive.kinematics.trackWidth / (2.0 * vMax);
+        }
+        for (AxisLimiter lim : new AxisLimiter[]{limForward, limStrafe, limTurn}) {
+            lim.dwellRemainingS = 0.0;
+            lim.dwellFromSign = 0.0;
+        }
+        limForward.prev = Range.clip(fwd, -1.0, 1.0);
+        limStrafe.prev = Range.clip(strafe, -1.0, 1.0);
+        limTurn.prev = Range.clip(turn, -1.0, 1.0);
+
+        double h = drive.pose.heading.toDouble();
+        headingSettleAnchor = h;
+        headingLatched = false;
+        translationLatched = false;
+        headingSettleTimer.reset();
+        slipScale = 1.0;
+    }
+
+    /** Full measured robot-frame velocity from the last updatePoseEstimate(), RoadRunner convention. */
+    public PoseVelocity2d getMeasuredRobotVelocity() {
+        return measuredVelocity;
+    }
+
     /** True when any feature that needs updatePoseEstimate() every loop is switched on. */
     public boolean smoothDriveNeedsPose() {
         return HEADING_HOLD || FIELD_CENTRIC || TRACTION_CONTROL || TRANSLATION_HOLD;

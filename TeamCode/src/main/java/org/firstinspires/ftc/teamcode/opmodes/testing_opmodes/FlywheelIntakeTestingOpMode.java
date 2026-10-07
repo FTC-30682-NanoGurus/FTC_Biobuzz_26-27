@@ -116,10 +116,10 @@ public class FlywheelIntakeTestingOpMode extends LinearOpMode {
     public static double START_TARGET_VELOCITY = BiobuzzRobotConstants.fixedShootingVel;
 
     /** Starting gains. Seeded from the values Intake2_0.java:88 already runs the flywheels at. */
-    //kF: 0.0007
-    //kP stable: 0.005
-    //kP recovery: 0.0320
-    //Target vel: 1500
+    //kF: 0.000410
+    //kP stable: 0.006
+    //kP recovery: 0.0008
+    //Target vel: 1600
     public static double START_KI = 0;
     public static double START_KD = 0;
     public static double START_KF = 0.000410;
