@@ -115,12 +115,14 @@ public class MecaTank extends Subsystem {
         //distance = new Distance(hardwareMap, telemetry, RobotConstants.distance);
 //        rear_distance = new Distance(hardwareMap, telemetry, RobotConstants.rear_distance);
         imu = new LazyImu(hardwareMap, "imu", new RevHubOrientationOnRobot(
-                RevHubOrientationOnRobot.LogoFacingDirection.LEFT, RevHubOrientationOnRobot.UsbFacingDirection.FORWARD));
+                RevHubOrientationOnRobot.LogoFacingDirection.RIGHT, RevHubOrientationOnRobot.UsbFacingDirection.FORWARD));
         //trafficLight = new TrafficLight("Traffic Light", hardwareMap, telemetry, RobotConstants.red_led, RobotConstants.green_led);
-        backRight.setDirection(DcMotor.Direction.FORWARD);
-        frontRight.setDirection(DcMotor.Direction.FORWARD);
-        backLeft.setDirection(DcMotor.Direction.REVERSE);
-        frontLeft.setDirection(DcMotor.Direction.REVERSE);
+        backRight.setDirection(DcMotor.Direction.REVERSE);
+        frontRight.setDirection(DcMotor.Direction.REVERSE);
+        backLeft.setDirection(DcMotor.Direction.FORWARD);
+        // FORWARD, unlike the other left wheel. Must match MecanumDrive, which runs after this and
+        // overwrites it - see the note there.
+        frontLeft.setDirection(DcMotor.Direction.FORWARD);
 
         backRight.setZeroPowerBehaviour(DcMotor.ZeroPowerBehavior.BRAKE);
         frontRight.setZeroPowerBehaviour(DcMotor.ZeroPowerBehavior.BRAKE);
@@ -948,6 +950,25 @@ public class MecaTank extends Subsystem {
     public static double ARCADE_STRAFE_SIGN = 1.0;
     public static double ARCADE_TURN_SIGN = 1.0;
 
+    /**
+     * TEMPORARY full-speed mode for drive testing. Per instance on purpose, not a static: a static
+     * would leak into every opmode run after driveTesting until the app restarts.
+     *
+     * While on:
+     *  - the stick response is LINEAR. The cubic curve shaped each axis separately, so a full
+     *    diagonal push (about 0.7 per axis) came out near 0.5 per axis - diagonals ran slow.
+     *  - the axis acceleration/deceleration/reversal limiters are bypassed, exactly as if the
+     *    override button were held, so the robot gets to speed as fast as the motors allow.
+     *  - the wheel-power slew (WHEEL_POWER_SLEW, 0 to full in ~0.125 s) STAYS, because the motors
+     *    cannot bring the robot to top speed that fast anyway: it smooths the current step for the
+     *    belts without costing measurable speed.
+     */
+    private boolean fullSpeed = false;
+
+    public void setFullSpeed(boolean on) {
+        fullSpeed = on;
+    }
+
     /** Shared loop-timing step for both input mappings. Returns the clamped loop dt, seconds. */
     private double beginSmoothDrive() {
         double dt = driveTimer.seconds();
@@ -973,6 +994,7 @@ public class MecaTank extends Subsystem {
     private void smoothDriveCore(double forward, double turn, double strafe, double dt,
                                  boolean precision, boolean override) {
 
+        override |= fullSpeed;
         double heading = drive.pose.heading.toDouble();
 
         // Updated unconditionally, every loop, so the derivative never sees a stale gap when a
@@ -1250,7 +1272,8 @@ public class MecaTank extends Subsystem {
         if (mag < deadband) return 0.0;
         // Rescale so output resumes from 0 at the edge of the band instead of jumping.
         double scaled = (mag - deadband) / (1.0 - deadband);
-        double curved = CURVE_K * scaled * scaled * scaled + (1.0 - CURVE_K) * scaled;
+        double k = fullSpeed ? 0.0 : CURVE_K;
+        double curved = k * scaled * scaled * scaled + (1.0 - k) * scaled;
         return Math.copySign(curved, x);
     }
 

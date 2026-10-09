@@ -74,7 +74,6 @@ public class driveTesting extends LinearOpMode{
     private DcMotor BackLeft;
     private DcMotor BackRight;
     private DcMotorEx intake;
-    private NGServo intakeLifter;
     MecaTank mecaTank;
     BulkRead bulkRead;
 
@@ -83,6 +82,9 @@ public class driveTesting extends LinearOpMode{
     private double loweredPos = 0.02;
 
     public static double TELEMETRY_INTERVAL_MS = 200.0;
+
+    /** TEMPORARY: no acceleration limits, linear sticks. See MecaTank.setFullSpeed. */
+    public static boolean FULL_SPEED = true;
 
     private final ElapsedTime telemetryTimer = new ElapsedTime();
     private boolean prevY, prevX, prevBack, prevA, prevOptions;
@@ -95,8 +97,6 @@ public class driveTesting extends LinearOpMode{
         mecaTank = new MecaTank(hardwareMap, telemetry, new Pose2d(0, 0, 0));
 
         intake = hardwareMap.get(DcMotorEx.class, BiobuzzRobotConstants.rollers);
-
-        intakeLifter = new NGServo(hardwareMap, telemetry, "intakeLifter");
 
 
         // MecaTank's internal MecanumDrive forces every hub to AUTO, so take MANUAL back and let
@@ -122,8 +122,6 @@ public class driveTesting extends LinearOpMode{
         mecaTank.updatePoseEstimate();
         mecaTank.resetDriveHeading();
 
-        intakeLifter.setPosition(loweredPos);
-
         telemetry.addLine("MECANUM DRIVE TEST - FIELD CENTRIC");
         telemetry.addLine("LB = precision   RB = override");
         telemetry.addLine("Y = field centric (ON)   X = heading hold");
@@ -145,6 +143,8 @@ public class driveTesting extends LinearOpMode{
 
             // Heading hold, field centric and traction control all read the pose estimate. Skip
             // the update entirely when none of them are on - it costs two IMU reads.
+            mecaTank.setFullSpeed(FULL_SPEED);   // read every loop so it can be flipped from the dashboard
+
             if (mecaTank.smoothDriveNeedsPose()) {
                 mecaTank.updatePoseEstimate();
             }
@@ -197,12 +197,6 @@ public class driveTesting extends LinearOpMode{
                 intake.setPower(-1.0);
             }
 
-            if(gamepad1.dpad_up){
-                intakeLifter.setPosition(liftedPos);
-            }
-            if(gamepad1.dpad_down){
-                intakeLifter.setPosition(loweredPos);
-            }
 
             double now = System.nanoTime();
             double loopMs = (now - lastLoopTime) / 1e6;
@@ -210,6 +204,7 @@ public class driveTesting extends LinearOpMode{
             if (loopMs > loopMsMax) loopMsMax = loopMs;
 
             if (sendTelemetry) {
+                telemetry.addData("FULL SPEED (temporary)", FULL_SPEED);
                 telemetry.addData("Precision", gamepad1.left_bumper);
                 telemetry.addData("Override", gamepad1.right_bumper);
                 telemetry.addData("Field centric", MecaTank.FIELD_CENTRIC);
