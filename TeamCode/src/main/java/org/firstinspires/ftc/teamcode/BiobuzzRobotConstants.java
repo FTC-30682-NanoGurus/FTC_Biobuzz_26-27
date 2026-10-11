@@ -25,7 +25,39 @@ public class BiobuzzRobotConstants {
     //public static String interTransfer = "interTransfer";
     public static String flywheels = "flywheels";
     public static double
-        fixedShootingVel = 1600; // TODO: edit after testing shooting and tuning PIDF
+        pollenFixedShootingVel = 1600,
+        nectarFixedShootingVel = 1600;
+
+    /**
+     * Flywheel motor directions for the autos (Intake2_0). Pollen is REVERSE because that is how
+     * the pollen wheel was set up when its PIDF was tuned (FlywheelIntakeTestingOpMode). Nectar is
+     * untested: if it reads a negative velocity while spinning, flip it.
+     */
+    public static boolean
+        pollenFlywheelReversed = true,
+        nectarFlywheelReversed = false;
+
+    /**
+     * Servo-driven ramp that drops onto a FLOWER to intake from it. Starts at the stowed position and
+     * swings to the intake position only while collectFromFlower() runs.
+     * PLACEHOLDERS: stowed 0.0 per the mechanism; 0.4 is a best guess - jog the servo and measure.
+     */
+    /**
+     * The intake ("rollers") and the transfer into the shooter ("transferRollers") are SEPARATE
+     * motors. transferReversed matches the direction Intake2_0 has always given the transfer motor.
+     * transferAlsoRunsIntake: also spin the intake while transferring, so artifacts still sitting in
+     * the intake get pushed through to the transfer within the same feed window. Set false if the
+     * transfer pulls everything on its own.
+     */
+    public static boolean
+        transferReversed = true,
+        transferAlsoRunsIntake = false;
+
+    public static String flowerRamp = "flowerRamp";
+    public static double
+        flowerRampStowedPos = 0.100,
+        flowerRampIntakePos = 0.480;
+
     //public static String hoodAdjuster = "hoodAdjuster";
 
     // =============================================================================================
@@ -63,7 +95,7 @@ public class BiobuzzRobotConstants {
      * The two shooter flywheels: one dedicated to POLLEN, one to NECTAR. Separate motors, but both
      * run the same PIDF gains - only their distance/velocity tables differ.
      */
-    public static String pollenFlywheel = "pollenFlywheel";
+    public static String pollenFlywheel = "flywheels";   // the motor the pollen PIDF was tuned on
     public static String nectarFlywheel = "nectarFlywheel";
 
     /**
@@ -85,4 +117,51 @@ public class BiobuzzRobotConstants {
         pollenGateOpenPos = 0.45,
         nectarGateClosedPos = 0,
         nectarGateOpenPos = 0.45;
+
+    // =============================================================================================
+    // FLYWHEEL PIDF - the single source for the autos (Intake2_0) and both teleops.
+    //
+    // NGMotor ignores the P passed to setCustomVelocityPID; the P that acts is scheduled between
+    // KpRecovery (wheel more than RecoveryThreshold BELOW target) and KpStable (everything else).
+    // Both are per-motor fields, pinned by each opmode through NGMotorFlywheelTuner.
+    // =============================================================================================
+
+    /** Pollen: tuned in FlywheelIntakeTestingOpMode. */
+    public static double
+        pollenKF = 0.000408,
+        pollenKI = 0,
+        pollenKD = 0,
+        pollenKpStable = 0.0007,
+        pollenKpRecovery = 0.0096,
+        pollenAlpha = 0.7,
+        pollenRecoveryThreshold = 90.0;
+
+    /** Nectar: tuned in NectarFlywheelIntakeTestingOpMode. */
+    public static double
+        nectarKF = 0.000426,
+        nectarKI = 0,
+        nectarKD = 0,
+        nectarKpStable = 0.0007,
+        nectarKpRecovery = 0.0075,
+        nectarAlpha = 0.7,
+        nectarRecoveryThreshold = 90.0;
+
+    /**
+     * Load boost while artifacts go through a flywheel: kLoad + kRamp * seconds feeding. STATIC on
+     * NGMotor, so one pair serves both wheels; every opmode writes these into NGMotor at init.
+     */
+    public static double
+        flywheelKLoad = 0.8,
+        flywheelKRamp = 1.0;
+
+    /** Velocity band counted as "at speed", TICKS/SECOND - the feed interlock. */
+    public static double flywheelAtSpeedTolerance = 30.0;
+
+    // =============================================================================================
+    // INTAKE / TRANSFER POWERS (teleops)
+    // =============================================================================================
+    public static double
+        intakePower = 1.0,
+        intakeReversePower = -1.0,
+        transferPower = 1.0;
 }

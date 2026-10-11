@@ -98,7 +98,7 @@ public class Biobuzz_2_Tip_Auto extends NGAutoOpMode{
                 .setTangent(Math.toRadians(-172))
                 .splineToSplineHeading(new Pose2d(-52.6, -17.5, Math.toRadians(180)), Math.toRadians(-112), maxVel, maxAccel)
                 .splineToConstantHeading(new Vector2d(-55, -22), Math.toRadians(-82), maxVel, maxAccel)
-                .afterTime(0.4, intake2_0.collect(3));
+                .afterTime(0.4, intake2_0.collectFromFlower(3));
 
         TrajectoryActionBuilder turnToShoot = turnToFlowerOne.endTrajectory().fresh()
                 .setTangent(Math.toRadians(90))
@@ -120,7 +120,8 @@ public class Biobuzz_2_Tip_Auto extends NGAutoOpMode{
         telemetry.addLine("Paths Built");
         telemetry.update();
 
-        double shootingVel = BiobuzzRobotConstants.fixedShootingVel;
+        double pollenShootingVel = BiobuzzRobotConstants.pollenFixedShootingVel;
+        double nectarShootingVel = BiobuzzRobotConstants.nectarFixedShootingVel;
         waitForStart();
 
         Actions.runBlocking(
@@ -128,7 +129,7 @@ public class Biobuzz_2_Tip_Auto extends NGAutoOpMode{
                         bulkRead.update(),
                         intake2_0.updateFlywheelPID(),
                         new ParallelAction(
-                                intake2_0.runShooter(shootingVel, 30),
+                                intake2_0.runShooter(pollenShootingVel, nectarShootingVel, 30),
                                 new SequentialAction(
                                         new ParallelAction(
                                                 shootPreLoad,

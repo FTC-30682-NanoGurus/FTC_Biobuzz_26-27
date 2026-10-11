@@ -19,6 +19,7 @@ import org.firstinspires.ftc.teamcode.BiobuzzRobotConstants;
 import org.firstinspires.ftc.teamcode.DECODERobotConstants;
 import org.firstinspires.ftc.teamcode.library.NGCRServo;
 import org.firstinspires.ftc.teamcode.library.NGMotor;
+import org.firstinspires.ftc.teamcode.library.NGMotorFlywheelTuner;
 import org.firstinspires.ftc.teamcode.library.NGServo;
 
 @Config
@@ -28,6 +29,23 @@ public class Intake2_0 {
     ElapsedTime timer;
     public NGMotor rollers;
     public static NGMotor flywheels;
+    /** Null when "nectarFlywheel" is not in the configuration, so a missing motor cannot crash an auto. */
+    public static NGMotor nectarFlywheel;
+    /** Null when "flowerRamp" is not in the configuration; collectFromFlower() then just runs the rollers. */
+    public NGServo flowerRamp;
+
+    // Flywheel PIDF, kLoad/kRamp: all read from BiobuzzRobotConstants, shared with both teleops.
+
+    /**
+     * True for exactly as long as artifacts are being pushed into the POLLEN flywheel. Set and
+     * cleared by transferUsingRollersForTime(), read every loop by updateFlywheelPID().
+     *
+     * Kept as an explicit flag rather than read back from the motor, so the boost lines up exactly
+     * with the transfer window in transferUsingRollersForTime().
+     */
+    private volatile boolean feedingPollen = false;
+    /** Same for nectar. Nothing in auto feeds nectar yet, so nothing sets it. */
+    private volatile boolean feedingNectar = false;
     public static Servo hoodAdjuster;
     public NGMotor transferRollers;
     public NGServo gate;
@@ -35,23 +53,53 @@ public class Intake2_0 {
     public NGMotor interTransfer;
     public boolean autoFinished = false;
 
-    public double gateOpenPos = BiobuzzRobotConstants.gateOpenPos;
-    public double gateClosedPos = BiobuzzRobotConstants.gateClosedPos;
+    /**
+     * The gate in front of the POLLEN flywheel. Looked up as "pollenGate" first, then the legacy
+     * single "gate", and left null if neither is configured, so a missing gate never stops an auto.
+     */
+    public double gateOpenPos = BiobuzzRobotConstants.pollenGateOpenPos;
+    public double gateClosedPos = BiobuzzRobotConstants.pollenGateClosedPos;
 
     public Intake2_0(HardwareMap hardwareMap, Telemetry telemetry){
         this.hardwareMap = hardwareMap;
         this.telemetry = telemetry;
         timer = new ElapsedTime();
         rollers = new NGMotor(hardwareMap, telemetry, BiobuzzRobotConstants.rollers);
-        flywheels = new NGMotor(hardwareMap, telemetry, BiobuzzRobotConstants.flywheels);
-        gate = new NGServo(hardwareMap, telemetry, BiobuzzRobotConstants.gate);
+        flywheels = new NGMotor(hardwareMap, telemetry, BiobuzzRobotConstants.pollenFlywheel);
+        gate = findGate(hardwareMap, telemetry);
         //flicker = new NGCRServo(hardwareMap, telemetry, BiobuzzRobotConstants.flicker);
         transferRollers = new NGMotor(hardwareMap, telemetry, BiobuzzRobotConstants.transferRollers);
         //interTransfer = new NGMotor(hardwareMap, telemetry, BiobuzzRobotConstants.interTransfer);
         //interTransfer.setDirection(DcMotor.Direction.FORWARD);
-        transferRollers.setDirection(DcMotor.Direction.REVERSE);
+        transferRollers.setDirection(BiobuzzRobotConstants.transferReversed
+                ? DcMotor.Direction.REVERSE : DcMotor.Direction.FORWARD);
+        NGMotor.kLoad = BiobuzzRobotConstants.flywheelKLoad;
+        NGMotor.kRamp = BiobuzzRobotConstants.flywheelKRamp;
         flywheels.init();
         flywheels.setZeroPowerBehavior_Brake();
+        flywheels.setDirection(BiobuzzRobotConstants.pollenFlywheelReversed
+                ? DcMotor.Direction.REVERSE : DcMotor.Direction.FORWARD);
+        pinFlywheelGains(flywheels, true);
+
+        try {
+            nectarFlywheel = new NGMotor(hardwareMap, telemetry, BiobuzzRobotConstants.nectarFlywheel);
+            nectarFlywheel.init();
+            nectarFlywheel.setZeroPowerBehavior_Brake();
+            nectarFlywheel.setDirection(BiobuzzRobotConstants.nectarFlywheelReversed
+                    ? DcMotor.Direction.REVERSE : DcMotor.Direction.FORWARD);
+            pinFlywheelGains(nectarFlywheel, false);
+        } catch (Exception e) {
+            nectarFlywheel = null;
+            telemetry.addLine("NECTAR FLYWHEEL NOT CONFIGURED - nectar shooting disabled");
+        }
+
+        try {
+            flowerRamp = new NGServo(hardwareMap, telemetry, BiobuzzRobotConstants.flowerRamp);
+            flowerRamp.setPosition(BiobuzzRobotConstants.flowerRampStowedPos);
+        } catch (Exception e) {
+            flowerRamp = null;
+            telemetry.addLine("FLOWER RAMP NOT CONFIGURED - flower intake runs rollers only");
+        }
         //hoodAdjuster = hardwareMap.get(Servo.class, DECODERobotConstants.hoodAdjuster);
     }
     public Intake2_0(HardwareMap hardwareMap, Telemetry telemetry, ElapsedTime timer) {
@@ -78,28 +126,64 @@ public class Intake2_0 {
         rollers.setPower(0);
         //interTransfer.setPower(0);
     }
+    private NGServo findGate(HardwareMap hardwareMap, Telemetry telemetry) {
+        try {
+            return new NGServo(hardwareMap, telemetry, BiobuzzRobotConstants.pollenGate);
+        } catch (Exception ignored) {
+        }
+        try {
+            NGServo legacy = new NGServo(hardwareMap, telemetry, BiobuzzRobotConstants.gate);
+            gateOpenPos = BiobuzzRobotConstants.gateOpenPos;
+            gateClosedPos = BiobuzzRobotConstants.gateClosedPos;
+            return legacy;
+        } catch (Exception ignored) {
+        }
+        telemetry.addLine("NO GATE CONFIGURED - transfers run without one");
+        return null;
+    }
     public void openGate(){
-        gate.setPosition(gateOpenPos);
+        if (gate != null) gate.setPosition(gateOpenPos);
     }
     public void closeGate(){
-        gate.setPosition(gateClosedPos);
+        if (gate != null) gate.setPosition(gateClosedPos);
+    }
+    /** The gains setCustomVelocityPID cannot carry - see the PIDF block above. */
+    private static void pinFlywheelGains(NGMotor m, boolean pollen) {
+        NGMotorFlywheelTuner.setStableKp(m, pollen ? BiobuzzRobotConstants.pollenKpStable : BiobuzzRobotConstants.nectarKpStable);
+        NGMotorFlywheelTuner.setRecoveryKp(m, pollen ? BiobuzzRobotConstants.pollenKpRecovery : BiobuzzRobotConstants.nectarKpRecovery);
+        NGMotorFlywheelTuner.setAlpha(m, pollen ? BiobuzzRobotConstants.pollenAlpha : BiobuzzRobotConstants.nectarAlpha);
+        NGMotorFlywheelTuner.setRecoveryThreshold(m, pollen ? BiobuzzRobotConstants.pollenRecoveryThreshold : BiobuzzRobotConstants.nectarRecoveryThreshold);
+    }
+    private static void setPollenVelocity(double vel){
+        flywheels.setCustomVelocityPID(vel, BiobuzzRobotConstants.pollenKpStable, BiobuzzRobotConstants.pollenKI, BiobuzzRobotConstants.pollenKD, BiobuzzRobotConstants.pollenKF);
+    }
+    private static void setNectarVelocity(double vel){
+        if (nectarFlywheel == null) return;
+        nectarFlywheel.setCustomVelocityPID(vel, BiobuzzRobotConstants.nectarKpStable, BiobuzzRobotConstants.nectarKI, BiobuzzRobotConstants.nectarKD, BiobuzzRobotConstants.nectarKF);
     }
     public void runFlywheels(double vel){
-        flywheels.setCustomVelocityPID(vel, 0.0085, 0.015, 0.0001, 0.000426);
+        setPollenVelocity(vel);
     }
     public void stopFlywheels(){
-        flywheels.setCustomVelocityPID(0, 0.0085, 0.015, 0.0001, 0.000426);
+        setPollenVelocity(0);
+    }
+    public void runNectarFlywheel(double vel){
+        setNectarVelocity(vel);
+    }
+    public void stopNectarFlywheel(){
+        setNectarVelocity(0);
     }
     public static void initFlywheels(){
-        flywheels.setCustomVelocityPID(0, 0.0085, 0.015, 0.0001, 0.000426);
+        setPollenVelocity(0);
+        setNectarVelocity(0);
     }
     public void runTransferRollers(double power){
         transferRollers.setPower(power);
-        interTransfer.setPower(power);
+        if (interTransfer != null) interTransfer.setPower(power);
     }
     public void stopTransferRollers(){
         transferRollers.setPower(0);
-        interTransfer.setPower(0);
+        if (interTransfer != null) interTransfer.setPower(0);
     }
     public void hoodAdjusterToPos(double position){
         hoodAdjuster.setPosition(position);
@@ -117,9 +201,16 @@ public class Intake2_0 {
 
         @Override
         public boolean run(@NonNull TelemetryPacket telemetryPacket) {
-            flywheels.updateFlywheels(transferRollers.getPower() > 0.1);
+            // The flag must stay true for the whole transfer and be read every loop: NGMotor starts
+            // the ramp timer on the first loop it sees true and resets it when it goes false, so the
+            // boost ramps up across the entire transfer and drops back to zero right after.
+            flywheels.updateFlywheels(feedingPollen || transferRollers.getPower() > 0.1);
+            if (nectarFlywheel != null) nectarFlywheel.updateFlywheels(feedingNectar);
 
             telemetry.addData("FW Current Vel", "%.1f", flywheels.getVelocity());
+            if (nectarFlywheel != null) {
+                telemetry.addData("Nectar FW Current Vel", "%.1f", nectarFlywheel.getVelocity());
+            }
 
             return true;
         }
@@ -166,6 +257,16 @@ public class Intake2_0 {
                 new InstantAction(() -> stopFlywheels())
         );
     }
+    /** Spins BOTH flywheels for {@code time} seconds, then stops both. Used by the BIOBUZZ autos. */
+    public Action runShooter(double pollenVel, double nectarVel, double time){
+        return new SequentialAction(
+                new InstantAction(() -> runFlywheels(pollenVel)),
+                new InstantAction(() -> runNectarFlywheel(nectarVel)),
+                new SleepAction(time),
+                new InstantAction(() -> stopFlywheels()),
+                new InstantAction(() -> stopNectarFlywheel())
+        );
+    }
     public Action stopShooter(){
         return new SequentialAction(
                 new InstantAction(() -> stopFlywheels())
@@ -185,14 +286,22 @@ public class Intake2_0 {
                 new InstantAction(() -> stopRollers())
         );
     }
+    /**
+     * Intake from a FLOWER: swing the ramp down to the intake position, run the rollers for
+     * {@code time} seconds, then stop them and stow the ramp again. With no ramp configured it is
+     * just collect(time).
+     */
     public Action collectFromFlower(double time) {
         return new SequentialAction(
+                new InstantAction(() -> setFlowerRamp(BiobuzzRobotConstants.flowerRampIntakePos)),
                 new InstantAction(() -> runRollers(1)),
-                // Flicker code here
                 new SleepAction(time),
-                // Flicker code here
-                new InstantAction(() -> stopRollers())
+                new InstantAction(() -> stopRollers()),
+                new InstantAction(() -> setFlowerRamp(BiobuzzRobotConstants.flowerRampStowedPos))
         );
+    }
+    public void setFlowerRamp(double position) {
+        if (flowerRamp != null) flowerRamp.setPosition(position);
     }
     public Action preventEscape(double time){
         return new SequentialAction(
@@ -201,13 +310,24 @@ public class Intake2_0 {
                 new InstantAction(() -> stopRollers())
         );
     }
+    /**
+     * One volley into the POLLEN flywheel: gate open, TRANSFER motor on (plus the intake if
+     * transferAlsoRunsIntake), for {@code time} seconds, then everything off. Same duration as
+     * before the motors were split, so auto timing is unchanged.
+     */
     public Action transferUsingRollersForTime(double time, double p){
         return new SequentialAction(
                 new InstantAction(() -> openGate()),
-                new InstantAction(() -> runRollers(p)),
+                new InstantAction(() -> feedingPollen = true),
+                new InstantAction(() -> runTransferRollers(p)),
+                new InstantAction(() -> {
+                    if (BiobuzzRobotConstants.transferAlsoRunsIntake) runRollers(p);
+                }),
                 new SleepAction(time),
                 new InstantAction(() -> closeGate()),
-                new InstantAction(() -> stopRollers())
+                new InstantAction(() -> stopTransferRollers()),
+                new InstantAction(() -> stopRollers()),
+                new InstantAction(() -> feedingPollen = false)
         );
     }
     public Action transferUsingRollers(double p){

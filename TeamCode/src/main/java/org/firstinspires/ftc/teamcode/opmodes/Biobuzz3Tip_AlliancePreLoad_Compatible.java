@@ -134,7 +134,8 @@ public class Biobuzz3Tip_AlliancePreLoad_Compatible extends NGAutoOpMode{
         telemetry.addLine("Paths Built");
         telemetry.update();
 
-        double shootingVel = BiobuzzRobotConstants.fixedShootingVel;
+        double pollenShootingVel = BiobuzzRobotConstants.pollenFixedShootingVel;
+        double nectarShootingVel = BiobuzzRobotConstants.nectarFixedShootingVel;
         waitForStart();
 
         Actions.runBlocking(
@@ -142,7 +143,7 @@ public class Biobuzz3Tip_AlliancePreLoad_Compatible extends NGAutoOpMode{
                         bulkRead.update(),
                         intake2_0.updateFlywheelPID(),
                         new ParallelAction(
-                                intake2_0.runShooter(shootingVel, 30),
+                                intake2_0.runShooter(pollenShootingVel, nectarShootingVel, 30),
                                 new SequentialAction(
                                         new SequentialAction(
                                                 shootPreLoad,

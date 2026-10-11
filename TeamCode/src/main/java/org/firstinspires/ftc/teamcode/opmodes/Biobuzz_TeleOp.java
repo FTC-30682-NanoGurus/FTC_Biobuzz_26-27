@@ -10,6 +10,7 @@ import com.qualcomm.hardware.rev.RevColorSensorV3;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
+import com.qualcomm.robotcore.hardware.DcMotorSimple;
 import com.qualcomm.robotcore.hardware.DistanceSensor;
 import com.qualcomm.robotcore.hardware.Light;
 import com.qualcomm.robotcore.hardware.NormalizedColorSensor;
@@ -68,14 +69,14 @@ import org.firstinspires.ftc.teamcode.library.NGServo;
  *
  * THE GATE IS NOT A TRIGGER, IT IS AN INTERLOCK. Pulling a shoot trigger spins the flywheel up and
  * nothing else. The gate only opens, and the rollers only transfer, once that flywheel is within
- * {@link #AT_SPEED_TOLERANCE} of its commanded velocity. Feeding an artifact into a wheel that is
+ * {@code BiobuzzRobotConstants.flywheelAtSpeedTolerance} of its commanded velocity. Feeding an artifact into a wheel that is
  * still spinning up throws it short and drags the wheel down further, which is the whole reason
  * {@code NGMotor}'s loop has a kLoad/kRamp feeder term at all.
  *
- * THE TRANSFER MOTOR IS THE INTAKE MOTOR. There is one {@code rollers} motor and it does both jobs,
- * so a shot always wins the arbitration over the intake toggle - see the power resolution in the
- * loop. Releasing the trigger hands the rollers straight back to whatever the toggle last asked
- * for.
+ * THE INTAKE AND THE TRANSFER ARE SEPARATE MOTORS: {@code rollers} intakes, {@code transferRollers}
+ * pushes artifacts into the flywheels. The transfer runs only while a side is feeding. During a shot
+ * the intake is also driven forward if {@code BiobuzzRobotConstants.transferAlsoRunsIntake}, which
+ * outranks the intake toggle; releasing the trigger hands the intake straight back to the toggle.
  *
  * <h2>Distance and the C920 - CURRENTLY DISABLED</h2>
  * Distance-based shooting is wired end to end, but the camera that measures the distance is
@@ -155,17 +156,15 @@ public class Biobuzz_TeleOp extends LinearOpMode {
     private double liftedPos = BiobuzzRobotConstants.intakeLifterLiftedPos;
     private double loweredPos = BiobuzzRobotConstants.intakeLifterLoweredPos;
 
-    /** Intake power when the A toggle is ON. */
-    public static double INTAKE_POWER = 1.0;
-    /** Intake power while B is held. */
-    public static double INTAKE_REVERSE_POWER = -1.0;
-    /** Rollers power while an artifact is being transferred into a flywheel. */
-    public static double TRANSFER_POWER = 1.0;
+    // Intake, reverse and transfer powers: BiobuzzRobotConstants.intakePower etc.
 
     /** A-toggle state. Starts OFF so nothing spins the moment the opmode starts. */
     private boolean intakeOn = false;
     /** Last power actually written to the hub, so an unchanged command costs nothing. */
     private double lastIntakePower = Double.NaN;
+    /** Transfer into the flywheels - its own motor. Null when not configured. */
+    private DcMotorEx transfer;
+    private double lastTransferPower = Double.NaN;
 
     /** True once the lifter has been raised, either automatically at count or by dpad up. */
     private boolean lifterLifted = false;
@@ -260,41 +259,19 @@ public class Biobuzz_TeleOp extends LinearOpMode {
     // SHOOTER
     // =============================================================================================
 
-    /**
-     * Flywheel PIDF, from FlywheelIntakeTestingOpMode's starting constants. Both flywheels get
-     * these same numbers.
-     *
-     * Three of them cannot be reached through {@code setCustomVelocityPID}, whose P argument
-     * NGMotor stores and never reads. The gain that actually acts is scheduled between
-     * {@code kP_Recovery} (while the wheel is more than RECOVERY_THRESHOLD BELOW target, i.e. just
-     * after an artifact went through) and {@code kP_Stable} (everything else, including all
-     * overshoot). Both are package-private in NGMotor, so they are pinned here through
-     * {@link NGMotorFlywheelTuner}.
-     *
-     * Pinning rather than inheriting is deliberate: NGMotor's field initialisers currently hold
-     * exactly these values, but they are the scratchpad a tuning session writes to, and a
-     * competition teleop should not quietly shoot with whatever was left there.
+    /*
+     * Flywheel PIDF, kLoad/kRamp, motor directions and the at-speed tolerance all come from
+     * BiobuzzRobotConstants, so this teleop shoots with exactly the gains the autos use: pollen and
+     * nectar each get their OWN tuned set. KpStable/KpRecovery/Alpha/RecoveryThreshold cannot go
+     * through setCustomVelocityPID (NGMotor ignores its P), so each side pins them through
+     * NGMotorFlywheelTuner.
      */
-    public static double KF = 0.0007;
-    public static double KP_STABLE = 0.005;
-    public static double KP_RECOVERY = 0.0320;
-    public static double KI = 0;
-    public static double KD = 0;
-    public static double ALPHA = 0.7;
-    public static double RECOVERY_THRESHOLD = 90.0;
-
-    /** Feeder load compensation. STATIC on NGMotor, so this is shared by both flywheels. */
-    public static double KLOAD = 0.8;
-    public static double KRAMP = 1.0;
-
-    /** Velocity band counted as "at speed", TICKS/SECOND. This is the gate interlock. */
-    public static double AT_SPEED_TOLERANCE = 30.0;
 
     /** Trigger pull that counts as a request. */
     public static double TRIGGER_THRESHOLD = 0.5;
 
     // ---- the two velocity tables -----------------------------------------------------------------
-    // EVERY ROW IS A PLACEHOLDER AND MUST BE MEASURED. They are all fixedShootingVel on purpose:
+    // EVERY ROW IS A PLACEHOLDER AND MUST BE MEASURED. They are all the fixed shooting velocities on purpose:
     // a flat table shows plainly on telemetry that nothing has been tuned, whereas a plausible
     // made-up curve would hide that until the robot missed at competition. Park the robot at each
     // distance, sweep the velocity until the artifact consistently scores, record it here.
@@ -303,15 +280,15 @@ public class Biobuzz_TeleOp extends LinearOpMode {
     public static double TABLE_D3_IN = 72.0;
     public static double TABLE_D4_IN = 96.0;
 
-    public static double POLLEN_VEL_D1 = BiobuzzRobotConstants.fixedShootingVel;
-    public static double POLLEN_VEL_D2 = BiobuzzRobotConstants.fixedShootingVel;
-    public static double POLLEN_VEL_D3 = BiobuzzRobotConstants.fixedShootingVel;
-    public static double POLLEN_VEL_D4 = BiobuzzRobotConstants.fixedShootingVel;
+    public static double POLLEN_VEL_D1 = BiobuzzRobotConstants.pollenFixedShootingVel;
+    public static double POLLEN_VEL_D2 = BiobuzzRobotConstants.pollenFixedShootingVel;
+    public static double POLLEN_VEL_D3 = BiobuzzRobotConstants.pollenFixedShootingVel;
+    public static double POLLEN_VEL_D4 = BiobuzzRobotConstants.pollenFixedShootingVel;
 
-    public static double NECTAR_VEL_D1 = BiobuzzRobotConstants.fixedShootingVel;
-    public static double NECTAR_VEL_D2 = BiobuzzRobotConstants.fixedShootingVel;
-    public static double NECTAR_VEL_D3 = BiobuzzRobotConstants.fixedShootingVel;
-    public static double NECTAR_VEL_D4 = BiobuzzRobotConstants.fixedShootingVel;
+    public static double NECTAR_VEL_D1 = BiobuzzRobotConstants.nectarFixedShootingVel;
+    public static double NECTAR_VEL_D2 = BiobuzzRobotConstants.nectarFixedShootingVel;
+    public static double NECTAR_VEL_D3 = BiobuzzRobotConstants.nectarFixedShootingVel;
+    public static double NECTAR_VEL_D4 = BiobuzzRobotConstants.nectarFixedShootingVel;
 
     private ShooterSide pollenShooter;
     private ShooterSide nectarShooter;
@@ -356,6 +333,8 @@ public class Biobuzz_TeleOp extends LinearOpMode {
         private final LaunchVelocityTable table;
         private final double gateClosedPos;
         private final double gateOpenPos;
+        /** Which gain set and direction from BiobuzzRobotConstants this side uses. */
+        private final boolean pollen;
 
         /** Velocity asked of the wheel this loop, TICKS/SECOND. 0 when not spinning up. */
         private double commandedVelocity = 0.0;
@@ -367,9 +346,10 @@ public class Biobuzz_TeleOp extends LinearOpMode {
         /** True once power has been cut for this idle period - see the note in update(). */
         private boolean powerCut = false;
 
-        ShooterSide(String label, String motorName, String gateName,
+        ShooterSide(String label, boolean pollen, String motorName, String gateName,
                     double gateClosedPos, double gateOpenPos, LaunchVelocityTable table) {
             this.label = label;
+            this.pollen = pollen;
             this.flywheel = new NGMotor(hardwareMap, telemetry, motorName);
             this.gate = new NGServo(hardwareMap, telemetry, gateName);
             this.table = table;
@@ -383,19 +363,18 @@ public class Biobuzz_TeleOp extends LinearOpMode {
             // needs the encoder plugged in - a flat zero velocity while the wheel spins is that
             // cable, not these gains.
             flywheel.init();
+            flywheel.setDirection((pollen ? BiobuzzRobotConstants.pollenFlywheelReversed
+                    : BiobuzzRobotConstants.nectarFlywheelReversed)
+                    ? DcMotorSimple.Direction.REVERSE : DcMotorSimple.Direction.FORWARD);
             flywheel.setZeroPowerBehavior_Brake();
             flywheel.setTelemetryEnabled(false);
 
             // The gains that setCustomVelocityPID can carry. Target 0: nothing spins at init.
-            flywheel.setCustomVelocityPID(0.0, KP_STABLE, KI, KD, KF);
+            applyGains(0.0);
             powerCut = true;   // nothing has been commanded yet, so there is nothing to cut
 
-            // The gains it cannot - see the KP_RECOVERY comment above. Per-motor instance fields,
+            // The gains it cannot are pinned inside applyGains() too. Per-motor instance fields,
             // so each side is pinned separately.
-            NGMotorFlywheelTuner.setStableKp(flywheel, KP_STABLE);
-            NGMotorFlywheelTuner.setRecoveryKp(flywheel, KP_RECOVERY);
-            NGMotorFlywheelTuner.setAlpha(flywheel, ALPHA);
-            NGMotorFlywheelTuner.setRecoveryThreshold(flywheel, RECOVERY_THRESHOLD);
 
             gate.setPosition(gateClosedPos);
         }
@@ -424,7 +403,7 @@ public class Biobuzz_TeleOp extends LinearOpMode {
             // The cost is one loop of spin-up, a few milliseconds.
             if (wantSpinUp && !spinningUp) {
                 commandedVelocity = table.getVelocity(distanceIn);
-                flywheel.setCustomVelocityPID(commandedVelocity, KP_STABLE, KI, KD, KF);
+                applyGains(commandedVelocity);
                 spinningUp = true;
                 powerCut = false;
                 feeding = false;
@@ -470,9 +449,31 @@ public class Biobuzz_TeleOp extends LinearOpMode {
             gate.setPosition(feeding ? gateOpenPos : gateClosedPos);
         }
 
+        /**
+         * This side's gains from BiobuzzRobotConstants. setCustomVelocityPID resets the integral,
+         * the last error and the loop timer, so this is only called at init and on spin-up.
+         */
+        private void applyGains(double target) {
+            if (pollen) {
+                flywheel.setCustomVelocityPID(target, BiobuzzRobotConstants.pollenKpStable,
+                        BiobuzzRobotConstants.pollenKI, BiobuzzRobotConstants.pollenKD, BiobuzzRobotConstants.pollenKF);
+                NGMotorFlywheelTuner.setStableKp(flywheel, BiobuzzRobotConstants.pollenKpStable);
+                NGMotorFlywheelTuner.setRecoveryKp(flywheel, BiobuzzRobotConstants.pollenKpRecovery);
+                NGMotorFlywheelTuner.setAlpha(flywheel, BiobuzzRobotConstants.pollenAlpha);
+                NGMotorFlywheelTuner.setRecoveryThreshold(flywheel, BiobuzzRobotConstants.pollenRecoveryThreshold);
+            } else {
+                flywheel.setCustomVelocityPID(target, BiobuzzRobotConstants.nectarKpStable,
+                        BiobuzzRobotConstants.nectarKI, BiobuzzRobotConstants.nectarKD, BiobuzzRobotConstants.nectarKF);
+                NGMotorFlywheelTuner.setStableKp(flywheel, BiobuzzRobotConstants.nectarKpStable);
+                NGMotorFlywheelTuner.setRecoveryKp(flywheel, BiobuzzRobotConstants.nectarKpRecovery);
+                NGMotorFlywheelTuner.setAlpha(flywheel, BiobuzzRobotConstants.nectarAlpha);
+                NGMotorFlywheelTuner.setRecoveryThreshold(flywheel, BiobuzzRobotConstants.nectarRecoveryThreshold);
+            }
+        }
+
         boolean atSpeed() {
             return spinningUp && commandedVelocity > 0
-                    && Math.abs(commandedVelocity - velocity) <= AT_SPEED_TOLERANCE;
+                    && Math.abs(commandedVelocity - velocity) <= BiobuzzRobotConstants.flywheelAtSpeedTolerance;
         }
 
         boolean isFeeding() {
@@ -534,6 +535,14 @@ public class Biobuzz_TeleOp extends LinearOpMode {
 
         // ---- INTAKE SETUP -------------------------------------------------------------------------
         intake = hardwareMap.get(DcMotorEx.class, BiobuzzRobotConstants.rollers);
+        try {
+            transfer = hardwareMap.get(DcMotorEx.class, BiobuzzRobotConstants.transferRollers);
+            transfer.setDirection(BiobuzzRobotConstants.transferReversed
+                    ? DcMotorSimple.Direction.REVERSE : DcMotorSimple.Direction.FORWARD);
+        } catch (Exception e) {
+            transfer = null;
+            telemetry.addLine("TRANSFER MOTOR MISSING - nothing can feed the flywheels");
+        }
         intakeLifter = new NGServo(hardwareMap, telemetry, BiobuzzRobotConstants.intakeLifter);
 
         // ---- COLOUR SENSOR SETUP ------------------------------------------------------------------
@@ -548,17 +557,17 @@ public class Biobuzz_TeleOp extends LinearOpMode {
 
         // ---- SHOOTER SETUP ------------------------------------------------------------------------
         // kLoad and kRamp are STATIC on NGMotor, so these two writes cover both flywheels.
-        NGMotor.kLoad = KLOAD;
-        NGMotor.kRamp = KRAMP;
+        NGMotor.kLoad = BiobuzzRobotConstants.flywheelKLoad;
+        NGMotor.kRamp = BiobuzzRobotConstants.flywheelKRamp;
 
-        pollenShooter = new ShooterSide("POLLEN",
+        pollenShooter = new ShooterSide("POLLEN", true,
                 BiobuzzRobotConstants.pollenFlywheel,
                 BiobuzzRobotConstants.pollenGate,
                 BiobuzzRobotConstants.pollenGateClosedPos,
                 BiobuzzRobotConstants.pollenGateOpenPos,
                 buildTable(POLLEN_VEL_D1, POLLEN_VEL_D2, POLLEN_VEL_D3, POLLEN_VEL_D4));
 
-        nectarShooter = new ShooterSide("NECTAR",
+        nectarShooter = new ShooterSide("NECTAR", false,
                 BiobuzzRobotConstants.nectarFlywheel,
                 BiobuzzRobotConstants.nectarGate,
                 BiobuzzRobotConstants.nectarGateClosedPos,
@@ -781,22 +790,27 @@ public class Biobuzz_TeleOp extends LinearOpMode {
             nectarShooter.update(distanceIn, nectarSpin, nectarFeed);
 
             // =========================================================================================
-            // ROLLERS - ONE motor, three claims on it, resolved in this order
+            // INTAKE + TRANSFER - separate motors
             //
-            // There is a single "rollers" motor: it is the intake AND the transfer. A shot in
-            // progress therefore outranks the intake toggle, because an artifact half-way to a
-            // flywheel that is already at speed has to keep moving. Releasing the trigger hands the
-            // motor straight back to whatever the toggle last asked for - no state to unwind.
+            // The transfer motor runs only while a side is feeding. The intake follows its toggle and
+            // reverse, except during a shot with transferAlsoRunsIntake, when it is driven forward so
+            // artifacts still in the intake follow through - an artifact half-way to a flywheel that
+            // is already at speed has to keep moving.
             // =========================================================================================
             boolean transferring = pollenShooter.isFeeding() || nectarShooter.isFeeding();
+            double transferPower = transferring ? BiobuzzRobotConstants.transferPower : 0.0;
+            if (transfer != null && transferPower != lastTransferPower) {
+                transfer.setPower(transferPower);
+                lastTransferPower = transferPower;
+            }
 
             double intakePower;
-            if (transferring) {
-                intakePower = TRANSFER_POWER;
+            if (transferring && BiobuzzRobotConstants.transferAlsoRunsIntake) {
+                intakePower = BiobuzzRobotConstants.transferPower;
             } else if (reverseHeld) {
-                intakePower = INTAKE_REVERSE_POWER;
+                intakePower = BiobuzzRobotConstants.intakeReversePower;
             } else {
-                intakePower = intakeOn ? INTAKE_POWER : 0.0;
+                intakePower = intakeOn ? BiobuzzRobotConstants.intakePower : 0.0;
             }
             // Only write on a change. setPower() is a hub round trip the bulk read does not cover,
             // and this loop runs a few hundred times a second.
@@ -876,6 +890,7 @@ public class Biobuzz_TeleOp extends LinearOpMode {
         pollenShooter.stop();
         nectarShooter.stop();
         intake.setPower(0);
+        if (transfer != null) transfer.setPower(0);
         // ===== BEGIN CAMERA CODE - DISABLED =====
         // vision.close();
         // ===== END CAMERA CODE - DISABLED =====
