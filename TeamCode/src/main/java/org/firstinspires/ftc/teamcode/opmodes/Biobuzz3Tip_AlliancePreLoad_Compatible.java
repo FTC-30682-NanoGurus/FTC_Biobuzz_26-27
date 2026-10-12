@@ -2,6 +2,7 @@ package org.firstinspires.ftc.teamcode.opmodes;
 
 import androidx.annotation.NonNull;
 
+import com.acmerobotics.dashboard.config.Config;
 import com.acmerobotics.roadrunner.AccelConstraint;
 import com.acmerobotics.roadrunner.Action;
 import com.acmerobotics.roadrunner.Arclength;
@@ -23,13 +24,19 @@ import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
 import com.qualcomm.robotcore.eventloop.opmode.Disabled;
 
 import org.firstinspires.ftc.teamcode.BiobuzzRobotConstants;
+import org.firstinspires.ftc.teamcode.Biobuzz_subsystems.HiveAutoKit;
+import org.firstinspires.ftc.teamcode.Biobuzz_subsystems.HiveWatcher;
+import org.firstinspires.ftc.teamcode.Biobuzz_subsystems.HiveWatcher.Side;
 import org.firstinspires.ftc.teamcode.library.NGAutoOpMode;
 import org.firstinspires.ftc.teamcode.roadrunner.MecanumDrive;
 
 import java.util.Arrays;
 
+@Config
 @Autonomous
 public class Biobuzz3Tip_AlliancePreLoad_Compatible extends NGAutoOpMode{
+    public static double MAX_WAIT_FOR_ALLIANCE_TIP_S = 4.2;
+
     @Override
     public void runOpMode() throws InterruptedException{
 
@@ -84,10 +91,10 @@ public class Biobuzz3Tip_AlliancePreLoad_Compatible extends NGAutoOpMode{
 
         TrajectoryActionBuilder waitForAlliancePreLoadPath = drive.actionBuilder(beginPose)
                 .setTangent(Math.toRadians(0))
-                .splineToConstantHeading(new Vector2d(-52, -14), Math.toRadians(-75), maxVel, maxAccel)
-                .waitSeconds(4.2);
+                .splineToConstantHeading(new Vector2d(-52, -14), Math.toRadians(-75), maxVel, maxAccel);
 
         TrajectoryActionBuilder turnToFlowerOne = waitForAlliancePreLoadPath.endTrajectory().fresh()
+                .afterTime(0, intake2_0.deployFlowerRamp())
                 .setTangent(Math.toRadians(-30))
                 .splineToSplineHeading(new Pose2d(-55, -22, Math.toRadians(-179.5)), Math.toRadians(210), maxVel, maxAccel)
                 .afterTime(0, intake2_0.collectFromFlower(3));
@@ -99,6 +106,7 @@ public class Biobuzz3Tip_AlliancePreLoad_Compatible extends NGAutoOpMode{
         TrajectoryActionBuilder toFlowerTwo = turnToShoot.endTrajectory().fresh()
                 .setTangent(Math.toRadians(-90))
                 .splineToLinearHeading(new Pose2d(-4, -38, Math.toRadians(-10)), Math.toRadians(0), maxVel, maxAccel)
+                .afterTime(0, intake2_0.deployFlowerRamp())
                 .splineToSplineHeading(new Pose2d(24, -55, Math.toRadians(-90)), Math.toRadians(-90), maxVel, maxAccel)
                 .afterTime(0, intake2_0.collectFromFlower(3));
 
@@ -120,6 +128,36 @@ public class Biobuzz3Tip_AlliancePreLoad_Compatible extends NGAutoOpMode{
                 .splineToLinearHeading(new Pose2d(-50, -26, Math.toRadians(20)), Math.toRadians(-90), maxVel, maxAccel)
                 .splineToSplineHeading(new Pose2d(-53.5, -57, Math.toRadians(90)), Math.toRadians(-90), maxVel, maxAccel);
 
+        Pose2d soloStart = new Pose2d(61, -14, Math.toRadians(180));
+        Pose2d parkPose = new Pose2d(-53.5, -57, Math.toRadians(90));
+
+        TrajectoryActionBuilder soloPreLoadWait = drive.actionBuilder(soloStart)
+                .waitSeconds(2);
+
+        TrajectoryActionBuilder soloWallSetandShooting = soloPreLoadWait.endTrajectory().fresh()
+                .setTangent(Math.toRadians(-155))
+                .splineToSplineHeading(new Pose2d(62, -58, Math.toRadians(360)), Math.toRadians(25), maxIntakeVel, maxAccel)
+                .afterTime(0.7, intake2_0.collect(4))
+                .setReversed(true)
+                .splineToLinearHeading(new Pose2d(20, -48, Math.toRadians(360)), Math.toRadians(-180), maxVel, maxAccel)
+                .splineToLinearHeading(new Pose2d(-33, -44, Math.toRadians(360)), Math.toRadians(170), maxVel, maxAccel)
+                .splineToLinearHeading(new Pose2d(-52, -16, Math.toRadians(360)), Math.toRadians(-220), maxVel, maxAccel);
+
+        TrajectoryActionBuilder soloTurnToFlowerOne = soloWallSetandShooting.endTrajectory().fresh()
+                .afterTime(0, intake2_0.deployFlowerRamp())
+                .setTangent(Math.toRadians(-172))
+                .splineToSplineHeading(new Pose2d(-52.6, -17.5, Math.toRadians(180)), Math.toRadians(-112), maxVel, maxAccel)
+                .splineToConstantHeading(new Vector2d(-55, -22), Math.toRadians(-82), maxVel, maxAccel)
+                .afterTime(0.4, intake2_0.collectFromFlower(3));
+
+        TrajectoryActionBuilder soloTurnToShoot = soloTurnToFlowerOne.endTrajectory().fresh()
+                .setTangent(Math.toRadians(90))
+                .splineToConstantHeading(new Vector2d(-54, -16.1), Math.toRadians(90), maxVel, maxAccel)
+                .splineToSplineHeading(new Pose2d(-52, -14, Math.toRadians(360)), Math.toRadians(90), maxVel, maxAccel);
+
+        TrajectoryActionBuilder soloStrafeToParking = soloTurnToShoot.endTrajectory().fresh()
+                .strafeToLinearHeading(new Vector2d(-50, -57), Math.toRadians(90), maxVel, maxAccel);
+
         telemetry.addLine("Ready To Start");
         telemetry.update();
 
@@ -131,44 +169,108 @@ public class Biobuzz3Tip_AlliancePreLoad_Compatible extends NGAutoOpMode{
         Action IntakeWallSetandShoot = ToWallSetandShooting.build();
         Action park = strafeToParking.build();
 
+        Action soloShootPreLoad = soloPreLoadWait.build();
+        Action soloIntakeWallSetandShoot = soloWallSetandShooting.build();
+        Action soloIntakeFromFlowerOne = soloTurnToFlowerOne.build();
+        Action soloShootFlowerOnePollen = soloTurnToShoot.build();
+        Action soloPark = soloStrafeToParking.build();
+
+        HiveWatcher hive = new HiveWatcher(hardwareMap, telemetry, true);
+        HiveAutoKit kit = new HiveAutoKit(drive, intake2_0, hive, telemetry, maxVel, maxAccel,
+                parkPose, new Pose2d(-52, -14, Math.toRadians(0)), soloStart);
+
         telemetry.addLine("Paths Built");
         telemetry.update();
 
+        Action regularPath = new SequentialAction(
+                new SequentialAction(
+                        intake2_0.transferUsingRollersForTime(1.0, 0.8)
+                ),
+                new SequentialAction(
+                        IntakeFromFlowerOne,
+                        shootFlowerOnePollen,
+                        intake2_0.transferUsingRollersForTime(1.0, 0.8)
+                ),
+                new SequentialAction(
+                        IntakeFromFlowerTwo,
+                        shootFlowerTwoPollen,
+                        intake2_0.transferUsingRollersForTime(1.0, 0.8)
+                ),
+                new SequentialAction(
+                        IntakeWallSetandShoot,
+                        intake2_0.transferUsingRollersForTime(1.0, 0.8)
+                ),
+                new SequentialAction(
+                        kit.beginPark(),
+                        park
+                )
+        );
+
+        Action allianceDidNotTip = new SequentialAction(
+                HiveAutoKit.branch(() -> kit.route(drive.pose, soloStart)),
+                new ParallelAction(
+                        soloShootPreLoad,
+                        intake2_0.transferUsingRollersForTime(1.0, 0.8)
+                ),
+                new SequentialAction(
+                        soloIntakeWallSetandShoot,
+                        intake2_0.transferUsingRollersForTime(1.0, 0.8)
+                ),
+                HiveAutoKit.branch(() -> {
+                    if (kit.fits(5.08 + 1.66 + 1.0, new Pose2d(-52, -14, Math.toRadians(0)))) {
+                        return new SequentialAction(
+                                soloIntakeFromFlowerOne,
+                                soloShootFlowerOnePollen,
+                                intake2_0.transferUsingRollersForTime(1.0, 0.8),
+                                kit.beginPark(),
+                                soloPark
+                        );
+                    }
+                    kit.log("no time for flower one");
+                    return new SequentialAction(
+                            kit.beginPark(),
+                            HiveAutoKit.branch(() -> kit.route(drive.pose, parkPose))
+                    );
+                })
+        );
+
+        Action main = new SequentialAction(
+                shootPreLoad,
+                HiveAutoKit.waitUntil(() -> hive.settledUp(Side.LEFT, 0.4), MAX_WAIT_FOR_ALLIANCE_TIP_S),
+                HiveAutoKit.branch(() -> {
+                    if (!hive.settledUp(Side.LEFT, 0.6) && hive.settledUp(Side.RIGHT, 0.6)) {
+                        kit.log("alliance did not tip - going RIGHT to run the 2 tip auto");
+                        return allianceDidNotTip;
+                    }
+                    kit.log(hive.settledUp(Side.LEFT, 0.6) ? "alliance tipped - shooting" : "no HIVE view - shooting as planned");
+                    return regularPath;
+                })
+        );
+
         double pollenShootingVel = BiobuzzRobotConstants.pollenFixedShootingVel;
         double nectarShootingVel = BiobuzzRobotConstants.nectarFixedShootingVel;
-        waitForStart();
 
+        while (!isStarted() && !isStopRequested()) {
+            hive.update(drive.pose);
+            telemetry.addLine("Paths Built - Ready To Start");
+            telemetry.addData("HIVE", hive.describe());
+            telemetry.update();
+        }
+        if (isStopRequested()) {
+            hive.close();
+            return;
+        }
+
+        kit.start();
         Actions.runBlocking(
                 new ParallelAction(
                         bulkRead.update(),
                         intake2_0.updateFlywheelPID(),
-                        new ParallelAction(
-                                intake2_0.runShooter(pollenShootingVel, nectarShootingVel, 30),
-                                new SequentialAction(
-                                        new SequentialAction(
-                                                shootPreLoad,
-                                                intake2_0.transferUsingRollersForTime(1.0, 0.8)
-                                        ),
-                                        new SequentialAction(
-                                                IntakeFromFlowerOne,
-                                                shootFlowerOnePollen,
-                                                intake2_0.transferUsingRollersForTime(1.0, 0.8)
-                                        ),
-                                        new SequentialAction(
-                                                IntakeFromFlowerTwo,
-                                                shootFlowerTwoPollen,
-                                                intake2_0.transferUsingRollersForTime(1.0, 0.8)
-                                        ),
-                                        new SequentialAction(
-                                                IntakeWallSetandShoot,
-                                                intake2_0.transferUsingRollersForTime(1.0, 0.8)
-                                        ),
-                                        new SequentialAction(
-                                                park
-                                        )
-                                )
-                        )
+                        kit.background(),
+                        intake2_0.runShooter(pollenShootingVel, nectarShootingVel, 30),
+                        kit.guardPark(main)
                 )
         );
+        hive.close();
     }
 }

@@ -300,8 +300,29 @@ public class Intake2_0 {
                 new InstantAction(() -> setFlowerRamp(BiobuzzRobotConstants.flowerRampStowedPos))
         );
     }
+    /**
+     * Swings the flower ramp to its intake position and returns immediately, so it can be placed at
+     * the start of the turn toward a FLOWER and deploy while the robot is still turning.
+     * collectFromFlower() sets the same position again (harmless) and stows the ramp when done.
+     */
+    public Action deployFlowerRamp() {
+        return new InstantAction(() -> setFlowerRamp(BiobuzzRobotConstants.flowerRampIntakePos));
+    }
     public void setFlowerRamp(double position) {
         if (flowerRamp != null) flowerRamp.setPosition(position);
+    }
+
+    /**
+     * Stops everything an interrupted action could have left running: rollers, transfer, gate, the
+     * load-boost flags and the flower ramp. Used when the park watchdog cuts an auto short.
+     */
+    public void stopAllFeeding() {
+        feedingPollen = false;
+        feedingNectar = false;
+        stopRollers();
+        stopTransferRollers();
+        closeGate();
+        setFlowerRamp(BiobuzzRobotConstants.flowerRampStowedPos);
     }
     public Action preventEscape(double time){
         return new SequentialAction(
