@@ -23,6 +23,7 @@ import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
 import com.qualcomm.robotcore.eventloop.opmode.Disabled;
 
 import org.firstinspires.ftc.teamcode.BiobuzzRobotConstants;
+import org.firstinspires.ftc.teamcode.Biobuzz_subsystems.AllianceSelector;
 import org.firstinspires.ftc.teamcode.library.NGAutoOpMode;
 import org.firstinspires.ftc.teamcode.roadrunner.MecanumDrive;
 
@@ -123,7 +124,13 @@ public class Biobuzz_2_Tip_Auto extends NGAutoOpMode{
 
         double pollenShootingVel = BiobuzzRobotConstants.pollenFixedShootingVel;
         double nectarShootingVel = BiobuzzRobotConstants.nectarFixedShootingVel;
-        waitForStart();
+        while (!isStarted() && !isStopRequested()) {
+            AllianceSelector.poll(gamepad1, gamepad2);
+            AllianceSelector.show(telemetry);
+            telemetry.addLine("Paths Built - Ready To Start");
+            telemetry.update();
+        }
+        if (isStopRequested()) return;
 
         Actions.runBlocking(
                 new ParallelAction(

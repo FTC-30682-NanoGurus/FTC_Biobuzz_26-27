@@ -124,7 +124,7 @@ public class FlywheelIntakeTestingOpMode extends LinearOpMode {
         telemetry.addLine("FLYWHEEL + INTAKE TESTING (no drive)");
         telemetry.addLine("gp2: Y = run/stop   dpad up/dn = target");
         telemetry.addLine("gp2: X/A = select constant   dpad L/R = adjust");
-        telemetry.addLine("gp2: RT = 10x step   LT = 0.1x step   Start = fake feeder");
+        telemetry.addLine("gp2: RT (hold) = transfer   LT = 0.1x step");
         telemetry.addLine("gp2: RB = intake   LB = stop   B = reverse");
         telemetry.addLine("");
         telemetry.addLine("Flywheel starts STOPPED. Clear the shooter before pressing Y.");
@@ -185,8 +185,9 @@ public class FlywheelIntakeTestingOpMode extends LinearOpMode {
             NGMotor.kLoad = kLoad;
             NGMotor.kRamp = kRamp;
 
-            boolean simulatedFeeder = gamepad2.start;
-            double transferPower = simulatedFeeder && flywheelRunning ? 1.0 : 0.0;
+            boolean transferHeld = gamepad2.right_trigger > 0.5;
+            boolean simulatedFeeder = transferHeld && flywheelRunning;
+            double transferPower = transferHeld ? BiobuzzRobotConstants.transferPower : 0.0;
             if (transfer != null && transferPower != lastTransferPower) {
                 transfer.setPower(transferPower);
                 lastTransferPower = transferPower;
@@ -214,7 +215,7 @@ public class FlywheelIntakeTestingOpMode extends LinearOpMode {
                         NGMotorFlywheelTuner.getSmoothedVelocity(flywheel));
                 telemetry.addData("error", "%.0f", error);
                 telemetry.addData("motor power", "%.3f", flywheel.getPower());
-                telemetry.addData("feeder sim", simulatedFeeder ? "ACTIVE (Start held)" : "off");
+                telemetry.addData("load boost", simulatedFeeder ? "ACTIVE (transferring)" : "off");
                 telemetry.addData("transfer motor", transfer == null ? "MISSING ("
                         + BiobuzzRobotConstants.transferRollers + ")" : String.format("%.1f", transferPower));
 
@@ -251,7 +252,6 @@ public class FlywheelIntakeTestingOpMode extends LinearOpMode {
     }
 
     private double stepMultiplier() {
-        if (gamepad2.right_trigger > 0.5) return 10.0;
         if (gamepad2.left_trigger > 0.5) return 0.1;
         return 1.0;
     }

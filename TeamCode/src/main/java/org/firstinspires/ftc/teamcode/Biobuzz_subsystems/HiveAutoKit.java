@@ -7,14 +7,19 @@ import com.acmerobotics.dashboard.telemetry.TelemetryPacket;
 import com.acmerobotics.roadrunner.AccelConstraint;
 import com.acmerobotics.roadrunner.Action;
 import com.acmerobotics.roadrunner.NullAction;
+import com.acmerobotics.roadrunner.ParallelAction;
 import com.acmerobotics.roadrunner.Pose2d;
+import com.acmerobotics.roadrunner.PosePath;
+import com.acmerobotics.roadrunner.PoseVelocity2d;
 import com.acmerobotics.roadrunner.SequentialAction;
+import com.acmerobotics.roadrunner.TimeTurn;
 import com.acmerobotics.roadrunner.TrajectoryActionBuilder;
 import com.acmerobotics.roadrunner.Vector2d;
 import com.acmerobotics.roadrunner.VelConstraint;
 import com.qualcomm.robotcore.util.ElapsedTime;
 
 import org.firstinspires.ftc.robotcore.external.Telemetry;
+import org.firstinspires.ftc.teamcode.BiobuzzRobotConstants;
 import org.firstinspires.ftc.teamcode.Biobuzz_subsystems.HiveWatcher.Side;
 import org.firstinspires.ftc.teamcode.roadrunner.MecanumDrive;
 
@@ -37,8 +42,8 @@ import java.util.function.Supplier;
  * <h2>Prebuilt vs runtime paths</h2>
  * The planned legs are built in INIT, exactly as in the original autos, so they cost nothing during
  * the match. A leg only gets rebuilt at runtime ({@link #leg}) when an earlier decision has left the
- * robot somewhere else than that leg was built to start from. Runtime routes ({@link #route}) go
- * around the HIVE through a corridor at y = {@link #CORRIDOR_Y} when the straight line would hit it.
+ * robot somewhere else than that leg was built to start from. Runtime routes ({@link #route}) keep
+ * the whole robot clear of the HIVE (see the Routes section), going round below it when needed.
  *
  * <h2>PARK is guaranteed by {@link #guardPark}</h2>
  * Every loop it compares the time left with a conservative estimate of the drive from wherever the
@@ -58,8 +63,12 @@ public class HiveAutoKit {
     public static double ROUTE_OVERHEAD_S = 0.8;
     /** Extra estimate per radian of heading change, SECONDS. */
     public static double ROUTE_TURN_S_PER_RAD = 0.3;
-    /** Extra estimate per corridor corner, SECONDS (corners force the follower to slow). */
-    public static double ROUTE_WAYPOINT_S = 0.25;
+    /** Extra estimate per corner of a runtime route, SECONDS (the strafes stop at each corner). */
+    public static double ROUTE_WAYPOINT_S = 0.55;
+    /** Added to a route's exact planned time for the follower settling at the end, SECONDS. */
+    public static double ROUTE_SETTLE_S = 0.2;
+    /** How often the watchdog re-measures the exact park time once it is close, SECONDS. */
+    public static double WATCHDOG_REFINE_S = 0.25;
     /** How recent HIVE evidence must be for a shot decision, SECONDS. */
     public static double GATE_FRESH_S = 0.6;
     /**
@@ -71,17 +80,44 @@ public class HiveAutoKit {
     public static double GATE_MAX_WAIT_S = 0.7;
     /** Near LEFT CELL unseen this long during the alliance wait means the alliance did not tip, SECONDS. */
     public static double ALLIANCE_ABSENCE_S = 1.0;
-    /** If the LEFT CELL is seen mid-swing when the wait runs out, wait this much longer for it to settle. */
-    public static double ALLIANCE_SETTLE_EXTRA_S = 0.6;
+    /**
+     * If a tip is visibly under way when the alliance wait runs out (the LEFT CELL seen moving, or
+     * upright but not yet at rest), wait up to this much longer for it to settle, SECONDS. A TIP
+     * takes 2.5-4.8 s, so a tip seen late needs most of that.
+     */
+    public static double ALLIANCE_SETTLE_EXTRA_S = 3.0;
+    /** Longest a shot waits for a HIVE that is part-way through a tip to come to rest, SECONDS. */
+    public static double TIP_WAIT_MAX_S = 3.5;
+    /** No movement seen for this long counts as the HIVE being still, SECONDS. */
+    public static double HIVE_STILL_S = 0.5;
+    /**
+     * After our own volley, how much longer to watch the CELL for the start of its tip before
+     * deciding it did not tip, SECONDS. A tip starts slowly, so this is spent only when the CELL
+     * is still sitting at rest.
+     */
+    public static double OWN_TIP_GRACE_S = 1.0;
     /** A leg's prebuilt path is used only if the robot is this close to where it starts, INCHES / DEG. */
     public static double NEAR_IN = 8.0;
     public static double NEAR_DEG = 25.0;
-    /** Corridor used to drive around the HIVE, field inches (red side). */
-    public static double CORRIDOR_Y = -44.0;
-    public static double CORRIDOR_X = 30.0;
-    /** HIVE keep-out for the robot CENTRE: frame half-sizes plus half a robot plus margin. */
-    public static double KEEPOUT_X = 31.0;
-    public static double KEEPOUT_Y = 36.0;
+    /**
+     * HIVE frame half-sizes, field INCHES (frame centred on the origin). The robot's own size comes
+     * from BiobuzzRobotConstants.robotWidthIn / robotLengthIn.
+     */
+    public static double HIVE_HALF_X = 19.5;
+    public static double HIVE_HALF_Y = 24.7;
+    /** Allowance for path-following error on top of the robot's size, INCHES. */
+    public static double TRACKING_MARGIN_IN = 3.0;
+    /**
+     * The two corridor corners below the HIVE sit this far outside the clearance zone, INCHES. Small,
+     * because every candidate route is checked against the real path (RouteOptimizer).
+     */
+    public static double WAYPOINT_SLACK_IN = 1.0;
+    /** Spacing of the samples used to check a built path, INCHES. */
+    public static double CHECK_STEP_IN = 0.5;
+    /** When the watchdog fires while the robot is moving, it brakes first for at most this long, SECONDS. */
+    public static double WATCHDOG_STOP_S = 0.4;
+    /** ... and stops braking early once slower than this, IN/S. */
+    public static double WATCHDOG_STOP_SPEED_IN_S = 4.0;
     /** One volley. Same as the original autos. */
     public static double TRANSFER_S = 1.0;
     public static double TRANSFER_POWER = 0.8;
@@ -231,26 +267,55 @@ public class HiveAutoKit {
      * </ul>
      */
     public Action shotPoint(Side side) {
-        return new SequentialAction(
-                waitUntil(this::haveEvidence, GATE_MAX_WAIT_S),
-                branch(() -> decideShot(side, true)));
+        return new SequentialAction(waitForShot(), branch(() -> decideShot(side, true)));
     }
 
-    private boolean haveEvidence() {
-        return hive.upCell(GATE_FRESH_S) != null || !hive.cameraHealthy();
+    /**
+     * Waits for evidence it does not already have (up to {@link #GATE_MAX_WAIT_S}) and, if the HIVE
+     * is part-way through a tip, for it to come to rest (up to {@link #TIP_WAIT_MAX_S}, never past
+     * the park budget). Launching while the HIVE swings can stop the TIP.
+     */
+    private Action waitForShot() {
+        return new Action() {
+            private long start = -1;
+            private boolean told = false;
+
+            @Override
+            public boolean run(@NonNull TelemetryPacket p) {
+                if (start < 0) start = System.nanoTime();
+                double elapsed = (System.nanoTime() - start) / 1e9;
+                if (!hive.cameraHealthy()) return false;
+                if (hive.hiveMoving(HIVE_STILL_S)) {
+                    if (!told) log("HIVE moving - waiting for it to settle");
+                    told = true;
+                    return elapsed < TIP_WAIT_MAX_S && fits(TRANSFER_S, drive.pose);
+                }
+                if (hive.upCell(GATE_FRESH_S) != null) return false;
+                return elapsed < GATE_MAX_WAIT_S;
+            }
+        };
+    }
+
+    /**
+     * After our own volley into {@code side}: ends as soon as that CELL is seen starting to tip, or
+     * is no longer settled up, or after maxS. Costs time only while the CELL sits still at rest.
+     */
+    public Action waitForTipStart(Side side, double maxS) {
+        return waitUntil(() -> !hive.cameraHealthy() || hive.tipping(side, HiveWatcher.TIP_MAX_S)
+                || !hive.settledUp(side, 0.4), maxS);
     }
 
     public enum TipResult { TIPPED, NOT_TIPPED, UNKNOWN }
 
     /**
      * Waits at the LEFT shooting pose for the alliance's tip: ends as soon as the LEFT CELL is up and
-     * settled, or after maxWaitS - plus up to {@link #ALLIANCE_SETTLE_EXTRA_S} if the LEFT CELL is
-     * visibly swinging up at that moment.
+     * at rest, or after maxWaitS - plus up to {@link #ALLIANCE_SETTLE_EXTRA_S} while a tip is
+     * visibly under way (the LEFT CELL seen moving, or upright but not yet at rest).
      */
     public Action waitForAllianceTip(double maxWaitS) {
         return new SequentialAction(
                 waitUntil(() -> hive.settledUp(Side.LEFT, 0.4), maxWaitS),
-                waitUntil(() -> hive.settledUp(Side.LEFT, 0.4) || !hive.seenUpright(Side.LEFT, 0.3),
+                waitUntil(() -> hive.settledUp(Side.LEFT, 0.4) || !hive.tipActivity(Side.LEFT, HIVE_STILL_S),
                         ALLIANCE_SETTLE_EXTRA_S));
     }
 
@@ -261,13 +326,18 @@ public class HiveAutoKit {
      */
     public TipResult allianceTipResult() {
         if (hive.settledUp(Side.LEFT, 0.6)) return TipResult.TIPPED;
-        if (hive.settledUp(Side.RIGHT, 0.6) || hive.downByAbsence(Side.LEFT, ALLIANCE_ABSENCE_S)) {
+        if (hive.settledUp(Side.RIGHT, 0.6) || (hive.downByAbsence(Side.LEFT, ALLIANCE_ABSENCE_S)
+                && !hive.tipActivity(Side.LEFT, 1.0))) {
             return TipResult.NOT_TIPPED;
         }
         return TipResult.UNKNOWN;
     }
 
     private Action decideShot(Side side, boolean mayCross) {
+        if (hive.cameraHealthy() && hive.moving(side, HIVE_STILL_S)) {
+            log(side + " CELL still swinging - holding");
+            return new NullAction();
+        }
         Side up = hive.upCell(GATE_FRESH_S);
         if (up == side.other()) {
             if (!mayCross) {
@@ -280,7 +350,7 @@ public class HiveAutoKit {
                 log(side + " CELL is DOWN - crossing to shoot " + side.other());
                 return new SequentialAction(
                         route(drive.pose, dest),
-                        waitUntil(this::haveEvidence, GATE_MAX_WAIT_S),
+                        waitForShot(),
                         branch(() -> decideShot(side.other(), false)));
             }
             log(side + " CELL is DOWN, no time to cross - holding");
@@ -296,24 +366,81 @@ public class HiveAutoKit {
 
     /**
      * Runs {@code main}, but abandons it the moment the time left only just covers driving to park
-     * from where the robot is. Then stops every mechanism and parks from the robot's actual pose.
-     * The planned park (after {@link #beginPark}) is never interrupted.
+     * from where the robot is (plus {@link #PARK_MARGIN_S}). Then stops every mechanism, brakes (if it was moving, so the park
+     * route starts from where the robot really stopped rather than where it was a coast ago) and
+     * parks from the robot's actual pose. The planned park (after {@link #beginPark}) is never
+     * interrupted.
      */
     public Action guardPark(Action main) {
         return new Action() {
             private Action park;
+            private boolean braking = false;
+            private final ElapsedTime brakeTimer = new ElapsedTime();
+            private Pose2d lastPose;
+            private long lastNanos;
+            private double speed = 0;
+            private double exactS = 0;
+            private final ElapsedTime exactTimer = new ElapsedTime();
+            private boolean haveExact = false;
 
             @Override
             public boolean run(@NonNull TelemetryPacket p) {
-                if (park == null && !parking
-                        && remaining() <= estimateRoute(drive.pose, parkPose) + PARK_MARGIN_S) {
+                if (park != null) return park.run(p);
+                if (braking) {
+                    PoseVelocity2d v = drive.updatePoseEstimate();
+                    if (Math.hypot(v.linearVel.x, v.linearVel.y) < WATCHDOG_STOP_SPEED_IN_S
+                            || brakeTimer.seconds() >= WATCHDOG_STOP_S) {
+                        park = route(drive.pose, parkPose);
+                    }
+                    return true;
+                }
+                trackSpeed();
+                boolean moving = speed > WATCHDOG_STOP_SPEED_IN_S;
+                double extra = PARK_MARGIN_S + (moving ? WATCHDOG_STOP_S : 0);
+                if (!parking && remaining() <= estimateRoute(drive.pose, parkPose) + extra
+                        && remaining() <= exactParkS() + extra) {
                     log("WATCHDOG: out of time - parking now");
                     intake.stopAllFeeding();
                     parking = true;
+                    drive.setDrivePowers(new PoseVelocity2d(new Vector2d(0, 0), 0));
+                    if (moving) {
+                        braking = true;
+                        brakeTimer.reset();
+                        return true;
+                    }
                     park = route(drive.pose, parkPose);
+                    return park.run(p);
                 }
-                if (park != null) return park.run(p);
                 return main.run(p);
+            }
+
+            /**
+             * The rough estimate is cheap but deliberately pessimistic. Only once it says "park now"
+             * is a real park route built and its planned time used (re-measured every
+             * WATCHDOG_REFINE_S), so the auto is not cut short by the pessimism. The plain strafe
+             * route is timed (one quick build): the optimised one actually driven is never slower.
+             */
+            private double exactParkS() {
+                if (!haveExact || exactTimer.seconds() >= WATCHDOG_REFINE_S) {
+                    exactS = motionTime(safeRoute(drive.pose, parkPose, robotEnv())) + ROUTE_SETTLE_S;
+                    haveExact = true;
+                    exactTimer.reset();
+                }
+                return exactS;
+            }
+
+            private void trackSpeed() {
+                long now = System.nanoTime();
+                if (lastPose == null) {
+                    lastPose = drive.pose;
+                    lastNanos = now;
+                    return;
+                }
+                double dt = (now - lastNanos) / 1e9;
+                if (dt < 0.02) return;
+                speed = 0.5 * speed + 0.5 * dist(lastPose.position, drive.pose.position) / dt;
+                lastPose = drive.pose;
+                lastNanos = now;
             }
         };
     }
@@ -322,6 +449,7 @@ public class HiveAutoKit {
     public Action background() {
         return p -> {
             hive.update(drive.pose);
+            for (String e : hive.drainEvents()) log(e);
             if (telemetryTimer.milliseconds() > 200) {
                 telemetryTimer.reset();
                 telemetry.addData("t", "%.1f s   remaining %.1f s", t(), remaining());
@@ -336,82 +464,406 @@ public class HiveAutoKit {
     // =============================================================================================
     // Routes
     // =============================================================================================
+    //
+    // Collision rule: the robot is a 15 x 18 in rectangle that may point any way while it drives, so
+    // runtime routes keep its CENTRE at least robotRadius() + TRACKING_MARGIN_IN from the HIVE frame
+    // (robotRadius = half the diagonal). plan() picks the corner points: straight lines between them
+    // are checked exactly, using two corridor corners below the HIVE (red side only, never y > 0).
+    // RouteOptimizer then decides HOW to drive through them - stop-and-strafe, or one smooth path
+    // driven forward/backward along the travel direction - by timing each candidate with the Road
+    // Runner profile and sampling it against the same clearance rule, the field walls and our
+    // FLOWERS. A robot that starts inside the clearance zone (pushed, or the watchdog fired next to
+    // the HIVE) first backs straight away from the nearest HIVE face.
 
-    /** A path from {@code from} to {@code to}, through the corridor if the straight line hits the HIVE. */
-    public Action route(Pose2d from, Pose2d to) {
-        Vector2d[] wps = waypoints(from, to);
-        try {
-            TrajectoryActionBuilder b = drive.actionBuilder(from);
-            if (wps.length == 0) {
-                b = b.strafeToLinearHeading(to.position, to.heading.toDouble(), vel, accel);
-            } else {
-                b = b.setTangent(angle(from.position, wps[0]));
-                for (int i = 0; i < wps.length; i++) {
-                    Vector2d next = i + 1 < wps.length ? wps[i + 1] : to.position;
-                    double h = i == wps.length - 1 ? to.heading.toDouble() : from.heading.toDouble();
-                    b = b.splineToLinearHeading(new Pose2d(wps[i], h), angle(wps[i], next), vel, accel);
-                }
-                b = b.splineToLinearHeading(to, angle(wps[wps.length - 1], to.position), vel, accel);
-            }
-            return b.build();
-        } catch (Exception splineFailed) {
-            // Never let a path-builder exception end the auto: straight strafes always build.
-            TrajectoryActionBuilder b = drive.actionBuilder(from);
-            for (Vector2d w : wps) b = b.strafeToLinearHeading(w, to.heading.toDouble(), vel, accel);
-            return b.strafeToLinearHeading(to.position, to.heading.toDouble(), vel, accel).build();
+    /** Half the robot's diagonal: the farthest any part of the robot reaches from its centre, INCHES. */
+    public static double robotRadius() {
+        return 0.5 * Math.hypot(BiobuzzRobotConstants.robotWidthIn, BiobuzzRobotConstants.robotLengthIn);
+    }
+
+    /** Distance the robot CENTRE must keep from the HIVE frame on runtime routes, INCHES. */
+    public static double requiredClearance() {
+        return robotRadius() + TRACKING_MARGIN_IN;
+    }
+
+    private static Vector2d[] corridorCorners() {
+        double c = requiredClearance() + WAYPOINT_SLACK_IN;
+        return new Vector2d[]{new Vector2d(-(HIVE_HALF_X + c), -(HIVE_HALF_Y + c)),
+                new Vector2d(HIVE_HALF_X + c, -(HIVE_HALF_Y + c))};
+    }
+
+    /** Straight-segment plan from a to b: the intermediate points, whether it starts with an escape. */
+    public static final class Plan {
+        public final List<Vector2d> points;
+        public final boolean escaped, safe;
+
+        Plan(List<Vector2d> points, boolean escaped, boolean safe) {
+            this.points = points;
+            this.escaped = escaped;
+            this.safe = safe;
         }
     }
 
-    /** Conservative drive-time estimate for {@link #route}, SECONDS. */
-    public double estimateRoute(Pose2d from, Pose2d to) {
-        Vector2d[] wps = waypoints(from, to);
-        double len = pathLength(from.position, wps, to.position);
-        double turn = Math.abs(wrap(to.heading.toDouble() - from.heading.toDouble()));
-        return len / ROUTE_SPEED_IN_S + ROUTE_OVERHEAD_S + turn * ROUTE_TURN_S_PER_RAD
-                + wps.length * ROUTE_WAYPOINT_S;
+    /**
+     * Shortest plan (path length plus a penalty per corner) whose every straight segment keeps the
+     * robot centre {@link #requiredClearance()} from the HIVE frame.
+     */
+    public static Plan plan(Vector2d a, Vector2d b) {
+        List<Vector2d> best = bestThroughCorners(a, b);
+        if (best != null) return new Plan(avoidFlowers(a, best, b), false, true);
+        Vector2d e = escapePoint(a);
+        best = bestThroughCorners(e, b);
+        boolean safe = best != null;
+        if (best == null) best = closestCornerChain(e, b);
+        List<Vector2d> pts = new ArrayList<>();
+        pts.add(e);
+        pts.addAll(avoidFlowers(e, best, b));
+        return new Plan(pts, true, safe);
+    }
+
+    /** Robot centre distance kept from a FLOWER centre when passing it, INCHES (any heading). */
+    public static double flowerPassIn() {
+        return RouteOptimizer.FLOWER_RADIUS_IN + robotRadius() + RouteOptimizer.OBSTACLE_GAP_IN;
     }
 
     /**
-     * Corridor waypoints for a route: none if the straight line is clear, otherwise the shortest of
-     * [near corner], [far corner] or [near corner, far corner] whose every segment misses the HIVE.
+     * Where a straight piece would pass a FLOWER closer than {@link #flowerPassIn()} (and neither of
+     * its ends is already that close - e.g. the FLOWER intake pose), adds a point beside the FLOWER,
+     * on the side toward the field centre, provided the new pieces still clear the HIVE.
      */
-    private Vector2d[] waypoints(Pose2d from, Pose2d to) {
-        Vector2d a = from.position, b = to.position;
-        if (!hitsHive(a, b)) return new Vector2d[0];
-        double sA = Math.signum(a.x), sB = Math.signum(b.x);
-        if (sA == 0) sA = -sB;
-        if (sB == 0) sB = -sA;
-        Vector2d w1 = new Vector2d(sA * CORRIDOR_X, CORRIDOR_Y), w2 = new Vector2d(sB * CORRIDOR_X, CORRIDOR_Y);
-        Vector2d[][] options = {{w1}, {w2}, {w1, w2}};
-        Vector2d[] best = options[2];
-        double bestLen = Double.MAX_VALUE;
+    private static List<Vector2d> avoidFlowers(Vector2d a, List<Vector2d> corners, Vector2d b) {
+        List<Vector2d> all = new ArrayList<>();
+        all.add(a);
+        all.addAll(corners);
+        all.add(b);
+        double zone = flowerPassIn(), req = requiredClearance();
+        boolean[] used = new boolean[RouteOptimizer.FLOWERS.length];
+        for (int i = 0; i + 1 < all.size(); i++) {
+            Vector2d p = all.get(i), q = all.get(i + 1);
+            for (int k = 0; k < RouteOptimizer.FLOWERS.length; k++) {
+                double[] f = RouteOptimizer.FLOWERS[k];
+                Vector2d fc = new Vector2d(f[0], f[1]);
+                if (used[k] || dist(p, fc) <= zone || dist(q, fc) <= zone || pointToSegment(fc, p, q) >= zone) continue;
+                double n = Math.hypot(fc.x, fc.y);
+                Vector2d side = new Vector2d(fc.x - fc.x / n * (zone + 1), fc.y - fc.y / n * (zone + 1));
+                if (segmentClearance(p, side) < req || segmentClearance(side, q) < req) continue;
+                all.add(i + 1, side);
+                used[k] = true;
+                break;
+            }
+        }
+        return new ArrayList<>(all.subList(1, all.size() - 1));
+    }
+
+    private static List<Vector2d> bestThroughCorners(Vector2d a, Vector2d b) {
+        Vector2d[] w = corridorCorners();
+        Vector2d[][] options = {{}, {w[0]}, {w[1]}, {w[0], w[1]}, {w[1], w[0]}};
+        double req = requiredClearance();
+        double penalty = ROUTE_WAYPOINT_S * ROUTE_SPEED_IN_S;
+        List<Vector2d> best = null;
+        double bestCost = Double.MAX_VALUE;
         for (Vector2d[] o : options) {
-            boolean clear = !hitsHive(a, o[0]) && !hitsHive(o[o.length - 1], b);
-            for (int i = 0; i + 1 < o.length; i++) clear &= !hitsHive(o[i], o[i + 1]);
-            double len = pathLength(a, o, b);
-            if (clear && len < bestLen) {
-                best = o;
-                bestLen = len;
+            Vector2d prev = a;
+            boolean clear = true;
+            double cost = o.length * penalty;
+            for (int i = 0; i <= o.length && clear; i++) {
+                Vector2d next = i < o.length ? o[i] : b;
+                clear = segmentClearance(prev, next) >= req;
+                cost += dist(prev, next);
+                prev = next;
+            }
+            if (clear && cost < bestCost) {
+                bestCost = cost;
+                best = java.util.Arrays.asList(o);
             }
         }
         return best;
     }
 
-    private static double pathLength(Vector2d a, Vector2d[] wps, Vector2d b) {
+    /** Only used when the target itself is too close to the HIVE: go round to the corner nearest it. */
+    private static List<Vector2d> closestCornerChain(Vector2d e, Vector2d b) {
+        Vector2d[] w = corridorCorners();
+        Vector2d first = dist(e, w[0]) < dist(e, w[1]) ? w[0] : w[1];
+        Vector2d last = dist(b, w[0]) < dist(b, w[1]) ? w[0] : w[1];
+        List<Vector2d> out = new ArrayList<>();
+        out.add(first);
+        if (last != first) out.add(last);
+        return out;
+    }
+
+    /**
+     * Straight out from the nearest HIVE face (left, right or bottom) to the corridor line. Moving
+     * along a face's outward normal never brings the robot closer to the frame.
+     */
+    private static Vector2d escapePoint(Vector2d a) {
+        double c = requiredClearance() + WAYPOINT_SLACK_IN;
+        double ex = Math.abs(a.x) - HIVE_HALF_X, ey = Math.abs(a.y) - HIVE_HALF_Y;
+        if (ex > ey) return new Vector2d((a.x < 0 ? -1 : 1) * (HIVE_HALF_X + c), a.y);
+        return new Vector2d(a.x, -(HIVE_HALF_Y + c));
+    }
+
+    private final List<Object[]> prepared = new ArrayList<>();
+    /** How the last runtime route is driven (telemetry / testing). */
+    public String lastPattern = "";
+
+    /** The robot's own builder, sampler and timer for {@link RouteOptimizer}. */
+    private RouteOptimizer.Env robotEnv() {
+        return new RouteOptimizer.Env() {
+            @Override
+            public TrajectoryActionBuilder builder(Pose2d start) {
+                return drive.actionBuilder(start);
+            }
+
+            @Override
+            public List<Pose2d> poses(Action a) {
+                return pathPoses(a);
+            }
+
+            @Override
+            public double seconds(Action a) {
+                return motionTime(a);
+            }
+        };
+    }
+
+    /**
+     * The FASTEST safe route from {@code from} to {@code to} (see {@link RouteOptimizer}): driven
+     * forward/backward along the travel direction where that is quicker, turning while moving, not
+     * stopping at corners - whichever the Road Runner profile says is quickest - and never closer to
+     * the HIVE than {@link #requiredClearance()}.
+     */
+    public Action route(Pose2d from, Pose2d to) {
+        return route(from, to, robotEnv());
+    }
+
+    /** {@link #route(Pose2d, Pose2d)} with the builder/sampler/timer supplied (offline testing). */
+    public Action route(Pose2d from, Pose2d to, RouteOptimizer.Env env) {
+        Plan plan = plan(from.position, to.position);
+        if (!plan.safe) log("WARNING: target " + fmt(to) + " is too close to the HIVE");
+        RouteOptimizer.Result r = RouteOptimizer.search(from, to, plan, env, vel, accel,
+                preparedPattern(from, to), RouteOptimizer.MAX_SEARCH_S);
+        log(String.format("route to %s: %s %.2f s (%d tried)", fmt(to), r.pattern, r.seconds, r.built));
+        lastPattern = r.pattern;
+        return r.action;
+    }
+
+    /** The plain stop-at-each-corner strafe route: never faster than {@link #route}, so a safe upper bound. */
+    public Action safeRoute(Pose2d from, Pose2d to, RouteOptimizer.Env env) {
+        Plan plan = plan(from.position, to.position);
+        Vector2d escape = plan.escaped ? plan.points.get(0) : null;
+        List<Vector2d> corners = plan.escaped ? plan.points.subList(1, plan.points.size()) : plan.points;
+        return RouteOptimizer.build("stops", from, to, escape, corners, env, vel, accel);
+    }
+
+    /**
+     * Searches every candidate for a route the auto is likely to need (call in INIT, no time limit)
+     * and remembers the winner, which a runtime {@link #route} from near the same start then tries
+     * first.
+     */
+    public void prepare(Pose2d from, Pose2d to) {
+        prepare(from, to, robotEnv());
+    }
+
+    public void prepare(Pose2d from, Pose2d to, RouteOptimizer.Env env) {
+        RouteOptimizer.Result r = RouteOptimizer.search(from, to, plan(from.position, to.position), env, vel, accel,
+                null, Double.MAX_VALUE);
+        prepared.add(new Object[]{from, to, r.pattern});
+    }
+
+    /** Prepares the routes every HIVE auto may need: between the shot poses and from them to park. */
+    public void prepareDefaults() {
+        prepare(leftShot, rightShot);
+        prepare(rightShot, leftShot);
+        prepare(leftShot, parkPose);
+        prepare(rightShot, parkPose);
+    }
+
+    private String preparedPattern(Pose2d from, Pose2d to) {
+        for (Object[] e : prepared) {
+            Pose2d f = (Pose2d) e[0], t = (Pose2d) e[1];
+            if (dist(t.position, to.position) < 1.0
+                    && Math.abs(Math.toDegrees(wrap(t.heading.toDouble() - to.heading.toDouble()))) < 3.0
+                    && near(from, f)) {
+                return (String) e[2];
+            }
+        }
+        return null;
+    }
+
+    /** Planned motion time of a built Road Runner action (its trajectories and turns), SECONDS. */
+    public static double motionTime(Action a) {
+        double t = 0;
+        if (a instanceof SequentialAction) {
+            for (Action c : ((SequentialAction) a).getInitialActions()) t += motionTime(c);
+        } else if (a instanceof ParallelAction) {
+            for (Action c : ((ParallelAction) a).getInitialActions()) t = Math.max(t, motionTime(c));
+        } else if (a instanceof MecanumDrive.FollowTrajectoryAction) {
+            t = ((MecanumDrive.FollowTrajectoryAction) a).timeTrajectory.duration;
+        } else if (a instanceof MecanumDrive.FollowTrajectoryActionFast) {
+            t = ((MecanumDrive.FollowTrajectoryActionFast) a).timeTrajectory.duration;
+        } else if (a instanceof MecanumDrive.TurnAction) {
+            t = ((MecanumDrive.TurnAction) a).turn.duration;
+        }
+        return t;
+    }
+
+    /** Conservative drive-time estimate for {@link #route}, SECONDS. */
+    public double estimateRoute(Pose2d from, Pose2d to) {
+        Plan plan = plan(from.position, to.position);
         double len = 0;
-        Vector2d prev = a;
-        for (Vector2d w : wps) {
+        Vector2d prev = from.position;
+        for (Vector2d w : plan.points) {
             len += dist(prev, w);
             prev = w;
         }
-        return len + dist(prev, b);
+        len += dist(prev, to.position);
+        double turn = Math.abs(wrap(to.heading.toDouble() - from.heading.toDouble()));
+        return len / ROUTE_SPEED_IN_S + ROUTE_OVERHEAD_S + turn * ROUTE_TURN_S_PER_RAD
+                + plan.points.size() * ROUTE_WAYPOINT_S;
     }
 
-    /** Does the straight segment pass through the HIVE keep-out box? (Liang-Barsky clip.) */
-    private static boolean hitsHive(Vector2d a, Vector2d b) {
+    // ---------------------------------------------------------------------------------------------
+    // Prebuilt path check (run in INIT)
+    // ---------------------------------------------------------------------------------------------
+
+    private String closestName = null;
+    private double closestGap = Double.MAX_VALUE;
+    private final List<String> clearanceWarnings = new ArrayList<>();
+
+    /**
+     * Samples a prebuilt path and measures the true gap between the robot's 15 x 18 in footprint (at
+     * its real heading) and the HIVE frame. Gaps under {@link #TRACKING_MARGIN_IN} are reported.
+     */
+    public void checkPrebuilt(String name, Action path) {
+        double min = Double.MAX_VALUE;
+        for (Pose2d p : pathPoses(path)) min = Math.min(min, footprintGap(p));
+        if (min == Double.MAX_VALUE) return;
+        if (min < closestGap) {
+            closestGap = min;
+            closestName = name;
+        }
+        if (min < TRACKING_MARGIN_IN) {
+            String w = String.format("WARNING %s comes within %.1f in of the HIVE", name, Math.max(0, min));
+            clearanceWarnings.add(w);
+            log(w);
+        }
+    }
+
+    public String clearanceSummary() {
+        if (closestName == null) return "no paths checked";
+        if (!clearanceWarnings.isEmpty()) return String.join("\n", clearanceWarnings);
+        return String.format("all paths clear (closest %.1f in, %s)", closestGap, closestName);
+    }
+
+    /** Every pose along the trajectories (and turns) inside a built Road Runner action. */
+    public static List<Pose2d> pathPoses(Action a) {
+        List<Pose2d> out = new ArrayList<>();
+        collectPoses(a, out);
+        return out;
+    }
+
+    private static void collectPoses(Action a, List<Pose2d> out) {
+        if (a instanceof SequentialAction) {
+            for (Action c : ((SequentialAction) a).getInitialActions()) collectPoses(c, out);
+        } else if (a instanceof ParallelAction) {
+            for (Action c : ((ParallelAction) a).getInitialActions()) collectPoses(c, out);
+        } else if (a instanceof MecanumDrive.FollowTrajectoryAction) {
+            samplePath(((MecanumDrive.FollowTrajectoryAction) a).timeTrajectory.path, out);
+        } else if (a instanceof MecanumDrive.FollowTrajectoryActionFast) {
+            samplePath(((MecanumDrive.FollowTrajectoryActionFast) a).timeTrajectory.path, out);
+        } else if (a instanceof MecanumDrive.TurnAction) {
+            TimeTurn t = ((MecanumDrive.TurnAction) a).turn;
+            for (double s = 0; s < t.duration; s += 0.02) out.add(t.get(s).value());
+            out.add(t.get(t.duration).value());
+        }
+    }
+
+    public static void samplePath(PosePath path, List<Pose2d> out) {
+        double len = path.length();
+        for (double s = 0; s < len; s += CHECK_STEP_IN) out.add(path.get(s, 1).value());
+        out.add(path.get(len, 1).value());
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // Geometry against the HIVE frame (axis-aligned box centred on the origin)
+    // ---------------------------------------------------------------------------------------------
+
+    /** Distance from a point to the HIVE frame, 0 inside it. */
+    public static double pointClearance(Vector2d p) {
+        double dx = Math.max(0, Math.abs(p.x) - HIVE_HALF_X), dy = Math.max(0, Math.abs(p.y) - HIVE_HALF_Y);
+        return Math.hypot(dx, dy);
+    }
+
+    /** Smallest distance from any point of segment ab to the HIVE frame, 0 if it crosses it. */
+    public static double segmentClearance(Vector2d a, Vector2d b) {
+        if (segmentHitsFrame(a, b)) return 0;
+        double d = Math.min(pointClearance(a), pointClearance(b));
+        for (Vector2d c : frameCorners()) d = Math.min(d, pointToSegment(c, a, b));
+        return d;
+    }
+
+    /** True gap between the robot's footprint at pose p and the HIVE frame, 0 if they overlap. */
+    public static double footprintGap(Pose2d p) {
+        Vector2d[] robot = robotCorners(p);
+        Vector2d[] frame = frameCorners();
+        if (overlaps(robot, frame, p.heading.toDouble())) return 0;
+        double d = Double.MAX_VALUE;
+        for (Vector2d c : robot) d = Math.min(d, pointClearance(c));
+        for (Vector2d c : frame) {
+            for (int i = 0; i < 4; i++) d = Math.min(d, pointToSegment(c, robot[i], robot[(i + 1) % 4]));
+        }
+        return d;
+    }
+
+    private static Vector2d[] frameCorners() {
+        return new Vector2d[]{new Vector2d(-HIVE_HALF_X, -HIVE_HALF_Y), new Vector2d(HIVE_HALF_X, -HIVE_HALF_Y),
+                new Vector2d(HIVE_HALF_X, HIVE_HALF_Y), new Vector2d(-HIVE_HALF_X, HIVE_HALF_Y)};
+    }
+
+    /** Footprint corners: length along the heading, width across it. */
+    private static Vector2d[] robotCorners(Pose2d p) {
+        double h = p.heading.toDouble(), c = Math.cos(h), s = Math.sin(h);
+        double l = BiobuzzRobotConstants.robotLengthIn / 2, w = BiobuzzRobotConstants.robotWidthIn / 2;
+        double[][] local = {{l, w}, {-l, w}, {-l, -w}, {l, -w}};
+        Vector2d[] out = new Vector2d[4];
+        for (int i = 0; i < 4; i++) {
+            out[i] = new Vector2d(p.position.x + local[i][0] * c - local[i][1] * s,
+                    p.position.y + local[i][0] * s + local[i][1] * c);
+        }
+        return out;
+    }
+
+    /** Separating-axis test between the robot rectangle and the frame. */
+    private static boolean overlaps(Vector2d[] robot, Vector2d[] frame, double heading) {
+        double[][] axes = {{1, 0}, {0, 1}, {Math.cos(heading), Math.sin(heading)},
+                {-Math.sin(heading), Math.cos(heading)}};
+        for (double[] ax : axes) {
+            double r0 = Double.MAX_VALUE, r1 = -Double.MAX_VALUE, f0 = Double.MAX_VALUE, f1 = -Double.MAX_VALUE;
+            for (Vector2d v : robot) {
+                double d = v.x * ax[0] + v.y * ax[1];
+                r0 = Math.min(r0, d);
+                r1 = Math.max(r1, d);
+            }
+            for (Vector2d v : frame) {
+                double d = v.x * ax[0] + v.y * ax[1];
+                f0 = Math.min(f0, d);
+                f1 = Math.max(f1, d);
+            }
+            if (r1 < f0 || f1 < r0) return false;
+        }
+        return true;
+    }
+
+    private static double pointToSegment(Vector2d p, Vector2d a, Vector2d b) {
+        double dx = b.x - a.x, dy = b.y - a.y, len2 = dx * dx + dy * dy;
+        double t = len2 < 1e-12 ? 0 : Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2));
+        return Math.hypot(a.x + t * dx - p.x, a.y + t * dy - p.y);
+    }
+
+    /** Does segment ab cross the HIVE frame? (Liang-Barsky clip.) */
+    private static boolean segmentHitsFrame(Vector2d a, Vector2d b) {
         double t0 = 0, t1 = 1, dx = b.x - a.x, dy = b.y - a.y;
         double[] p = {-dx, dx, -dy, dy};
-        double[] q = {a.x + KEEPOUT_X, KEEPOUT_X - a.x, a.y + KEEPOUT_Y, KEEPOUT_Y - a.y};
+        double[] q = {a.x + HIVE_HALF_X, HIVE_HALF_X - a.x, a.y + HIVE_HALF_Y, HIVE_HALF_Y - a.y};
         for (int i = 0; i < 4; i++) {
             if (p[i] == 0) {
                 if (q[i] < 0) return false;
@@ -421,7 +873,7 @@ public class HiveAutoKit {
                 else t1 = Math.min(t1, r);
             }
         }
-        return t0 < t1;
+        return t0 <= t1;
     }
 
     private boolean near(Pose2d a, Pose2d b) {

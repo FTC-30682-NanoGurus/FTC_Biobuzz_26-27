@@ -14,6 +14,15 @@ public class BiobuzzRobotConstants {
     public static boolean imu_init = false;
 
     public static Pose2d pose = new Pose2d(0,0,0);
+
+    /**
+     * Alliance for the BIOBUZZ autos, picked with the gamepad during INIT (B = red, X = blue) by
+     * AllianceSelector. The field is rotationally symmetric, so every auto path is written once in
+     * the "alliance frame" (our own side is y < 0, our drivers' right is +x - the red view) and runs
+     * unchanged for blue; only the HIVE AprilTag IDs and CELL positions depend on this. Static, so
+     * the last choice is remembered until the Robot Controller app restarts.
+     */
+    public static boolean allianceRed = true;
     public static String rollers = "rollers";
     public static String flicker = "flicker";
     public static String gate = "gate";
@@ -57,6 +66,14 @@ public class BiobuzzRobotConstants {
     public static double
         flowerRampStowedPos = 0.100,
         flowerRampIntakePos = 0.480;
+
+    /**
+     * Robot footprint, INCHES: width is side to side, length is front to back (the heading
+     * direction). Used by HiveAutoKit to keep every auto route clear of the HIVE.
+     */
+    public static double
+        robotWidthIn = 15.0,
+        robotLengthIn = 18.0;
 
     //public static String hoodAdjuster = "hoodAdjuster";
 

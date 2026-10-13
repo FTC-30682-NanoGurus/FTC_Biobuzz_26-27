@@ -16,6 +16,7 @@ import com.acmerobotics.roadrunner.ftc.Actions;
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
 
 import org.firstinspires.ftc.teamcode.BiobuzzRobotConstants;
+import org.firstinspires.ftc.teamcode.Biobuzz_subsystems.AllianceSelector;
 import org.firstinspires.ftc.teamcode.Biobuzz_subsystems.HiveAutoKit;
 import org.firstinspires.ftc.teamcode.Biobuzz_subsystems.HiveWatcher;
 import org.firstinspires.ftc.teamcode.Biobuzz_subsystems.HiveWatcher.Side;
@@ -76,7 +77,7 @@ public class Biobuzz_2_Tip_HiveAuto extends NGAutoOpMode {
         Pose2d flowerOne = new Pose2d(-55, -22, Math.toRadians(180));
         Pose2d parkPose = new Pose2d(-50, -57, Math.toRadians(90));
 
-        HiveWatcher hive = new HiveWatcher(hardwareMap, telemetry, true);
+        HiveWatcher hive = new HiveWatcher(hardwareMap, telemetry, AllianceSelector.red());
         HiveAutoKit kit = new HiveAutoKit(drive, intake2_0, hive, telemetry, maxVel, maxAccel,
                 parkPose, leftShot, rightShot);
 
@@ -125,12 +126,13 @@ public class Biobuzz_2_Tip_HiveAuto extends NGAutoOpMode {
 
         Action main = new SequentialAction(
                 new ParallelAction(preloadWait, kit.transfer()),
+                kit.waitForTipStart(Side.RIGHT, HiveAutoKit.OWN_TIP_GRACE_S),
                 HiveAutoKit.branch(() -> {
                     if (hive.settledUp(Side.RIGHT, 0.4)) {
                         kit.log("RIGHT CELL did not tip - wall set goes back to RIGHT");
                         return new SequentialAction(wallSetToRight, kit.shotPoint(Side.RIGHT));
                     }
-                    kit.log(hive.settledUp(Side.LEFT, 1.0) ? "tip seen - LEFT CELL up" : "no RIGHT CELL in view - assuming it tipped");
+                    kit.log(hive.tipping(Side.RIGHT, 5.0) ? "RIGHT CELL seen tipping" : "no RIGHT CELL at rest in view - assuming it tipped");
                     return new SequentialAction(wallSetToLeft, kit.shotPoint(Side.LEFT));
                 }),
                 HiveAutoKit.branch(() -> {
@@ -150,10 +152,25 @@ public class Biobuzz_2_Tip_HiveAuto extends NGAutoOpMode {
         double pollenShootingVel = BiobuzzRobotConstants.pollenFixedShootingVel;
         double nectarShootingVel = BiobuzzRobotConstants.nectarFixedShootingVel;
 
+        telemetry.addLine("Preparing fastest routes...");
+        telemetry.update();
+        kit.prepareDefaults();
+        kit.prepare(rightShot, flowerOne);
+        kit.checkPrebuilt("wallSetToLeft", wallSetToLeft);
+        kit.checkPrebuilt("wallSetToRight", wallSetToRight);
+        kit.checkPrebuilt("toFlowerOne", toFlowerOne);
+        kit.checkPrebuilt("backToShoot", backToShoot);
+        kit.checkPrebuilt("parkFromLeft", parkFromLeft);
+
         while (!isStarted() && !isStopRequested()) {
+            if (AllianceSelector.poll(gamepad1, gamepad2)) hive.setAlliance(AllianceSelector.red());
             hive.update(drive.pose);
+            AllianceSelector.show(telemetry);
+            telemetry.addData("Alliance check", hive.ownTagsSeen(2.0) ? "OK - our HIVE tags in view"
+                    : hive.otherAllianceTagsSeen(2.0) ? "CHECK ALLIANCE - only the other alliance's tags seen" : "our HIVE tags not seen yet");
             telemetry.addLine("Paths Built - Ready To Start");
             telemetry.addData("HIVE", hive.describe());
+            telemetry.addData("HIVE clearance", kit.clearanceSummary());
             Side up = hive.upCell(1.0);
             telemetry.addData("CELL up", up == null ? "unknown" : up);
             telemetry.update();

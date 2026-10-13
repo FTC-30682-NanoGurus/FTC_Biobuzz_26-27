@@ -17,6 +17,7 @@ import com.acmerobotics.roadrunner.ftc.Actions;
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
 
 import org.firstinspires.ftc.teamcode.BiobuzzRobotConstants;
+import org.firstinspires.ftc.teamcode.Biobuzz_subsystems.AllianceSelector;
 import org.firstinspires.ftc.teamcode.Biobuzz_subsystems.HiveAutoKit;
 import org.firstinspires.ftc.teamcode.Biobuzz_subsystems.HiveWatcher;
 import org.firstinspires.ftc.teamcode.Biobuzz_subsystems.HiveWatcher.Side;
@@ -85,7 +86,7 @@ public class Biobuzz3Tip_HiveAuto extends NGAutoOpMode {
         Pose2d wallSet = new Pose2d(62, -58, Math.toRadians(360));
         Pose2d parkPose = new Pose2d(-53.5, -57, Math.toRadians(90));
 
-        HiveWatcher hive = new HiveWatcher(hardwareMap, telemetry, true);
+        HiveWatcher hive = new HiveWatcher(hardwareMap, telemetry, AllianceSelector.red());
         HiveAutoKit kit = new HiveAutoKit(drive, intake2_0, hive, telemetry, maxVel, maxAccel,
                 parkPose, leftShot, rightShot);
 
@@ -249,24 +250,49 @@ public class Biobuzz3Tip_HiveAuto extends NGAutoOpMode {
 
         Action main = new SequentialAction(
                 toLeftShot,
-                HiveAutoKit.waitUntil(() -> hive.settledUp(Side.LEFT, 0.4), MAX_WAIT_FOR_ALLIANCE_TIP_S),
+                kit.waitForAllianceTip(MAX_WAIT_FOR_ALLIANCE_TIP_S),
                 HiveAutoKit.branch(() -> {
-                    boolean leftUp = hive.settledUp(Side.LEFT, 0.6);
-                    if (!leftUp && hive.settledUp(Side.RIGHT, 0.6)) {
+                    HiveAutoKit.TipResult tip = kit.allianceTipResult();
+                    if (tip == HiveAutoKit.TipResult.NOT_TIPPED) {
                         kit.log("partner did not tip - tipping RIGHT ourselves");
                         return partnerDidNotTip;
                     }
-                    kit.log(leftUp ? "partner tipped - LEFT CELL up" : "no HIVE view - shooting LEFT as planned");
+                    kit.log(tip == HiveAutoKit.TipResult.TIPPED ? "partner tipped - LEFT CELL up" : "no camera frames - shooting LEFT as planned");
                     return nominal;
                 }));
 
         double pollenShootingVel = BiobuzzRobotConstants.pollenFixedShootingVel;
         double nectarShootingVel = BiobuzzRobotConstants.nectarFixedShootingVel;
 
+        telemetry.addLine("Preparing fastest routes...");
+        telemetry.update();
+        kit.prepareDefaults();
+        kit.prepare(leftShot, rightShotSolo);
+        kit.prepare(flowerTwo, leftShot);
+        kit.prepare(wallSet, parkPose);
+        kit.prepare(rightShot, wallShotLeft);
+        kit.checkPrebuilt("toLeftShot", toLeftShot);
+        kit.checkPrebuilt("toFlowerOne", toFlowerOne);
+        kit.checkPrebuilt("backFromFlowerOne", backFromFlowerOne);
+        kit.checkPrebuilt("toFlowerTwo", toFlowerTwo);
+        kit.checkPrebuilt("crossToRight", crossToRight);
+        kit.checkPrebuilt("wallToLeft", wallToLeft);
+        kit.checkPrebuilt("wallToRight", wallToRight);
+        kit.checkPrebuilt("wallOnly", wallOnly);
+        kit.checkPrebuilt("parkFromLeft", parkFromLeft);
+        kit.checkPrebuilt("soloWallSet", soloWallSet);
+        kit.checkPrebuilt("soloFlower", soloFlower);
+        kit.checkPrebuilt("soloBack", soloBack);
+
         while (!isStarted() && !isStopRequested()) {
+            if (AllianceSelector.poll(gamepad1, gamepad2)) hive.setAlliance(AllianceSelector.red());
             hive.update(drive.pose);
+            AllianceSelector.show(telemetry);
+            telemetry.addData("Alliance check", hive.ownTagsSeen(2.0) ? "OK - our HIVE tags in view"
+                    : hive.otherAllianceTagsSeen(2.0) ? "CHECK ALLIANCE - only the other alliance's tags seen" : "our HIVE tags not seen yet");
             telemetry.addLine("Paths Built - Ready To Start");
             telemetry.addData("HIVE", hive.describe());
+            telemetry.addData("HIVE clearance", kit.clearanceSummary());
             Side up = hive.upCell(1.0);
             telemetry.addData("CELL up", up == null ? "unknown" : up);
             telemetry.update();

@@ -18,6 +18,8 @@ import org.firstinspires.ftc.vision.apriltag.AprilTagLibrary;
 import org.firstinspires.ftc.vision.apriltag.AprilTagProcessor;
 
 import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
@@ -29,10 +31,14 @@ import java.util.concurrent.TimeUnit;
  * faces the robots, so:
  * <ul>
  *   <li><b>Settled UP</b> (strong): the cluster is seen right-side up in at least
- *       {@link #SETTLE_FRAMES} frames inside {@link #SETTLE_WINDOW_S}, and every tag seen in both the
- *       oldest and newest of those frames has moved less than {@link #SETTLE_SPREAD_IN} in the FIELD
- *       frame. A CELL that is still swinging up after a tip moves inches per frame, so it does not
- *       count until it has come to rest - shooting into a CELL mid-swing can spoil the TIP.</li>
+ *       {@link #SETTLE_FRAMES} frames spanning {@link #SETTLE_MIN_SPAN_S} to {@link #SETTLE_WINDOW_S}, and every tag seen at both
+ *       ends of that window has moved less than {@link #SETTLE_SPREAD_IN} in 3D (field x, y AND
+ *       height). Shooting into a CELL mid-swing can spoil the TIP.</li>
+ *   <li><b>TIPPING</b> (strong): a settled-up CELL's tags have moved {@link #TIP_MOVE_IN} or more
+ *       (3D) away from where it rested, in {@link #TIP_CONFIRM_FRAMES} frames in a row with the
+ *       robot still. That CELL is on its way down, so the other CELL will be the up one.</li>
+ *   <li><b>Moving</b>: any of a CELL's tags (upright or not) moved {@link #MOVE_SPREAD_IN} or more
+ *       across {@link #MOVE_WINDOW_S} with the robot still - the HIVE is part-way through a tip.</li>
  *   <li><b>Confirmed DOWN</b>: the cluster is seen upside down in {@link #DOWN_CONFIRM_FRAMES}
  *       frames in a row.</li>
  *   <li>Exactly one CELL per HIVE is up, so evidence about one CELL is evidence about the other.</li>
@@ -45,9 +51,21 @@ import java.util.concurrent.TimeUnit;
  *       situation (driving, blur, far away, out of view, no frames) are never evidence.</li>
  * </ul>
  *
+ * <h2>Why motion, not just visibility</h2>
+ * A TIP is SLOW. BIOBUZZ HIVEs have a damper, and the TIP only counts once the HIVE has swung to
+ * its other stable state and the damper touches the frame (manual 10.5.1). Teams have measured
+ * 2.5-2.8 s for a TIP with NECTAR in the CELL and 4.8 s for 8 POLLEN, from the ball landing to the
+ * scored TIP. For the first part of that swing the falling CELL's tags stay visible and still read
+ * as right-side up: they sink (other teams saw the tag row fall from ~50 in by about 7 in before
+ * losing it; the full swing moves them ~15 in). So "tags visible and upright" alone would call a
+ * CELL that has already started to tip "up", and a slowly creeping CELL could pass a horizontal-
+ * only settle test. Tracking each tag's 3D position against where the CELL rested catches the tip
+ * within a few inches of movement, long before the tags disappear.
+ *
  * <h2>Only our tags</h2>
- * The tag library holds only our alliance's eight IDs, and every detection is checked against them,
- * so the other HIVE cannot affect anything here.
+ * Every detection is checked against our alliance's eight IDs, so the other HIVE cannot affect any
+ * decision. (The library holds all sixteen so the alliance can be switched in INIT without
+ * rebuilding the camera, and so seeing the OTHER alliance's tags can be reported as a warning.)
  *
  * <h2>Field positions</h2>
  * Tag positions go through the camera mount in {@link TurretConstants} and then through the robot
@@ -55,9 +73,13 @@ import java.util.concurrent.TimeUnit;
  * the robot's own motion is not mistaken for CELL motion. The mount must be measured for the
  * settle test to be meaningful while driving; with the robot still it works regardless.
  *
- * <h2>Sides</h2>
- * {@link Side#LEFT} is the CELL at field x &lt; 0 (the side opposite the audience), {@link Side#RIGHT}
- * the one at x &gt; 0 (audience side). For red that is IDs 30-33 and 34-37; for blue 42-45 and 38-41.
+ * <h2>Sides and the alliance frame</h2>
+ * Poses passed in are in the ALLIANCE FRAME: the field as seen from our own drivers, written the
+ * red way (our side is y &lt; 0, our drivers' right is +x). The field is rotationally symmetric, so
+ * for blue this is the real field turned 180 degrees and every auto path works unchanged.
+ * {@link Side#LEFT} is the CELL on our drivers' left, {@link Side#RIGHT} the one on their right
+ * (the one that starts UP for both alliances). Red: LEFT = IDs 30-33 (side opposite the audience),
+ * RIGHT = 34-37 (audience side). Blue: LEFT = 38-41 (audience side), RIGHT = 42-45.
  *
  * Everything degrades safely: no camera, no frames or a missing config entry all just mean "no
  * evidence", and the autos then follow their original plan.
@@ -86,8 +108,41 @@ public class HiveWatcher {
     public static int SETTLE_FRAMES = 4;
     /** Window those frames must fall in, SECONDS. */
     public static double SETTLE_WINDOW_S = 0.6;
-    /** Max movement of any tag across the window, INCHES. */
+    /**
+     * The frames must also SPAN at least this long, SECONDS. Without it, 4 quick frames of a CELL
+     * that has only just come into view mid-swing look still.
+     */
+    public static double SETTLE_MIN_SPAN_S = 0.5;
+    /** Max 3D movement of any tag across the window, INCHES. */
     public static double SETTLE_SPREAD_IN = 1.5;
+    /**
+     * A settled-up CELL whose tags (median over the tags seen) have moved this far in 3D from where
+     * it rested is TIPPING, INCHES. A full tip moves them about 15 in; a ball landing in the CELL
+     * jostles it well under an inch.
+     */
+    public static double TIP_MOVE_IN = 2.5;
+    /** ...in this many frames in a row, with the robot still. */
+    public static int TIP_CONFIRM_FRAMES = 3;
+    /** "HIVE moving" test: a tip creeps at first, so the window is long, SECONDS / INCHES. */
+    public static double MOVE_WINDOW_S = 1.0;
+    public static double MOVE_SPREAD_IN = 2.5;
+    /** Longest a TIP takes from the ball landing to the HIVE at rest, SECONDS (measured 2.5-4.8 s). */
+    public static double TIP_MAX_S = 5.0;
+    /** A CELL unseen this long forgets where it rested, SECONDS. */
+    public static double REST_FORGET_S = 1.0;
+    /**
+     * The rest position is only compared from (about) the pose it was learned at, INCHES / DEG, so
+     * camera-calibration error seen from a different spot cannot look like the CELL moving.
+     */
+    public static double REST_POSE_TOL_IN = 2.0;
+    public static double REST_POSE_TOL_DEG = 4.0;
+    /**
+     * Optional extra check: height of an UP CELL's tag row above the tiles, INCHES (other teams
+     * measured ~50). NaN = not used. Only set it once TurretConstants.CAMERA_OFFSET_Z_IN and
+     * CAMERA_MOUNT_PITCH_DEG are measured - read the value off "BioBuzz HIVE Tip Recorder".
+     */
+    public static double UP_ROW_HEIGHT_IN = Double.NaN;
+    public static double ROW_HEIGHT_TOL_IN = 3.0;
     /** Upside-down frames in a row that confirm a CELL is down. */
     public static int DOWN_CONFIRM_FRAMES = 3;
     /** Tags further than this are ignored, INCHES. */
@@ -109,9 +164,20 @@ public class HiveWatcher {
     private static class Track {
         final String name;
         final int firstId;
-        /** Recent right-side-up frames: {tSeconds, x0,y0,...,x3,y3} with NaN for unseen tags. */
+        /** Recent right-side-up frames: {tSeconds, x0,y0,z0,...,x3,y3,z3} with NaN for unseen tags. */
         final ArrayDeque<double[]> frames = new ArrayDeque<>();
+        /** Every recent frame of this CELL (upright or not) while the robot was still. */
+        final ArrayDeque<double[]> motion = new ArrayDeque<>();
         long lastSettledNanos = 0, lastDownNanos = 0, lastSeenNanos = 0, lastUprightNanos = 0;
+        long lastTippingNanos = 0, lastMovingNanos = 0;
+        /** Where the CELL rested when last settled up (same layout as a frame, no time), or null. */
+        double[] rest = null;
+        /** Robot pose {x, y, heading} when {@link #rest} was learned. */
+        double[] restPose = null;
+        /** The rest it tipped away from; it cannot count as settled up again until it has gone. */
+        double[] tippedFrom = null;
+        int tipFrames = 0;
+        double rowHeight = Double.NaN, restDev = Double.NaN;
         int invertedStreak = 0, tagsLastFrame = 0;
         /** Field position of the CELL, for the in-view test. */
         double cellX, cellY;
@@ -124,7 +190,7 @@ public class HiveWatcher {
 
         // per-frame scratch
         int up, inv;
-        final double[] f = new double[4], l = new double[4];
+        final double[] f = new double[4], l = new double[4], u = new double[4];
         final boolean[] has = new boolean[4];
 
         Track(String name, int firstId) {
@@ -137,13 +203,16 @@ public class HiveWatcher {
         }
     }
 
-    private final Track left, right;
+    private Track left, right;
+    private boolean red;
+    private long lastOtherAllianceNanos = 0;
     private final Telemetry telemetry;
     private VisionPortal portal;
     private AprilTagProcessor processor;
     private boolean controlsApplied = false;
     private String cameraNote = "";
     private long lastFrameNanos = 0;
+    private final List<String> events = new ArrayList<>();
 
     private static final int HISTORY = 256;
     private final long[] histT = new long[HISTORY];
@@ -157,18 +226,11 @@ public class HiveWatcher {
      */
     public HiveWatcher(HardwareMap hardwareMap, Telemetry telemetry, boolean red) {
         this.telemetry = telemetry;
-        left = new Track("LEFT CELL (x<0)", red ? 30 : 42);
-        right = new Track("RIGHT CELL (x>0)", red ? 34 : 38);
-        left.cellX = red ? TurretConstants.RED_LEFT_X_IN : TurretConstants.BLUE_LEFT_X_IN;
-        left.cellY = red ? TurretConstants.RED_LEFT_Y_IN : TurretConstants.BLUE_LEFT_Y_IN;
-        right.cellX = red ? TurretConstants.RED_RIGHT_X_IN : TurretConstants.BLUE_RIGHT_X_IN;
-        right.cellY = red ? TurretConstants.RED_RIGHT_Y_IN : TurretConstants.BLUE_RIGHT_Y_IN;
+        setAlliance(red);
 
         AprilTagLibrary.Builder library = new AprilTagLibrary.Builder();
-        for (Track t : new Track[]{left, right}) {
-            for (int id = t.firstId; id < t.firstId + 4; id++) {
-                library.addTag(id, t.name + " " + id, TAG_SIZE_IN, DistanceUnit.INCH);
-            }
+        for (int id = 30; id <= 45; id++) {
+            library.addTag(id, (id < 38 ? "RED " : "BLUE ") + id, TAG_SIZE_IN, DistanceUnit.INCH);
         }
         try {
             processor = new AprilTagProcessor.Builder()
@@ -194,6 +256,36 @@ public class HiveWatcher {
         }
     }
 
+    /**
+     * Picks whose tags count, and clears all evidence. Cheap - call it whenever the alliance changes
+     * in INIT. CELL positions are converted into the alliance frame (blue: turned 180 degrees).
+     */
+    public void setAlliance(boolean red) {
+        this.red = red;
+        left = new Track(red ? "LEFT CELL (30-33)" : "LEFT CELL (38-41)", red ? 30 : 38);
+        right = new Track(red ? "RIGHT CELL (34-37)" : "RIGHT CELL (42-45)", red ? 34 : 42);
+        left.cellX = red ? TurretConstants.RED_LEFT_X_IN : -TurretConstants.BLUE_RIGHT_X_IN;
+        left.cellY = red ? TurretConstants.RED_LEFT_Y_IN : -TurretConstants.BLUE_RIGHT_Y_IN;
+        right.cellX = red ? TurretConstants.RED_RIGHT_X_IN : -TurretConstants.BLUE_LEFT_X_IN;
+        right.cellY = red ? TurretConstants.RED_RIGHT_Y_IN : -TurretConstants.BLUE_LEFT_Y_IN;
+        lastOtherAllianceNanos = 0;
+        events.clear();
+    }
+
+    public boolean isRed() {
+        return red;
+    }
+
+    /** Any of OUR alliance's tags seen within maxAgeS - a quick INIT check that the alliance is right. */
+    public boolean ownTagsSeen(double maxAgeS) {
+        return ageS(Math.max(left.lastSeenNanos, right.lastSeenNanos)) <= maxAgeS;
+    }
+
+    /** The OTHER alliance's tags seen within maxAgeS (never used for decisions). */
+    public boolean otherAllianceTagsSeen(double maxAgeS) {
+        return ageS(lastOtherAllianceNanos) <= maxAgeS;
+    }
+
     /** Call every loop with the current pose estimate. Cheap when no new frame has arrived. */
     public void update(Pose2d pose) {
         long now = System.nanoTime();
@@ -217,13 +309,17 @@ public class HiveWatcher {
         for (AprilTagDetection d : detections) {
             if (d.metadata == null || d.ftcPose == null) continue;
             Track t = left.owns(d.id) ? left : right.owns(d.id) ? right : null;
-            if (t == null) continue;
+            if (t == null) {
+                if (d.id >= 30 && d.id <= 45) lastOtherAllianceNanos = now;
+                continue;
+            }
             double[] rb = cameraToRobot(d.ftcPose.x, d.ftcPose.y, d.ftcPose.z);
             if (Math.hypot(rb[0], rb[1]) > MAX_RANGE_IN) continue;
             int k = d.id - t.firstId;
             t.has[k] = true;
             t.f[k] = rb[0];
             t.l[k] = rb[1];
+            t.u[k] = rb[2];
             double roll = wrapDeg(d.ftcPose.roll - TurretConstants.CAMERA_MOUNT_ROLL_DEG);
             if (Math.abs(roll) < UPRIGHT_ROLL_LIMIT_DEG) t.up++;
             else t.inv++;
@@ -233,12 +329,18 @@ public class HiveWatcher {
         long stamp = frameNanos != 0 ? frameNanos : now;
         double[] cap = lookupPose(stamp);
         if (cap == null) cap = new double[]{pose.position.x, pose.position.y, pose.heading.toDouble()};
+        boolean still = robotStill(stamp);
         if (frameNanos != 0) {
-            process(left, frameNanos, cap);
-            process(right, frameNanos, cap);
+            process(left, frameNanos, cap, still);
+            process(right, frameNanos, cap, still);
+        }
+        for (Track t : new Track[]{left, right}) {
+            double unseen = ageS(t.lastUprightNanos);
+            if (t.rest != null && unseen > REST_FORGET_S) t.rest = null;
+            if (t.tippedFrom != null && unseen > ABSENCE_DOWN_S) t.tippedFrom = null;
+            if (!still) t.motion.clear();
         }
         double frameDt = lastFrame == 0 ? 0 : Math.min(0.1, (now - lastFrame) / 1e9);
-        boolean still = robotStill(stamp);
         updateAbsence(left, cap, still, frameDt, now);
         updateAbsence(right, cap, still, frameDt, now);
     }
@@ -273,63 +375,222 @@ public class HiveWatcher {
         return speed <= STILL_SPEED_IN_S && turn <= STILL_TURN_DEG_S;
     }
 
-    private void process(Track t, long frameNanos, double[] cap) {
+    private void process(Track t, long frameNanos, double[] cap, boolean still) {
         int n = t.up + t.inv;
         if (n == 0) return;
         t.lastSeenNanos = frameNanos;
         t.tagsLastFrame = n;
 
+        double ts = frameNanos / 1e9;
+        double[] frame = new double[13];
+        frame[0] = ts;
+        double c = Math.cos(cap[2]), s = Math.sin(cap[2]);
+        double heightSum = 0;
+        for (int k = 0; k < 4; k++) {
+            if (t.has[k]) {
+                frame[1 + 3 * k] = cap[0] + c * t.f[k] - s * t.l[k];
+                frame[2 + 3 * k] = cap[1] + s * t.f[k] + c * t.l[k];
+                frame[3 + 3 * k] = t.u[k];
+                heightSum += t.u[k];
+            } else {
+                frame[1 + 3 * k] = frame[2 + 3 * k] = frame[3 + 3 * k] = Double.NaN;
+            }
+        }
+        trackMotion(t, frame, still);
+
         if (t.inv > t.up) {
             t.frames.clear();
+            t.rest = null;
+            t.tippedFrom = null;
+            t.tipFrames = 0;
             if (++t.invertedStreak >= DOWN_CONFIRM_FRAMES) t.lastDownNanos = frameNanos;
             t.note = "upside down (" + n + " tags)";
             return;
         }
         t.invertedStreak = 0;
         t.lastUprightNanos = frameNanos;
+        t.rowHeight = heightSum / n;
 
-        double c = Math.cos(cap[2]), s = Math.sin(cap[2]);
-        double ts = frameNanos / 1e9;
-        double[] frame = new double[9];
-        frame[0] = ts;
-        for (int k = 0; k < 4; k++) {
-            if (t.has[k]) {
-                frame[1 + 2 * k] = cap[0] + c * t.f[k] - s * t.l[k];
-                frame[2 + 2 * k] = cap[1] + s * t.f[k] + c * t.l[k];
-            } else {
-                frame[1 + 2 * k] = Double.NaN;
-                frame[2 + 2 * k] = Double.NaN;
-            }
+        if (t.rest != null && (Math.hypot(cap[0] - t.restPose[0], cap[1] - t.restPose[1]) > REST_POSE_TOL_IN
+                || Math.abs(Math.toDegrees(wrap(cap[2] - t.restPose[2]))) > REST_POSE_TOL_DEG)) {
+            t.rest = null;
         }
-        t.frames.addLast(frame);
-        while (!t.frames.isEmpty() && ts - t.frames.peekFirst()[0] > SETTLE_WINDOW_S) t.frames.pollFirst();
-
-        if (t.frames.size() >= SETTLE_FRAMES) {
-            double[] oldest = t.frames.peekFirst();
-            double worst = -1;
-            for (int k = 0; k < 4; k++) {
-                double ox = oldest[1 + 2 * k], nx = frame[1 + 2 * k];
-                if (Double.isNaN(ox) || Double.isNaN(nx)) continue;
-                worst = Math.max(worst, Math.hypot(nx - ox, frame[2 + 2 * k] - oldest[2 + 2 * k]));
-            }
-            if (worst >= 0 && worst <= SETTLE_SPREAD_IN) {
-                t.lastSettledNanos = frameNanos;
-                t.note = "UP, settled (" + n + " tags)";
-            } else {
-                t.note = worst < 0 ? "UP, tag set changing" : String.format("UP, moving %.1f in", worst);
+        if (t.rest != null) {
+            t.restDev = medianMove(t.rest, frame);
+            if (still && t.restDev >= TIP_MOVE_IN) {
+                if (++t.tipFrames >= TIP_CONFIRM_FRAMES) {
+                    t.lastTippingNanos = frameNanos;
+                    t.lastMovingNanos = frameNanos;
+                    t.tippedFrom = t.rest;
+                    t.rest = null;
+                    t.frames.clear();
+                    t.tipFrames = 0;
+                    event(String.format("%s TIPPING (moved %.1f in from rest)", t.name, t.restDev));
+                    t.note = "TIPPING";
+                    return;
+                }
+            } else if (t.restDev < TIP_MOVE_IN) {
+                t.tipFrames = 0;
             }
         } else {
-            t.note = "UP, confirming (" + n + " tags)";
+            t.restDev = Double.NaN;
         }
+
+        t.frames.addLast(frame);
+        while (!t.frames.isEmpty() && ts - t.frames.peekFirst()[0] > SETTLE_WINDOW_S) t.frames.pollFirst();
+        if (t.frames.size() < SETTLE_FRAMES || ts - t.frames.peekFirst()[0] < SETTLE_MIN_SPAN_S) {
+            t.note = "UP, confirming (" + n + " tags)";
+            return;
+        }
+        double spread = endsMove(t.frames);
+        boolean heightOk = Double.isNaN(UP_ROW_HEIGHT_IN)
+                || Math.abs(t.rowHeight + TurretConstants.CAMERA_OFFSET_Z_IN - UP_ROW_HEIGHT_IN) <= ROW_HEIGHT_TOL_IN;
+        if (spread < 0 || spread > SETTLE_SPREAD_IN || !heightOk) {
+            t.note = spread < 0 ? "UP, tag set changing"
+                    : !heightOk ? "UP?, row at the wrong height" : String.format("UP, moving %.1f in", spread);
+            return;
+        }
+        if (t.tippedFrom != null) {
+            // It started to tip. Only a return to where it was (an aborted tip) counts as up again
+            // before it has gone out of sight.
+            if (medianMove(t.tippedFrom, frame) > SETTLE_SPREAD_IN) {
+                t.note = "tipping - not up";
+                return;
+            }
+            t.tippedFrom = null;
+            event(t.name + " back at rest - the tip did not happen");
+        }
+        boolean wasSettled = ageS(t.lastSettledNanos) < 0.5 && t.lastSettledNanos > t.lastTippingNanos;
+        t.lastSettledNanos = frameNanos;
+        if (t.rest == null && still) {
+            t.rest = average(t.frames);
+            t.restPose = cap.clone();
+        }
+        if (!wasSettled) event(t.name + " settled UP");
+        t.note = "UP, settled (" + n + " tags)";
+    }
+
+    /** Records "the HIVE is moving" from every sighting of the CELL while the robot is still. */
+    private void trackMotion(Track t, double[] frame, boolean still) {
+        if (!still) {
+            t.motion.clear();
+            return;
+        }
+        t.motion.addLast(frame);
+        while (!t.motion.isEmpty() && frame[0] - t.motion.peekFirst()[0] > MOVE_WINDOW_S) t.motion.pollFirst();
+        if (t.motion.size() < 4) return;
+        double move = endsMove(t.motion);
+        if (move >= MOVE_SPREAD_IN) {
+            if (ageS(t.lastMovingNanos) > 1.0) event(String.format("%s moving (%.1f in)", t.name, move));
+            t.lastMovingNanos = System.nanoTime();
+        }
+    }
+
+    /** Median, over the tags seen in both, of how far each tag is from {@code from}, INCHES; NaN if none. */
+    private static double medianMove(double[] from, double[] frame) {
+        double[] d = new double[4];
+        int m = 0;
+        for (int k = 0; k < 4; k++) {
+            double ox = from[1 + 3 * k], nx = frame[1 + 3 * k];
+            if (Double.isNaN(ox) || Double.isNaN(nx)) continue;
+            d[m++] = Math.sqrt(sq(nx - ox) + sq(frame[2 + 3 * k] - from[2 + 3 * k]) + sq(frame[3 + 3 * k] - from[3 + 3 * k]));
+        }
+        if (m == 0) return Double.NaN;
+        Arrays.sort(d, 0, m);
+        return m % 2 == 1 ? d[m / 2] : 0.5 * (d[m / 2 - 1] + d[m / 2]);
+    }
+
+    /**
+     * Largest per-tag movement between the average of the first two and last two frames (averaging
+     * pairs halves single-frame noise), INCHES; -1 if no tag is in both.
+     */
+    private static double endsMove(ArrayDeque<double[]> frames) {
+        double[][] all = frames.toArray(new double[0][]);
+        int n = all.length;
+        double[] first = averageOf(all[0], all[Math.min(1, n - 1)]);
+        double[] last = averageOf(all[Math.max(0, n - 2)], all[n - 1]);
+        double worst = -1;
+        for (int k = 0; k < 4; k++) {
+            if (Double.isNaN(first[1 + 3 * k]) || Double.isNaN(last[1 + 3 * k])) continue;
+            worst = Math.max(worst, Math.sqrt(sq(last[1 + 3 * k] - first[1 + 3 * k])
+                    + sq(last[2 + 3 * k] - first[2 + 3 * k]) + sq(last[3 + 3 * k] - first[3 + 3 * k])));
+        }
+        return worst;
+    }
+
+    private static double[] averageOf(double[] a, double[] b) {
+        double[] out = new double[13];
+        for (int i = 0; i < 13; i++) {
+            if (Double.isNaN(a[i])) out[i] = b[i];
+            else if (Double.isNaN(b[i])) out[i] = a[i];
+            else out[i] = 0.5 * (a[i] + b[i]);
+        }
+        return out;
+    }
+
+    private static double[] average(ArrayDeque<double[]> frames) {
+        double[] sum = new double[13];
+        int[] cnt = new int[13];
+        for (double[] f : frames) {
+            for (int i = 1; i < 13; i++) {
+                if (!Double.isNaN(f[i])) {
+                    sum[i] += f[i];
+                    cnt[i]++;
+                }
+            }
+        }
+        for (int i = 1; i < 13; i++) sum[i] = cnt[i] == 0 ? Double.NaN : sum[i] / cnt[i];
+        return sum;
+    }
+
+    private static double sq(double v) {
+        return v * v;
+    }
+
+    private void event(String msg) {
+        events.add(msg);
+        if (events.size() > 50) events.remove(0);
     }
 
     // =============================================================================================
     // Queries
     // =============================================================================================
 
-    /** Seen right-side up and at rest within the last maxAgeS seconds. */
+    /** Seen right-side up and at rest within the last maxAgeS seconds, and not seen tipping since. */
     public boolean settledUp(Side side, double maxAgeS) {
-        return ageS(track(side).lastSettledNanos) <= maxAgeS;
+        Track t = track(side);
+        return ageS(t.lastSettledNanos) <= maxAgeS && t.lastSettledNanos > t.lastTippingNanos;
+    }
+
+    /** Seen leaving its rest (starting to tip DOWN) within the last maxAgeS seconds. */
+    public boolean tipping(Side side, double maxAgeS) {
+        return ageS(track(side).lastTippingNanos) <= maxAgeS;
+    }
+
+    /** That CELL was seen moving (or starting to tip) within the last maxAgeS seconds. */
+    public boolean moving(Side side, double maxAgeS) {
+        Track t = track(side);
+        return ageS(Math.max(t.lastMovingNanos, t.lastTippingNanos)) <= maxAgeS;
+    }
+
+    /** Either of our CELLS was seen moving within the last maxAgeS seconds. */
+    public boolean hiveMoving(double maxAgeS) {
+        return moving(Side.LEFT, maxAgeS) || moving(Side.RIGHT, maxAgeS);
+    }
+
+    /**
+     * Signs that a tip involving this CELL is under way: it was seen moving, or seen upright but
+     * not (yet) at rest, within the last maxAgeS seconds.
+     */
+    public boolean tipActivity(Side side, double maxAgeS) {
+        return moving(side, maxAgeS) || (seenUpright(side, maxAgeS) && !settledUp(side, maxAgeS));
+    }
+
+    /** New event lines ("LEFT CELL TIPPING", "RIGHT CELL settled UP", ...) since the last call. */
+    public List<String> drainEvents() {
+        List<String> out = new ArrayList<>(events);
+        events.clear();
+        return out;
     }
 
     /** Seen upside down (confirmed) within the last maxAgeS seconds. */
@@ -360,7 +621,9 @@ public class HiveWatcher {
      * Which CELL is up, from evidence no older than maxAgeS, or null if there is none.
      *
      * Every piece of evidence is an event with a time: "LEFT settled up" says LEFT, "LEFT down"
-     * (seen upside down, or missing as the near CELL) says RIGHT, and the same for RIGHT. The most
+     * (seen upside down, missing as the near CELL, or seen starting to tip) says RIGHT, and the
+     * same for RIGHT. A CELL seen tipping says the OTHER one - it is where the HIVE is going, so it
+     * may still be swinging; callers that are about to shoot also check {@link #hiveMoving}. The most
      * recent event inside the window wins, so a tip is followed correctly: old "LEFT up" evidence
      * is overruled by newer "LEFT missing" evidence and vice versa.
      */
@@ -368,8 +631,10 @@ public class HiveWatcher {
         Side best = null;
         long bestT = 0;
         long[] times = {
-                left.lastSettledNanos, Math.max(left.lastDownNanos, left.lastAbsentDownNanos),
-                right.lastSettledNanos, Math.max(right.lastDownNanos, right.lastAbsentDownNanos)};
+                left.lastSettledNanos > left.lastTippingNanos ? left.lastSettledNanos : 0,
+                Math.max(Math.max(left.lastDownNanos, left.lastAbsentDownNanos), left.lastTippingNanos),
+                right.lastSettledNanos > right.lastTippingNanos ? right.lastSettledNanos : 0,
+                Math.max(Math.max(right.lastDownNanos, right.lastAbsentDownNanos), right.lastTippingNanos)};
         Side[] says = {Side.LEFT, Side.RIGHT, Side.RIGHT, Side.LEFT};
         for (int i = 0; i < 4; i++) {
             if (ageS(times[i]) <= maxAgeS && times[i] > bestT) {
@@ -381,9 +646,13 @@ public class HiveWatcher {
     }
 
     public String describe() {
-        return String.format("cam %s | L: %s, %s, missing %.1fs | R: %s, %s, missing %.1fs", cameraState(),
-                left.note, ageText(left.lastSeenNanos), left.absentS,
-                right.note, ageText(right.lastSeenNanos), right.absentS);
+        return String.format("cam %s | L: %s | R: %s", cameraState(), describe(left), describe(right));
+    }
+
+    private String describe(Track t) {
+        return String.format("%s, %s, row %s in, off rest %s in, missing %.1fs", t.note, ageText(t.lastSeenNanos),
+                Double.isNaN(t.rowHeight) ? "-" : String.format("%.1f", t.rowHeight + TurretConstants.CAMERA_OFFSET_Z_IN),
+                Double.isNaN(t.restDev) ? "-" : String.format("%.1f", t.restDev), t.absentS);
     }
 
     public String cameraState() {
@@ -416,7 +685,10 @@ public class HiveWatcher {
     // Geometry
     // =============================================================================================
 
-    /** Camera frame (ftcPose: x right, y out of lens, z up) to robot frame (x fwd, y left, z up). */
+    /**
+     * Camera frame (ftcPose: x right, y out of lens, z up) to robot frame (x fwd, y left, z up),
+     * z measured from the camera's height (add CAMERA_OFFSET_Z_IN for height above the tiles).
+     */
     private static double[] cameraToRobot(double xRight, double yOut, double zUp) {
         double f = yOut, l = -xRight, u = zUp;
         double roll = Math.toRadians(TurretConstants.CAMERA_MOUNT_ROLL_DEG);
@@ -424,10 +696,11 @@ public class HiveWatcher {
         double u1 = l * Math.sin(roll) + u * Math.cos(roll);
         double pitch = Math.toRadians(TurretConstants.CAMERA_MOUNT_PITCH_DEG);
         double f2 = f * Math.cos(pitch) - u1 * Math.sin(pitch);
+        double u2 = f * Math.sin(pitch) + u1 * Math.cos(pitch);
         double yaw = Math.toRadians(TurretConstants.CAMERA_MOUNT_YAW_DEG);
         double f3 = f2 * Math.cos(yaw) - l1 * Math.sin(yaw);
         double l3 = f2 * Math.sin(yaw) + l1 * Math.cos(yaw);
-        return new double[]{f3 + TurretConstants.CAMERA_OFFSET_X_IN, l3 + TurretConstants.CAMERA_OFFSET_Y_IN};
+        return new double[]{f3 + TurretConstants.CAMERA_OFFSET_X_IN, l3 + TurretConstants.CAMERA_OFFSET_Y_IN, u2};
     }
 
     private void pushPose(long t, Pose2d p) {

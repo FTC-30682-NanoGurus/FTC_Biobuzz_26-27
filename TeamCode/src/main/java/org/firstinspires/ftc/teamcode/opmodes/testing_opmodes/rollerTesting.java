@@ -12,6 +12,7 @@ import com.qualcomm.robotcore.hardware.PwmControl;
 public class rollerTesting extends LinearOpMode{
     //private DcMotor roller;
     private DcMotor transferRollers;
+    private DcMotor rollers;
 
     @Override
     public void runOpMode() throws InterruptedException{
