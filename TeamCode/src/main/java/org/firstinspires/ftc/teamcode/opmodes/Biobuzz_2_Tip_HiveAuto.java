@@ -1,5 +1,6 @@
 package org.firstinspires.ftc.teamcode.opmodes;
 
+import com.acmerobotics.dashboard.config.Config;
 import com.acmerobotics.roadrunner.AccelConstraint;
 import com.acmerobotics.roadrunner.Action;
 import com.acmerobotics.roadrunner.Arclength;
@@ -10,6 +11,7 @@ import com.acmerobotics.roadrunner.ParallelAction;
 import com.acmerobotics.roadrunner.Pose2d;
 import com.acmerobotics.roadrunner.Rotation2dDual;
 import com.acmerobotics.roadrunner.SequentialAction;
+import com.acmerobotics.roadrunner.SleepAction;
 import com.acmerobotics.roadrunner.Vector2d;
 import com.acmerobotics.roadrunner.VelConstraint;
 import com.acmerobotics.roadrunner.ftc.Actions;
@@ -25,8 +27,11 @@ import org.firstinspires.ftc.teamcode.roadrunner.MecanumDrive;
 
 import java.util.Arrays;
 
+@Config
 @Autonomous
 public class Biobuzz_2_Tip_HiveAuto extends NGAutoOpMode {
+    public static double WALL_SET_DWELL_S = 0.25;
+
     @Override
     public void runOpMode() throws InterruptedException {
 
@@ -72,95 +77,160 @@ public class Biobuzz_2_Tip_HiveAuto extends NGAutoOpMode {
         initAuto(beginPose);
 
         Pose2d leftShot = new Pose2d(-52, -14, Math.toRadians(0));
-        Pose2d wallShotLeft = new Pose2d(-52, -16, Math.toRadians(0));
+        Pose2d leftShotBack = new Pose2d(-52, -14, Math.toRadians(360));
         Pose2d rightShot = new Pose2d(61, -14, Math.toRadians(180));
+        Pose2d wallSet = new Pose2d(62, -58, Math.toRadians(360));
+        Pose2d rightNear = new Pose2d(56.69, -40.01, Math.toRadians(155));
+        Pose2d leftNear = new Pose2d(-53.48, -43.82, Math.toRadians(30));
         Pose2d flowerOne = new Pose2d(-55, -22, Math.toRadians(180));
-        Pose2d parkPose = new Pose2d(-50, -57, Math.toRadians(90));
+        Pose2d flowerTwo = new Pose2d(24, -55, Math.toRadians(-90));
+        Pose2d parkPose = new Pose2d(-49.5, -58, Math.toRadians(90));
 
         HiveWatcher hive = new HiveWatcher(hardwareMap, telemetry, AllianceSelector.red());
         HiveAutoKit kit = new HiveAutoKit(drive, intake2_0, hive, telemetry, maxVel, maxAccel,
                 parkPose, leftShot, rightShot);
 
-        double FLOWER_BLOCK_S = 5.08 + 1.66 + 1.0;
+        telemetry.addLine("Preparing fastest routes...");
+        telemetry.update();
+        kit.prepareDefaults();
+        kit.prepare(leftNear, flowerOne);
+        kit.prepare(flowerTwo, leftNear);
+        kit.prepare(rightNear, flowerTwo);
+        kit.prepare(leftNear, parkPose);
+        kit.prepare(leftShotBack, parkPose);
+
+        double F1_BLOCK_S = 1.47 + 0.4 + 3.0 + 1.66 + 1.0 + 0.3;
+        double F2_FROM_LEFT_S = 2.61 + 3.0 + 2.57 + 1.0 + 0.3;
+        double F2_FROM_RIGHT_S = 1.71 + 3.0 + 2.57 + 1.0 + 0.3;
 
         Action preloadWait = drive.actionBuilder(beginPose)
                 .waitSeconds(2)
                 .build();
 
-        Action wallSetToLeft = drive.actionBuilder(beginPose)
+        Action wallSetToLeftNear = kit.withWallCollect(drive.actionBuilder(beginPose)
                 .setTangent(Math.toRadians(-155))
-                .splineToSplineHeading(new Pose2d(62, -58, Math.toRadians(360)), Math.toRadians(25), maxIntakeVel, maxAccel)
-                .afterTime(0.7, intake2_0.collect(4))
+                .splineToSplineHeading(wallSet, Math.toRadians(25), maxIntakeVel, maxAccel)
+                .waitSeconds(WALL_SET_DWELL_S)
                 .setReversed(true)
                 .splineToLinearHeading(new Pose2d(20, -48, Math.toRadians(360)), Math.toRadians(-180), maxVel, maxAccel)
                 .splineToLinearHeading(new Pose2d(-33, -44, Math.toRadians(360)), Math.toRadians(170), maxVel, maxAccel)
-                .splineToLinearHeading(wallShotLeft, Math.toRadians(-220), maxVel, maxAccel)
-                .build();
+                .splineToSplineHeading(leftNear, Math.toRadians(180), maxVel, maxAccel)
+                .build());
 
-        Action wallSetToRight = drive.actionBuilder(beginPose)
-                .setTangent(Math.toRadians(-155))
-                .splineToSplineHeading(new Pose2d(62, -58, Math.toRadians(360)), Math.toRadians(25), maxIntakeVel, maxAccel)
-                .afterTime(0.7, intake2_0.collect(4))
-                .setTangent(Math.toRadians(150))
-                .splineToLinearHeading(new Pose2d(44, -38, Math.toRadians(-90)), Math.toRadians(90), maxVel, maxAccel)
-                .splineToLinearHeading(new Pose2d(61, -14, Math.toRadians(-179.5)), Math.toRadians(30), maxVel, maxAccel)
-                .build();
+        Action wallSetToRightNear = kit.withWallCollect(
+                new SequentialAction(
+                        drive.actionBuilder(beginPose)
+                                .setTangent(Math.toRadians(-155))
+                                .splineToSplineHeading(wallSet, Math.toRadians(25), maxIntakeVel, maxAccel)
+                                .waitSeconds(WALL_SET_DWELL_S)
+                                .build(),
+                        drive.actionBuilder(wallSet)
+                                .setTangent(Math.atan2(10, -4))
+                                .splineToSplineHeading(new Pose2d(58, -48, Math.toRadians(30)), Math.toRadians(105.57), maxVel, maxAccel)
+                                .splineToSplineHeading(rightNear, Math.atan2(rightNear.position.y + 48, rightNear.position.x - 58), maxVel, maxAccel)
+                                .build()));
 
-        Action toFlowerOne = drive.actionBuilder(wallShotLeft)
-                .afterTime(0, intake2_0.deployFlowerRamp())
-                .setTangent(Math.toRadians(-172))
-                .splineToSplineHeading(new Pose2d(-52.6, -17.5, Math.toRadians(180)), Math.toRadians(-112), maxVel, maxAccel)
-                .splineToConstantHeading(new Vector2d(-55, -22), Math.toRadians(-82), maxVel, maxAccel)
-                .afterTime(0.4, intake2_0.collectFromFlower(3))
-                .build();
+        Action leftNearToFlowerOne = new SequentialAction(
+                new ParallelAction(intake2_0.deployFlowerRamp(), kit.route(leftNear, flowerOne)),
+                new SleepAction(0.4),
+                intake2_0.collectFromFlower(3));
 
         Action backToShoot = drive.actionBuilder(flowerOne)
                 .setTangent(Math.toRadians(90))
                 .splineToConstantHeading(new Vector2d(-54, -16.1), Math.toRadians(90), maxVel, maxAccel)
-                .splineToSplineHeading(new Pose2d(-52, -14, Math.toRadians(360)), Math.toRadians(90), maxVel, maxAccel)
+                .splineToSplineHeading(leftShotBack, Math.toRadians(90), maxVel, maxAccel)
                 .build();
 
-        Action parkFromLeft = drive.actionBuilder(leftShot)
-                .strafeToLinearHeading(new Vector2d(-50, -57), Math.toRadians(90), maxVel, maxAccel)
+        Action leftToFlowerTwo = drive.actionBuilder(leftShotBack)
+                .setTangent(Math.toRadians(-90))
+                .splineToLinearHeading(new Pose2d(-4, -38, Math.toRadians(-10)), Math.toRadians(0), maxVel, maxAccel)
+                .afterTime(0, intake2_0.deployFlowerRamp())
+                .splineToSplineHeading(flowerTwo, Math.toRadians(-90), maxVel, maxAccel)
+                .afterTime(0, intake2_0.collectFromFlower(3))
                 .build();
+
+        Action rightNearToFlowerTwo = new SequentialAction(
+                new ParallelAction(intake2_0.deployFlowerRamp(), kit.route(rightNear, flowerTwo)),
+                intake2_0.collectFromFlower(3));
+
+        Action flowerTwoToLeftNear = kit.route(flowerTwo, leftNear);
+
+        Action flowerOneBlock = new SequentialAction(
+                kit.leg(leftNear, leftNearToFlowerOne, flowerOne, intake2_0.collectFromFlower(3)),
+                kit.leg(flowerOne, backToShoot, leftShotBack, null),
+                kit.shotPoint(Side.LEFT));
+
+        Action park = new SequentialAction(
+                kit.beginPark(),
+                HiveAutoKit.branch(() -> kit.route(drive.pose, parkPose)));
+
+        Action tippedPlan = new SequentialAction(
+                wallSetToLeftNear,
+                kit.shotPoint(Side.LEFT),
+                HiveAutoKit.branch(() -> {
+                    if (!kit.fits(F1_BLOCK_S, leftShotBack)) {
+                        kit.log("no time for flower one");
+                        return kit.note("skipping flower one");
+                    }
+                    return flowerOneBlock;
+                }),
+                HiveAutoKit.branch(() -> {
+                    if (!kit.fits(F2_FROM_LEFT_S, leftNear)) {
+                        kit.log("no time for flower two");
+                        return kit.note("skipping flower two");
+                    }
+                    kit.log("flower two - backup shot at the LEFT CELL if it has not tipped");
+                    return new SequentialAction(
+                            kit.leg(leftShotBack, leftToFlowerTwo, flowerTwo, intake2_0.collectFromFlower(3)),
+                            kit.leg(flowerTwo, flowerTwoToLeftNear, leftNear, null),
+                            kit.shotPoint(Side.LEFT));
+                }),
+                park);
+
+        Action notTippedPlan = new SequentialAction(
+                wallSetToRightNear,
+                kit.shotPoint(Side.RIGHT, 8.0),
+                HiveAutoKit.branch(() -> {
+                    if (!kit.fits(F2_FROM_RIGHT_S, leftNear)) {
+                        kit.log("no time for flower two");
+                        return kit.note("skipping flower two");
+                    }
+                    return new SequentialAction(
+                            kit.leg(rightNear, rightNearToFlowerTwo, flowerTwo, intake2_0.collectFromFlower(3)),
+                            kit.leg(flowerTwo, flowerTwoToLeftNear, leftNear, null),
+                            kit.shotPoint(Side.LEFT));
+                }),
+                HiveAutoKit.branch(() -> {
+                    if (!kit.fits(F1_BLOCK_S, leftShotBack)) {
+                        kit.log("no time for flower one");
+                        return kit.note("skipping flower one");
+                    }
+                    return flowerOneBlock;
+                }),
+                park);
 
         Action main = new SequentialAction(
                 new ParallelAction(preloadWait, kit.transfer()),
                 kit.waitForTipStart(Side.RIGHT, HiveAutoKit.OWN_TIP_GRACE_S),
                 HiveAutoKit.branch(() -> {
                     if (hive.settledUp(Side.RIGHT, 0.4)) {
-                        kit.log("RIGHT CELL did not tip - wall set goes back to RIGHT");
-                        return new SequentialAction(wallSetToRight, kit.shotPoint(Side.RIGHT));
+                        kit.log("RIGHT CELL did not tip - wall set, angled shot at RIGHT");
+                        return notTippedPlan;
                     }
                     kit.log(hive.tipping(Side.RIGHT, 5.0) ? "RIGHT CELL seen tipping" : "no RIGHT CELL at rest in view - assuming it tipped");
-                    return new SequentialAction(wallSetToLeft, kit.shotPoint(Side.LEFT));
-                }),
-                HiveAutoKit.branch(() -> {
-                    if (!kit.fits(FLOWER_BLOCK_S, leftShot)) {
-                        kit.log("no time for flower one");
-                        return kit.note("skipping flower one");
-                    }
-                    return new SequentialAction(
-                            kit.leg(wallShotLeft, toFlowerOne, flowerOne, intake2_0.collectFromFlower(3)),
-                            backToShoot,
-                            kit.shotPoint(Side.LEFT));
-                }),
-                kit.beginPark(),
-                kit.leg(leftShot, parkFromLeft, parkPose, null)
-        );
+                    return tippedPlan;
+                }));
 
         double pollenShootingVel = BiobuzzRobotConstants.pollenFixedShootingVel;
         double nectarShootingVel = BiobuzzRobotConstants.nectarFixedShootingVel;
 
-        telemetry.addLine("Preparing fastest routes...");
-        telemetry.update();
-        kit.prepareDefaults();
-        kit.prepare(rightShot, flowerOne);
-        kit.checkPrebuilt("wallSetToLeft", wallSetToLeft);
-        kit.checkPrebuilt("wallSetToRight", wallSetToRight);
-        kit.checkPrebuilt("toFlowerOne", toFlowerOne);
+        kit.checkPrebuilt("wallSetToLeftNear", wallSetToLeftNear);
+        kit.checkPrebuilt("wallSetToRightNear", wallSetToRightNear);
+        kit.checkPrebuilt("leftNearToFlowerOne", leftNearToFlowerOne);
         kit.checkPrebuilt("backToShoot", backToShoot);
-        kit.checkPrebuilt("parkFromLeft", parkFromLeft);
+        kit.checkPrebuilt("leftToFlowerTwo", leftToFlowerTwo);
+        kit.checkPrebuilt("rightNearToFlowerTwo", rightNearToFlowerTwo);
+        kit.checkPrebuilt("flowerTwoToLeftNear", flowerTwoToLeftNear);
 
         while (!isStarted() && !isStopRequested()) {
             if (AllianceSelector.poll(gamepad1, gamepad2)) hive.setAlliance(AllianceSelector.red());

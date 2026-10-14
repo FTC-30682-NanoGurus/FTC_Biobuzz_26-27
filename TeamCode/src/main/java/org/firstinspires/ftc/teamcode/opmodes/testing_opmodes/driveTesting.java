@@ -8,6 +8,7 @@ import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
+import com.qualcomm.robotcore.hardware.Servo;
 import com.qualcomm.robotcore.util.ElapsedTime;
 
 import org.firstinspires.ftc.teamcode.BiobuzzRobotConstants;
@@ -73,7 +74,9 @@ public class driveTesting extends LinearOpMode{
     private DcMotor FrontRight;
     private DcMotor BackLeft;
     private DcMotor BackRight;
-    //private DcMotorEx intake;
+    private DcMotorEx intake;
+    private DcMotorEx transferRollers;
+    private Servo flowerRamp;
     MecaTank mecaTank;
     BulkRead bulkRead;
 
@@ -96,7 +99,11 @@ public class driveTesting extends LinearOpMode{
 
         mecaTank = new MecaTank(hardwareMap, telemetry, new Pose2d(0, 0, 0));
 
-        //intake = hardwareMap.get(DcMotorEx.class, BiobuzzRobotConstants.rollers);
+        intake = hardwareMap.get(DcMotorEx.class, BiobuzzRobotConstants.rollers);
+
+        flowerRamp = hardwareMap.get(Servo.class, "flowerRamp");
+
+        transferRollers = hardwareMap.get(DcMotorEx.class, BiobuzzRobotConstants.transferRollers);
 
 
         // MecaTank's internal MecanumDrive forces every hub to AUTO, so take MANUAL back and let
@@ -187,7 +194,7 @@ public class driveTesting extends LinearOpMode{
                     gamepad1.left_bumper, gamepad1.right_bumper);
 
 
-            /*if(gamepad1.right_stick_button){
+            if(gamepad1.right_stick_button){
                 intake.setPower(1.0);
             }
             if(gamepad1.left_stick_button){
@@ -195,8 +202,15 @@ public class driveTesting extends LinearOpMode{
             }
             if(gamepad1.b){
                 intake.setPower(-1.0);
-            }*/
+            }
 
+            transferRollers.setPower(gamepad1.right_trigger);
+
+            if(gamepad1.dpad_down){
+                flowerRamp.setPosition(BiobuzzRobotConstants.flowerRampIntakePos);
+            }else if(gamepad1.dpad_up){
+                flowerRamp.setPosition(BiobuzzRobotConstants.flowerRampStowedPos);
+            }
 
             double now = System.nanoTime();
             double loopMs = (now - lastLoopTime) / 1e6;

@@ -11,6 +11,7 @@ import com.acmerobotics.roadrunner.ParallelAction;
 import com.acmerobotics.roadrunner.Pose2d;
 import com.acmerobotics.roadrunner.Rotation2dDual;
 import com.acmerobotics.roadrunner.SequentialAction;
+import com.acmerobotics.roadrunner.SleepAction;
 import com.acmerobotics.roadrunner.Vector2d;
 import com.acmerobotics.roadrunner.VelConstraint;
 import com.acmerobotics.roadrunner.ftc.Actions;
@@ -30,6 +31,7 @@ import java.util.Arrays;
 @Autonomous
 public class Biobuzz3Tip_HiveAuto extends NGAutoOpMode {
     public static double MAX_WAIT_FOR_ALLIANCE_TIP_S = 4.2;
+    public static double WALL_SET_DWELL_S = 0.25;
 
     @Override
     public void runOpMode() throws InterruptedException {
@@ -84,15 +86,26 @@ public class Biobuzz3Tip_HiveAuto extends NGAutoOpMode {
         Pose2d flowerOneSolo = new Pose2d(-55, -22, Math.toRadians(180));
         Pose2d flowerTwo = new Pose2d(24, -55, Math.toRadians(-90));
         Pose2d wallSet = new Pose2d(62, -58, Math.toRadians(360));
-        Pose2d parkPose = new Pose2d(-53.5, -57, Math.toRadians(90));
+        Pose2d nearShot = new Pose2d(56.69, -40.01, Math.toRadians(155));
+        Pose2d parkPose = new Pose2d(-21, -59.5, Math.toRadians(180));
 
         HiveWatcher hive = new HiveWatcher(hardwareMap, telemetry, AllianceSelector.red());
         HiveAutoKit kit = new HiveAutoKit(drive, intake2_0, hive, telemetry, maxVel, maxAccel,
                 parkPose, leftShot, rightShot);
 
+        telemetry.addLine("Preparing fastest routes...");
+        telemetry.update();
+        kit.prepareDefaults();
+        kit.prepare(leftShot, rightShotSolo);
+        kit.prepare(flowerTwo, leftShot);
+        kit.prepare(wallSet, parkPose);
+        kit.prepare(rightShot, wallShotLeft);
+        kit.prepare(nearShot, parkPose);
+        kit.prepare(wallShotLeft, parkPose);
+
         double FLOWER_TWO_BLOCK_S = 5.61 + 1.84 + 1.0;
-        double WALL_TO_LEFT_S = 5.89 + 1.0;
-        double WALL_TO_RIGHT_S = 5.6 + 1.0;
+        double WALL_TO_LEFT_S = 6.14 + 1.0;
+        double WALL_NEAR_S = 4.69 + 1.0;
         double WALL_ONLY_S = 4.6;
         double SOLO_FLOWER_BLOCK_S = 5.08 + 1.66 + 1.0;
 
@@ -126,24 +139,28 @@ public class Biobuzz3Tip_HiveAuto extends NGAutoOpMode {
                 .splineToLinearHeading(rightShot, Math.toRadians(15), maxVel, maxAccel)
                 .build();
 
-        Action wallToLeft = drive.actionBuilder(rightShot)
+        Action wallToLeft = kit.withWallCollect(drive.actionBuilder(rightShot)
                 .setTangent(Math.toRadians(-155))
-                .afterTime(2.1, intake2_0.collect(2.5))
                 .splineToSplineHeading(wallSet, Math.toRadians(25), maxIntakeVel, maxAccel)
+                .waitSeconds(WALL_SET_DWELL_S)
                 .setReversed(true)
                 .splineToLinearHeading(new Pose2d(20, -37, Math.toRadians(360)), Math.toRadians(180), maxVel, maxAccel)
                 .splineToLinearHeading(new Pose2d(-24, -37, Math.toRadians(360)), Math.toRadians(180), maxVel, maxAccel)
                 .splineToLinearHeading(wallShotLeft, Math.toRadians(120), maxVel, maxAccel)
-                .build();
+                .build());
 
-        Action wallToRight = drive.actionBuilder(rightShot)
-                .setTangent(Math.toRadians(-155))
-                .afterTime(2.1, intake2_0.collect(2.5))
-                .splineToSplineHeading(wallSet, Math.toRadians(25), maxIntakeVel, maxAccel)
-                .setTangent(Math.toRadians(150))
-                .splineToLinearHeading(new Pose2d(44, -38, Math.toRadians(-90)), Math.toRadians(90), maxVel, maxAccel)
-                .splineToLinearHeading(rightShot, Math.toRadians(30), maxVel, maxAccel)
-                .build();
+        Action wallToNear = kit.withWallCollect(
+                new SequentialAction(
+                        drive.actionBuilder(rightShot)
+                                .setTangent(Math.toRadians(-155))
+                                .splineToSplineHeading(wallSet, Math.toRadians(25), maxIntakeVel, maxAccel)
+                                .waitSeconds(WALL_SET_DWELL_S)
+                                .build(),
+                        drive.actionBuilder(wallSet)
+                                .setTangent(Math.atan2(10, -4))
+                                .splineToSplineHeading(new Pose2d(58, -48, Math.toRadians(30)), Math.toRadians(105.57), maxVel, maxAccel)
+                                .splineToSplineHeading(nearShot, Math.atan2(nearShot.position.y + 48, nearShot.position.x - 58), maxVel, maxAccel)
+                                .build()));
 
         Action wallOnly = drive.actionBuilder(rightShot)
                 .setTangent(Math.toRadians(-155))
@@ -151,21 +168,17 @@ public class Biobuzz3Tip_HiveAuto extends NGAutoOpMode {
                 .splineToSplineHeading(wallSet, Math.toRadians(25), maxIntakeVel, maxAccel)
                 .build();
 
-        Action parkFromLeft = drive.actionBuilder(wallShotLeft)
-                .setTangent(Math.toRadians(-90))
-                .splineToLinearHeading(new Pose2d(-50, -26, Math.toRadians(20)), Math.toRadians(-90), maxVel, maxAccel)
-                .splineToSplineHeading(parkPose, Math.toRadians(-90), maxVel, maxAccel)
-                .build();
+        Action parkFromLeft = kit.route(wallShotLeft, parkPose);
 
-        Action soloWallSet = drive.actionBuilder(rightShotSolo)
+        Action soloWallSet = kit.withWallCollect(drive.actionBuilder(rightShotSolo)
                 .setTangent(Math.toRadians(-155))
                 .splineToSplineHeading(wallSet, Math.toRadians(25), maxIntakeVel, maxAccel)
-                .afterTime(0.7, intake2_0.collect(4))
+                .waitSeconds(WALL_SET_DWELL_S)
                 .setReversed(true)
                 .splineToLinearHeading(new Pose2d(20, -48, Math.toRadians(360)), Math.toRadians(-180), maxVel, maxAccel)
                 .splineToLinearHeading(new Pose2d(-33, -44, Math.toRadians(360)), Math.toRadians(170), maxVel, maxAccel)
                 .splineToLinearHeading(wallShotLeft, Math.toRadians(-220), maxVel, maxAccel)
-                .build();
+                .build());
 
         Action soloFlower = drive.actionBuilder(wallShotLeft)
                 .afterTime(0, intake2_0.deployFlowerRamp())
@@ -195,9 +208,9 @@ public class Biobuzz3Tip_HiveAuto extends NGAutoOpMode {
                 kit.log("LEFT CELL up - wall set to LEFT");
                 return new SequentialAction(wallToLeft, kit.shotPoint(Side.LEFT), parkBlock);
             }
-            if (up != Side.LEFT && kit.fits(WALL_TO_RIGHT_S, rightShot)) {
-                kit.log(up == Side.RIGHT ? "RIGHT CELL up - wall set back to RIGHT" : "no view - wall set back to RIGHT");
-                return new SequentialAction(wallToRight, kit.shotPoint(Side.RIGHT), parkBlock);
+            if (up != Side.LEFT && kit.fits(WALL_NEAR_S, nearShot)) {
+                kit.log(up == Side.RIGHT ? "RIGHT CELL up - wall set, angled shot at RIGHT" : "no view - wall set, angled shot at RIGHT");
+                return new SequentialAction(wallToNear, kit.shotPoint(Side.RIGHT, 8.0), parkBlock);
             }
             if (kit.fits(WALL_ONLY_S, wallSet)) {
                 kit.log("no time to shoot the wall set - collecting it for TELEOP");
@@ -264,20 +277,13 @@ public class Biobuzz3Tip_HiveAuto extends NGAutoOpMode {
         double pollenShootingVel = BiobuzzRobotConstants.pollenFixedShootingVel;
         double nectarShootingVel = BiobuzzRobotConstants.nectarFixedShootingVel;
 
-        telemetry.addLine("Preparing fastest routes...");
-        telemetry.update();
-        kit.prepareDefaults();
-        kit.prepare(leftShot, rightShotSolo);
-        kit.prepare(flowerTwo, leftShot);
-        kit.prepare(wallSet, parkPose);
-        kit.prepare(rightShot, wallShotLeft);
         kit.checkPrebuilt("toLeftShot", toLeftShot);
         kit.checkPrebuilt("toFlowerOne", toFlowerOne);
         kit.checkPrebuilt("backFromFlowerOne", backFromFlowerOne);
         kit.checkPrebuilt("toFlowerTwo", toFlowerTwo);
         kit.checkPrebuilt("crossToRight", crossToRight);
         kit.checkPrebuilt("wallToLeft", wallToLeft);
-        kit.checkPrebuilt("wallToRight", wallToRight);
+        kit.checkPrebuilt("wallToNear", wallToNear);
         kit.checkPrebuilt("wallOnly", wallOnly);
         kit.checkPrebuilt("parkFromLeft", parkFromLeft);
         kit.checkPrebuilt("soloWallSet", soloWallSet);

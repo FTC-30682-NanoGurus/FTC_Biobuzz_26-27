@@ -951,6 +951,15 @@ public class MecaTank extends Subsystem {
     public static double ARCADE_TURN_SIGN = 1.0;
 
     /**
+     * Forward-axis flip at the wheel mix, +1 or -1. Set to -1 because on this chassis a forward
+     * command drove the robot backward while strafing was correct. No combination of motor
+     * direction flips can produce that (flipping motors moves forward and strafe together), so it is
+     * corrected in the mix, after field-centric rotation and the holds, which therefore still work in
+     * the robot's true frame. Applies to every opmode using setDrivePowersSmooth / ...SmoothArcade.
+     */
+    public static double DRIVE_FORWARD_SIGN = -1.0;
+
+    /**
      * TEMPORARY full-speed mode for drive testing. Per instance on purpose, not a static: a static
      * would leak into every opmode run after driveTesting until the app restarts.
      *
@@ -1186,10 +1195,13 @@ public class MecaTank extends Subsystem {
         lastTurn = turn;
 
         // 8. Mix. Reduces to the original wheel assignments - see the proof in the header above.
-        double fl = forward + turn + strafe;
-        double bl = forward + turn - strafe;
-        double fr = forward - turn - strafe;
-        double br = forward - turn + strafe;
+        //    DRIVE_FORWARD_SIGN is applied HERE, after the field-centric rotation and the holds, so
+        //    everything above works in the robot's true frame and only the wheel output is flipped.
+        double mixForward = DRIVE_FORWARD_SIGN * forward;
+        double fl = mixForward + turn + strafe;
+        double bl = mixForward + turn - strafe;
+        double fr = mixForward - turn - strafe;
+        double br = mixForward - turn + strafe;
 
         // 9. Normalise by the largest magnitude rather than clipping. Clipping would distort the
         //    commanded direction, so an over-driven diagonal would curve.

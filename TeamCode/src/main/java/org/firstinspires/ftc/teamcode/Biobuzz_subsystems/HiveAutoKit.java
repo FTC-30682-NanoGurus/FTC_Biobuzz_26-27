@@ -12,6 +12,7 @@ import com.acmerobotics.roadrunner.Pose2d;
 import com.acmerobotics.roadrunner.PosePath;
 import com.acmerobotics.roadrunner.PoseVelocity2d;
 import com.acmerobotics.roadrunner.SequentialAction;
+import com.acmerobotics.roadrunner.SleepAction;
 import com.acmerobotics.roadrunner.TimeTurn;
 import com.acmerobotics.roadrunner.TrajectoryActionBuilder;
 import com.acmerobotics.roadrunner.Vector2d;
@@ -267,7 +268,16 @@ public class HiveAutoKit {
      * </ul>
      */
     public Action shotPoint(Side side) {
-        return new SequentialAction(waitForShot(), branch(() -> decideShot(side, true)));
+        return shotPoint(side, GATE_FRESH_S);
+    }
+
+    /**
+     * {@link #shotPoint(Side)} accepting HIVE evidence up to {@code freshS} old. For a shot whose
+     * CELL was seen seconds earlier and cannot have tipped since without a TIPPING / down event
+     * being seen (those are newer evidence and still win), so no time is spent re-confirming it.
+     */
+    public Action shotPoint(Side side, double freshS) {
+        return new SequentialAction(waitForShot(freshS), branch(() -> decideShot(side, true, freshS)));
     }
 
     /**
@@ -275,7 +285,7 @@ public class HiveAutoKit {
      * is part-way through a tip, for it to come to rest (up to {@link #TIP_WAIT_MAX_S}, never past
      * the park budget). Launching while the HIVE swings can stop the TIP.
      */
-    private Action waitForShot() {
+    private Action waitForShot(double freshS) {
         return new Action() {
             private long start = -1;
             private boolean told = false;
@@ -290,7 +300,7 @@ public class HiveAutoKit {
                     told = true;
                     return elapsed < TIP_WAIT_MAX_S && fits(TRANSFER_S, drive.pose);
                 }
-                if (hive.upCell(GATE_FRESH_S) != null) return false;
+                if (hive.upCell(freshS) != null) return false;
                 return elapsed < GATE_MAX_WAIT_S;
             }
         };
@@ -333,12 +343,12 @@ public class HiveAutoKit {
         return TipResult.UNKNOWN;
     }
 
-    private Action decideShot(Side side, boolean mayCross) {
+    private Action decideShot(Side side, boolean mayCross, double freshS) {
         if (hive.cameraHealthy() && hive.moving(side, HIVE_STILL_S)) {
             log(side + " CELL still swinging - holding");
             return new NullAction();
         }
-        Side up = hive.upCell(GATE_FRESH_S);
+        Side up = hive.upCell(freshS);
         if (up == side.other()) {
             if (!mayCross) {
                 log(side + " CELL down again after crossing - holding");
@@ -350,8 +360,8 @@ public class HiveAutoKit {
                 log(side + " CELL is DOWN - crossing to shoot " + side.other());
                 return new SequentialAction(
                         route(drive.pose, dest),
-                        waitForShot(),
-                        branch(() -> decideShot(side.other(), false)));
+                        waitForShot(GATE_FRESH_S),
+                        branch(() -> decideShot(side.other(), false, GATE_FRESH_S)));
             }
             log(side + " CELL is DOWN, no time to cross - holding");
             return new NullAction();
@@ -422,7 +432,9 @@ public class HiveAutoKit {
              */
             private double exactParkS() {
                 if (!haveExact || exactTimer.seconds() >= WATCHDOG_REFINE_S) {
-                    exactS = motionTime(safeRoute(drive.pose, parkPose, robotEnv())) + ROUTE_SETTLE_S;
+                    double prepared = preparedSeconds(drive.pose, parkPose);
+                    exactS = (Double.isNaN(prepared) ? motionTime(safeRoute(drive.pose, parkPose, robotEnv())) : prepared)
+                            + ROUTE_SETTLE_S;
                     haveExact = true;
                     exactTimer.reset();
                 }
@@ -666,7 +678,7 @@ public class HiveAutoKit {
     public void prepare(Pose2d from, Pose2d to, RouteOptimizer.Env env) {
         RouteOptimizer.Result r = RouteOptimizer.search(from, to, plan(from.position, to.position), env, vel, accel,
                 null, Double.MAX_VALUE);
-        prepared.add(new Object[]{from, to, r.pattern});
+        prepared.add(new Object[]{from, to, r.pattern, r.seconds});
     }
 
     /** Prepares the routes every HIVE auto may need: between the shot poses and from them to park. */
@@ -675,6 +687,24 @@ public class HiveAutoKit {
         prepare(rightShot, leftShot);
         prepare(leftShot, parkPose);
         prepare(rightShot, parkPose);
+    }
+
+    /** Start within this of a prepared route's start lets its exact time stand in for an estimate. */
+    public static double PREPARED_TIME_TOL_IN = 3.0;
+    public static double PREPARED_TIME_TOL_DEG = 10.0;
+
+    /** Exact planned time of a prepared route from (about) here to {@code to}, or NaN if none. */
+    private double preparedSeconds(Pose2d from, Pose2d to) {
+        for (Object[] e : prepared) {
+            Pose2d f = (Pose2d) e[0], t = (Pose2d) e[1];
+            if (dist(t.position, to.position) < 1.0
+                    && Math.abs(Math.toDegrees(wrap(t.heading.toDouble() - to.heading.toDouble()))) < 3.0
+                    && dist(from.position, f.position) < PREPARED_TIME_TOL_IN
+                    && Math.abs(Math.toDegrees(wrap(from.heading.toDouble() - f.heading.toDouble()))) < PREPARED_TIME_TOL_DEG) {
+                return (Double) e[3];
+            }
+        }
+        return Double.NaN;
     }
 
     private String preparedPattern(Pose2d from, Pose2d to) {
@@ -702,12 +732,44 @@ public class HiveAutoKit {
             t = ((MecanumDrive.FollowTrajectoryActionFast) a).timeTrajectory.duration;
         } else if (a instanceof MecanumDrive.TurnAction) {
             t = ((MecanumDrive.TurnAction) a).turn.duration;
+        } else if (a instanceof SleepAction) {
+            t = ((SleepAction) a).getDt();
         }
         return t;
     }
 
-    /** Conservative drive-time estimate for {@link #route}, SECONDS. */
+    /**
+     * Rollers start this long into a wall-set leg (the leg starting at a shooting pose): 0.4 s before
+     * the first GARDEN pollen is reached (2.52 s), SECONDS.
+     */
+    public static double WALL_COLLECT_START_S = 2.1;
+    /** ...and never run for less than this, SECONDS (through the last pollen at 2.93 s plus time to pull it in). */
+    public static double WALL_COLLECT_MIN_S = 2.5;
+
+    /**
+     * Runs a whole wall-set leg ({@code drive}: no intake markers of its own) with the rollers on
+     * from {@link #WALL_COLLECT_START_S} until the drive ends, but for at least
+     * {@link #WALL_COLLECT_MIN_S}. Collecting therefore never holds the robot up once it has
+     * arrived, and the rollers get every second the drive gives them.
+     */
+    public Action withWallCollect(Action drive) {
+        double run = Math.max(WALL_COLLECT_MIN_S, motionTime(drive) - WALL_COLLECT_START_S);
+        return new ParallelAction(drive,
+                new SequentialAction(new SleepAction(WALL_COLLECT_START_S), intake.collect(run)));
+    }
+
+    /**
+     * Drive-time estimate for {@link #route}, SECONDS: the exact planned time (+ settle) of a route
+     * prepared in INIT from about the same start, otherwise a conservative geometric estimate.
+     */
     public double estimateRoute(Pose2d from, Pose2d to) {
+        double rough = roughEstimate(from, to);
+        double exact = preparedSeconds(from, to);
+        return Double.isNaN(exact) ? rough : Math.min(rough, exact + ROUTE_SETTLE_S);
+    }
+
+    /** Geometry-only estimate, deliberately pessimistic (never below the real drive). */
+    private double roughEstimate(Pose2d from, Pose2d to) {
         Plan plan = plan(from.position, to.position);
         double len = 0;
         Vector2d prev = from.position;

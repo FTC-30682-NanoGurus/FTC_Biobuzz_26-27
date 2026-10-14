@@ -606,7 +606,7 @@ public class TurretConstants {
      * Intake power while collecting, unitless -1..1.
      * CHANGE THIS higher to grab harder and jam more; lower to be gentler and miss pickups.
      */
-    public static double INTAKE_POWER = 0.9;
+    public static double INTAKE_POWER = 1.0;
 
     /**
      * Intake power while ejecting, unitless -1..1. Negative runs the rollers backwards.

@@ -15,6 +15,7 @@ import com.acmerobotics.roadrunner.Pose2dDual;
 import com.acmerobotics.roadrunner.PosePath;
 import com.acmerobotics.roadrunner.Rotation2dDual;
 import com.acmerobotics.roadrunner.SequentialAction;
+import com.acmerobotics.roadrunner.SleepAction;
 import com.acmerobotics.roadrunner.TrajectoryActionBuilder;
 import com.acmerobotics.roadrunner.TranslationalVelConstraint;
 import com.acmerobotics.roadrunner.Vector2d;
@@ -37,6 +38,7 @@ import java.util.Arrays;
 @Autonomous
 public class Biobuzz3Tip_AlliancePreLoad_Compatible extends NGAutoOpMode{
     public static double MAX_WAIT_FOR_ALLIANCE_TIP_S = 4.2;
+    public static double WALL_SET_DWELL_S = 0.25;
 
     @Override
     public void runOpMode() throws InterruptedException{
@@ -115,70 +117,75 @@ public class Biobuzz3Tip_AlliancePreLoad_Compatible extends NGAutoOpMode{
                 .setTangent(Math.toRadians(90))
                 .splineToLinearHeading(new Pose2d(61, -14, Math.toRadians(-179.5)), Math.toRadians(15), maxVel, maxAccel);
 
-        TrajectoryActionBuilder ToWallSetandShooting = crossToShoot.endTrajectory().fresh()
-                .setTangent(Math.toRadians(-155))
-                .afterTime(2.1, intake2_0.collect(2.5))
-                .splineToSplineHeading(new Pose2d(62, -58, Math.toRadians(360)), Math.toRadians(25), maxIntakeVel, maxAccel)
-                .setReversed(true)
-                .splineToLinearHeading(new Pose2d(20, -37, Math.toRadians(360)), Math.toRadians(180), maxVel, maxAccel)
-                .splineToLinearHeading(new Pose2d(-24, -37, Math.toRadians(360)), Math.toRadians(180), maxVel, maxAccel)
-                .splineToLinearHeading(new Pose2d(-52, -16, Math.toRadians(360)), Math.toRadians(120), maxVel, maxAccel);
-
-        TrajectoryActionBuilder strafeToParking = ToWallSetandShooting.endTrajectory().fresh()
-                .setTangent(Math.toRadians(-90))
-                .splineToLinearHeading(new Pose2d(-50, -26, Math.toRadians(20)), Math.toRadians(-90), maxVel, maxAccel)
-                .splineToSplineHeading(new Pose2d(-53.5, -57, Math.toRadians(90)), Math.toRadians(-90), maxVel, maxAccel);
-
+        Pose2d leftShot = new Pose2d(-52, -14, Math.toRadians(0));
+        Pose2d leftShotBack = new Pose2d(-52, -14, Math.toRadians(360));
+        Pose2d rightShot = new Pose2d(61, -14, Math.toRadians(-179.5));
         Pose2d soloStart = new Pose2d(61, -14, Math.toRadians(180));
-        Pose2d parkPose = new Pose2d(-53.5, -57, Math.toRadians(90));
+        Pose2d wallSet = new Pose2d(62, -58, Math.toRadians(360));
+        Pose2d rightNear = new Pose2d(56.69, -40.01, Math.toRadians(155));
+        Pose2d leftNear = new Pose2d(-53.48, -43.82, Math.toRadians(30));
+        Pose2d flowerOne = new Pose2d(-55, -22, Math.toRadians(180));
+        Pose2d parkPose = new Pose2d(-21, -59.5, Math.toRadians(180));
 
-        TrajectoryActionBuilder soloPreLoadWait = drive.actionBuilder(soloStart)
-                .waitSeconds(2);
+        HiveWatcher hive = new HiveWatcher(hardwareMap, telemetry, AllianceSelector.red());
+        HiveAutoKit kit = new HiveAutoKit(drive, intake2_0, hive, telemetry, maxVel, maxAccel,
+                parkPose, leftShot, soloStart);
 
-        TrajectoryActionBuilder soloWallSetandShooting = soloPreLoadWait.endTrajectory().fresh()
-                .setTangent(Math.toRadians(-155))
-                .splineToSplineHeading(new Pose2d(62, -58, Math.toRadians(360)), Math.toRadians(25), maxIntakeVel, maxAccel)
-                .afterTime(0.7, intake2_0.collect(4))
-                .setReversed(true)
-                .splineToLinearHeading(new Pose2d(20, -48, Math.toRadians(360)), Math.toRadians(-180), maxVel, maxAccel)
-                .splineToLinearHeading(new Pose2d(-33, -44, Math.toRadians(360)), Math.toRadians(170), maxVel, maxAccel)
-                .splineToLinearHeading(new Pose2d(-52, -16, Math.toRadians(360)), Math.toRadians(-220), maxVel, maxAccel);
-
-        TrajectoryActionBuilder soloTurnToFlowerOne = soloWallSetandShooting.endTrajectory().fresh()
-                .afterTime(0, intake2_0.deployFlowerRamp())
-                .setTangent(Math.toRadians(-172))
-                .splineToSplineHeading(new Pose2d(-52.6, -17.5, Math.toRadians(180)), Math.toRadians(-112), maxVel, maxAccel)
-                .splineToConstantHeading(new Vector2d(-55, -22), Math.toRadians(-82), maxVel, maxAccel)
-                .afterTime(0.4, intake2_0.collectFromFlower(3));
-
-        TrajectoryActionBuilder soloTurnToShoot = soloTurnToFlowerOne.endTrajectory().fresh()
-                .setTangent(Math.toRadians(90))
-                .splineToConstantHeading(new Vector2d(-54, -16.1), Math.toRadians(90), maxVel, maxAccel)
-                .splineToSplineHeading(new Pose2d(-52, -14, Math.toRadians(360)), Math.toRadians(90), maxVel, maxAccel);
-
-        TrajectoryActionBuilder soloStrafeToParking = soloTurnToShoot.endTrajectory().fresh()
-                .strafeToLinearHeading(new Vector2d(-50, -57), Math.toRadians(90), maxVel, maxAccel);
-
-        telemetry.addLine("Ready To Start");
+        telemetry.addLine("Preparing fastest routes...");
         telemetry.update();
+        kit.prepareDefaults();
+        kit.prepare(rightNear, parkPose);
+        kit.prepare(leftNear, flowerOne);
+        kit.prepare(leftShotBack, parkPose);
+
+        double SOLO_FLOWER_BLOCK_S = 1.47 + 0.4 + 3.0 + 1.66 + 1.0 + 0.3;
 
         Action shootPreLoad = waitForAlliancePreLoadPath.build();
         Action IntakeFromFlowerOne = turnToFlowerOne.build();
         Action shootFlowerOnePollen = turnToShoot.build();
         Action IntakeFromFlowerTwo = toFlowerTwo.build();
         Action shootFlowerTwoPollen = crossToShoot.build();
-        Action IntakeWallSetandShoot = ToWallSetandShooting.build();
-        Action park = strafeToParking.build();
 
-        Action soloShootPreLoad = soloPreLoadWait.build();
-        Action soloIntakeWallSetandShoot = soloWallSetandShooting.build();
-        Action soloIntakeFromFlowerOne = soloTurnToFlowerOne.build();
-        Action soloShootFlowerOnePollen = soloTurnToShoot.build();
-        Action soloPark = soloStrafeToParking.build();
+        Action IntakeWallSetandShoot = kit.withWallCollect(new SequentialAction(
+                drive.actionBuilder(rightShot)
+                        .setTangent(Math.toRadians(-155))
+                        .splineToSplineHeading(wallSet, Math.toRadians(25), maxIntakeVel, maxAccel)
+                        .waitSeconds(WALL_SET_DWELL_S)
+                        .build(),
+                drive.actionBuilder(wallSet)
+                        .setTangent(Math.atan2(10, -4))
+                        .splineToSplineHeading(new Pose2d(58, -48, Math.toRadians(30)), Math.toRadians(105.57), maxVel, maxAccel)
+                        .splineToSplineHeading(rightNear, Math.atan2(rightNear.position.y + 48, rightNear.position.x - 58), maxVel, maxAccel)
+                        .build()));
 
-        HiveWatcher hive = new HiveWatcher(hardwareMap, telemetry, AllianceSelector.red());
-        HiveAutoKit kit = new HiveAutoKit(drive, intake2_0, hive, telemetry, maxVel, maxAccel,
-                parkPose, new Pose2d(-52, -14, Math.toRadians(0)), soloStart);
+        Action park = kit.route(rightNear, parkPose);
+
+        Action soloShootPreLoad = drive.actionBuilder(soloStart)
+                .waitSeconds(2)
+                .build();
+
+        Action soloIntakeWallSetandShoot = kit.withWallCollect(drive.actionBuilder(soloStart)
+                .setTangent(Math.toRadians(-155))
+                .splineToSplineHeading(wallSet, Math.toRadians(25), maxIntakeVel, maxAccel)
+                .waitSeconds(WALL_SET_DWELL_S)
+                .setReversed(true)
+                .splineToLinearHeading(new Pose2d(20, -48, Math.toRadians(360)), Math.toRadians(-180), maxVel, maxAccel)
+                .splineToLinearHeading(new Pose2d(-33, -44, Math.toRadians(360)), Math.toRadians(170), maxVel, maxAccel)
+                .splineToSplineHeading(leftNear, Math.toRadians(180), maxVel, maxAccel)
+                .build());
+
+        Action soloIntakeFromFlowerOne = new SequentialAction(
+                new ParallelAction(intake2_0.deployFlowerRamp(), kit.route(leftNear, flowerOne)),
+                new SleepAction(0.4),
+                intake2_0.collectFromFlower(3));
+
+        Action soloShootFlowerOnePollen = drive.actionBuilder(flowerOne)
+                .setTangent(Math.toRadians(90))
+                .splineToConstantHeading(new Vector2d(-54, -16.1), Math.toRadians(90), maxVel, maxAccel)
+                .splineToSplineHeading(leftShotBack, Math.toRadians(90), maxVel, maxAccel)
+                .build();
+
+        Action soloPark = kit.route(leftShotBack, parkPose);
 
         telemetry.addLine("Paths Built");
         telemetry.update();
@@ -203,7 +210,7 @@ public class Biobuzz3Tip_AlliancePreLoad_Compatible extends NGAutoOpMode{
                 ),
                 new SequentialAction(
                         kit.beginPark(),
-                        park
+                        kit.leg(rightNear, park, parkPose, null)
                 )
         );
 
@@ -218,13 +225,13 @@ public class Biobuzz3Tip_AlliancePreLoad_Compatible extends NGAutoOpMode{
                         intake2_0.transferUsingRollersForTime(1.0, 0.8)
                 ),
                 HiveAutoKit.branch(() -> {
-                    if (kit.fits(5.08 + 1.66 + 1.0, new Pose2d(-52, -14, Math.toRadians(0)))) {
+                    if (kit.fits(SOLO_FLOWER_BLOCK_S, leftShotBack)) {
                         return new SequentialAction(
-                                soloIntakeFromFlowerOne,
+                                kit.leg(leftNear, soloIntakeFromFlowerOne, flowerOne, intake2_0.collectFromFlower(3)),
                                 soloShootFlowerOnePollen,
                                 intake2_0.transferUsingRollersForTime(1.0, 0.8),
                                 kit.beginPark(),
-                                soloPark
+                                kit.leg(leftShotBack, soloPark, parkPose, null)
                         );
                     }
                     kit.log("no time for flower one");
@@ -252,10 +259,6 @@ public class Biobuzz3Tip_AlliancePreLoad_Compatible extends NGAutoOpMode{
         double pollenShootingVel = BiobuzzRobotConstants.pollenFixedShootingVel;
         double nectarShootingVel = BiobuzzRobotConstants.nectarFixedShootingVel;
 
-        telemetry.addLine("Preparing fastest routes...");
-        telemetry.update();
-        kit.prepareDefaults();
-        kit.prepare(new Pose2d(-52, -16, Math.toRadians(0)), parkPose);
         kit.checkPrebuilt("shootPreLoad", shootPreLoad);
         kit.checkPrebuilt("IntakeFromFlowerOne", IntakeFromFlowerOne);
         kit.checkPrebuilt("shootFlowerOnePollen", shootFlowerOnePollen);

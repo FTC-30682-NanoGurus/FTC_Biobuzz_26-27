@@ -180,5 +180,6 @@ public class BiobuzzRobotConstants {
     public static double
         intakePower = 1.0,
         intakeReversePower = -1.0,
-        transferPower = 1.0;
+        transferPower = 0.7;
 }
+
