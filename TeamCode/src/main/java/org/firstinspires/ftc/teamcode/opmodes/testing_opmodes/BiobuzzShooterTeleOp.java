@@ -29,21 +29,28 @@ import org.firstinspires.ftc.teamcode.library.NGMotorFlywheelTuner;
  *   <li><b>Intake</b> uses Biobuzz_TeleOp's controls: A toggles, B (hold) reverses.</li>
  * </ul>
  *
- * <h2>Gates, and why the opmode does not depend on them</h2>
- * Each flywheel has its own gate servo ({@code BiobuzzRobotConstants.pollenGate} / {@code nectarGate},
- * positions {@code pollenGateOpenPos} etc.). A gate swings OPEN while its shoot trigger is held and
- * back to CLOSED the moment it is released.
+ * <h2>One transfer, two gates</h2>
+ * The intake ({@code rollers}) is one motor and the transfer ({@code transferRollers}) is one motor
+ * feeding BOTH shooters, so pollen and nectar cannot be spun up separately: any shoot request (or
+ * the flywheel toggle) spins up both wheels, and whenever the transfer runs it pushes on both sides.
+ * They are still released separately by the gates ({@code BiobuzzRobotConstants.pollenGate} /
+ * {@code nectarGate}): the side whose gate stays closed just spins against it while the other side's
+ * gate is open.
  *
- * The feed interlock is still in software: the rollers only push an artifact in once the wheel is
- * within {@code BiobuzzRobotConstants.flywheelAtSpeedTolerance} of its target. Nothing ever waits on, or reads back from, a
- * gate - a servo cannot report its position anyway - so shooting behaves the same with the gates
- * configured but unplugged (setPosition goes nowhere) or not in the configuration at all (reported
- * on telemetry, then skipped).
+ * That makes the gate the feed interlock. A gate opens only once its shoot trigger is held AND its
+ * wheel is within {@code BiobuzzRobotConstants.flywheelAtSpeedTolerance} of target, then stays open
+ * until the trigger is released (so it does not chatter as the shot pulls the wheel down). The
+ * transfer waits {@code GATE_SETTLE_MS} for the gate to swing clear, and runs only while every open
+ * gate's wheel is at speed. A side with a missing motor or gate never opens.
  *
- * The intake ({@code rollers}) and the transfer into the shooter ({@code transferRollers}) are
- * separate motors. The transfer only runs while a wheel is feeding. While it does, the intake is
- * also driven forward if {@code BiobuzzRobotConstants.transferAlsoRunsIntake}, so artifacts still
- * in the intake follow through - that outranks the intake toggle and reverse for the shot.
+ * While the transfer runs the intake is also driven forward if
+ * {@code BiobuzzRobotConstants.transferAlsoRunsIntake}, so artifacts still in the intake follow
+ * through - that outranks the intake toggle and reverse for the shot.
+ *
+ * <h2>Flower ramp</h2>
+ * {@code BiobuzzRobotConstants.flowerRamp} starts at {@code flowerRampStowedPos}. Right bumper on
+ * either pad toggles it between stowed and {@code flowerRampIntakePos}; dropping it to the intake
+ * position also switches the intake on if it was off. Stowing it leaves the intake as it was.
  *
  * <h2>Fixed target velocities</h2>
  * Each wheel has ONE target, starting at {@code BiobuzzRobotConstants.pollenFixedShootingVel} /
@@ -55,19 +62,18 @@ import org.firstinspires.ftc.teamcode.library.NGMotorFlywheelTuner;
  * <pre>
  * GAMEPAD 1
  *   Left stick .......... drive (field centric)       Right stick X ... turn
- *   LB (hold) precision   RB (hold) override          Y field centric   X heading hold
+ *   LB (hold) precision                               Y field centric   X heading hold
  *   Dpad left ........... translation hold            Back / Options .. re-zero "forward"
  *   A ................... intake on/off                B (hold) ........ intake reverse
- *   Right trigger (hold)  SHOOT POLLEN  (gate opens, spins up, feeds once at speed; release
- *                         closes the gate. Also selects pollen)
- *   Left trigger (hold) . SHOOT NECTAR  (same, nectar gate and wheel)
+ *   RB .................. flower ramp down/up (down also turns the intake on)
+ *   Right trigger (hold)  SHOOT POLLEN  (spins up both wheels, pollen gate opens once pollen is
+ *                         at speed, transfer feeds; release closes the gate. Also selects pollen)
+ *   Left trigger (hold) . SHOOT NECTAR  (same, nectar gate)
  *   Dpad right .......... both flywheels on/off (keep them spinning between shots)
  *   Dpad up / down ...... selected flywheel's target velocity +/- VELOCITY_STEP
  *
- * GAMEPAD 2 (optional - same shooter and intake buttons, plus)
- *   A / B / triggers / dpad right / dpad up+down ... same as gamepad 1
- *   Right bumper (hold) . pre-spin POLLEN only and select it
- *   Left bumper (hold) .. pre-spin NECTAR only and select it
+ * GAMEPAD 2 (optional - same shooter, intake and ramp buttons, plus)
+ *   A / B / RB / triggers / dpad right / dpad up+down ... same as gamepad 1
  *   X ................... switch the selected flywheel
  * </pre>
  */
@@ -89,6 +95,8 @@ public class BiobuzzShooterTeleOp extends LinearOpMode {
     /** One dpad press, TICKS/SECOND. */
     public static double VELOCITY_STEP = 25.0;
     public static double TRIGGER_THRESHOLD = 0.5;
+    /** Time for a gate to swing clear before the transfer pushes into it, MILLISECONDS. */
+    public static double GATE_SETTLE_MS = 150.0;
 
     private MecaTank mecaTank;
     private BulkRead bulkRead;
@@ -101,16 +109,19 @@ public class BiobuzzShooterTeleOp extends LinearOpMode {
     private boolean intakeOn = false;
     private boolean flywheelsOn = false;
     private double lastRollerPower = Double.NaN;
+    /** Null when "flowerRamp" is not configured - the toggle then only switches the intake on. */
+    private Servo flowerRamp;
+    private boolean flowerRampDown = false;
 
     private final ElapsedTime telemetryTimer = new ElapsedTime();
     // gamepad1 drive toggles
     private boolean prevY, prevX, prevBack, prevOptions, prevLeft1;
     // shooter / intake edges, per pad
-    private boolean prevA1, prevA2, prevRight1, prevRight2, prevUp1, prevUp2, prevDown1, prevDown2, prevX2;
+    private boolean prevA1, prevA2, prevRight1, prevRight2, prevUp1, prevUp2, prevDown1, prevDown2, prevX2, prevRB1, prevRB2;
 
     // =============================================================================================
-    // One flywheel. Same spin-up / interlock logic as Biobuzz_TeleOp's ShooterSide, minus the gate
-    // and the velocity table.
+    // One flywheel and its gate. Same spin-up logic as Biobuzz_TeleOp's ShooterSide, minus the
+    // velocity table; the gate is the interlock because the transfer is shared.
     // =============================================================================================
     private class Shooter {
         final String label;
@@ -124,12 +135,18 @@ public class BiobuzzShooterTeleOp extends LinearOpMode {
         boolean gateOpen = false;
         /** Last position written, so an unchanged command costs no hub write. */
         double lastGatePos = Double.NaN;
+        final ElapsedTime gateTimer = new ElapsedTime();
 
         double target;
         double velocity = 0.0;
         boolean spinningUp = false;
+        /** Gate open, swung clear and wheel at speed: the transfer may push into this side. */
+        boolean ready = false;
+        /** The transfer is actually pushing into this side this loop (drives the kLoad boost). */
         boolean feeding = false;
         boolean powerCut = true;
+        /** Set on the spin-up edge so drive() stands down for that one loop. */
+        private boolean armedThisLoop = false;
 
         Shooter(String label, String motorName, String gateName, boolean reversed, double target,
                 boolean pollenGains) {
@@ -170,8 +187,10 @@ public class BiobuzzShooterTeleOp extends LinearOpMode {
             return pollenGains ? BiobuzzRobotConstants.pollenGateClosedPos : BiobuzzRobotConstants.nectarGateClosedPos;
         }
 
-        /** Safe with no gate configured; with a gate configured but unplugged the write just goes nowhere. */
+        /** Never opens with no gate configured; with a gate configured but unplugged the write just goes nowhere. */
         void setGate(boolean open) {
+            if (gate == null) open = false;
+            if (open && !gateOpen) gateTimer.reset();
             gateOpen = open;
             if (gate == null) return;
             double pos = open ? gateOpenPos() : gateClosedPos();
@@ -199,14 +218,18 @@ public class BiobuzzShooterTeleOp extends LinearOpMode {
         }
 
         /**
-         * @param wantSpin  spin up (toggle, pre-spin bumper or trigger)
-         * @param wantFeed  shoot trigger held: opens the gate, and feeds once at speed
+         * First half of the loop: spin state and gate. Call drive() once the shared transfer has
+         * been decided.
+         * @param wantSpin  spin up (toggle or either shoot trigger - the wheels spin up together)
+         * @param wantFeed  this side's shoot trigger is held
          */
         void update(boolean wantSpin, boolean wantFeed) {
-            // The gate follows the trigger, independent of the flywheel - so it still opens and
-            // closes on cue even if this wheel's motor is missing.
-            setGate(wantFeed);
-            if (motor == null) return;
+            armedThisLoop = false;
+            if (motor == null) {
+                setGate(false);
+                ready = false;
+                return;
+            }
             velocity = motor.getVelocity();
 
             // Spin-up edge: re-arm the controller, then stand down for one loop so its first
@@ -215,19 +238,29 @@ public class BiobuzzShooterTeleOp extends LinearOpMode {
                 applyGains(target);
                 spinningUp = true;
                 powerCut = false;
-                feeding = false;
+                armedThisLoop = true;
+                setGate(false);
+                ready = false;
                 return;
             }
             if (!wantSpin && spinningUp) NGMotorFlywheelTuner.resetVelocityFilter(motor);
             spinningUp = wantSpin;
 
+            // Open once at speed, then hold open for the rest of the trigger press.
+            if (!spinningUp || !wantFeed) setGate(false);
+            else if (!gateOpen && atSpeed()) setGate(true);
+            ready = gateOpen && gateTimer.milliseconds() >= GATE_SETTLE_MS && atSpeed();
+        }
+
+        /** Second half of the loop. @param loading the transfer is pushing into this side */
+        void drive(boolean loading) {
+            feeding = loading;
+            if (motor == null || armedThisLoop) return;
             if (spinningUp) {
                 // Plain field write: a dpad change must not reset the controller underneath it.
                 motor.targetVelocity = target;
-                feeding = wantFeed && atSpeed();   // THE INTERLOCK
                 motor.updateFlywheels(feeding);    // feeding drives the kLoad + kRamp boost
             } else {
-                feeding = false;
                 motor.targetVelocity = 0.0;
                 // Cut power once rather than asking the loop for 0, which would brake the wheel
                 // hard against its own momentum.
@@ -246,6 +279,7 @@ public class BiobuzzShooterTeleOp extends LinearOpMode {
             setGate(false);
             if (motor == null) return;
             spinningUp = false;
+            ready = false;
             feeding = false;
             powerCut = true;
             motor.targetVelocity = 0.0;
@@ -258,7 +292,8 @@ public class BiobuzzShooterTeleOp extends LinearOpMode {
                 telemetry.addData(name, "MISSING - " + fault);
             } else {
                 telemetry.addData(name, "%s   target %.0f / actual %.0f tps   power %.2f",
-                        !spinningUp ? "idle" : feeding ? "FEEDING" : atSpeed() ? "AT SPEED" : "spinning up",
+                        !spinningUp ? "idle" : feeding ? "FEEDING" : gateOpen && !ready ? "gate opening"
+                                : atSpeed() ? "AT SPEED" : "spinning up",
                         target, velocity, motor.getPower());
             }
             telemetry.addData("   " + label + " gate", gate == null ? "not configured - skipped ("
@@ -298,15 +333,22 @@ public class BiobuzzShooterTeleOp extends LinearOpMode {
         nectar = new Shooter("NECTAR", BiobuzzRobotConstants.nectarFlywheel, BiobuzzRobotConstants.nectarGate,
                 BiobuzzRobotConstants.nectarFlywheelReversed, BiobuzzRobotConstants.nectarFixedShootingVel, false);
         selected = pollen;
+        try {
+            flowerRamp = hardwareMap.get(Servo.class, BiobuzzRobotConstants.flowerRamp);
+            flowerRamp.setPosition(BiobuzzRobotConstants.flowerRampStowedPos);
+        } catch (Exception e) {
+            flowerRamp = null;
+        }
 
         telemetry.addLine("BIOBUZZ DRIVE + SHOOTER TEST");
         telemetry.addLine("RT = shoot pollen   LT = shoot nectar   dpad right = flywheels on/off");
-        telemetry.addLine("A = intake   B = reverse   dpad up/down = selected target velocity");
+        telemetry.addLine("A = intake   B = reverse   RB = flower ramp   dpad up/down = selected target velocity");
         telemetry.addLine("Flywheels start STOPPED.");
         if (pollen.motor == null) telemetry.addLine("POLLEN FLYWHEEL MISSING: " + pollen.fault);
         if (nectar.motor == null) telemetry.addLine("NECTAR FLYWHEEL MISSING: " + nectar.fault);
         if (transfer == null) telemetry.addLine("TRANSFER MOTOR MISSING: '"
                 + BiobuzzRobotConstants.transferRollers + "' - nothing can feed the flywheels");
+        if (flowerRamp == null) telemetry.addLine("FLOWER RAMP MISSING: '" + BiobuzzRobotConstants.flowerRamp + "'");
         telemetry.update();
 
         waitForStart();
@@ -341,7 +383,7 @@ public class BiobuzzShooterTeleOp extends LinearOpMode {
             mecaTank.setDrivePowersSmoothArcade(
                     gamepad1.left_stick_x, gamepad1.left_stick_y,
                     gamepad1.right_stick_x,
-                    gamepad1.left_bumper, gamepad1.right_bumper);
+                    gamepad1.left_bumper, false);
 
             // =====================================================================================
             // INTAKE - A toggles, B (hold) reverses, either pad
@@ -350,6 +392,18 @@ public class BiobuzzShooterTeleOp extends LinearOpMode {
             prevA1 = gamepad1.a;
             prevA2 = gamepad2.a;
             boolean reverseHeld = gamepad1.b || gamepad2.b;
+
+            // =====================================================================================
+            // FLOWER RAMP - RB toggles, either pad. Dropping it turns the intake on.
+            // =====================================================================================
+            if ((gamepad1.right_bumper && !prevRB1) || (gamepad2.right_bumper && !prevRB2)) {
+                flowerRampDown = !flowerRampDown;
+                if (flowerRampDown) intakeOn = true;
+                if (flowerRamp != null) flowerRamp.setPosition(flowerRampDown
+                        ? BiobuzzRobotConstants.flowerRampIntakePos : BiobuzzRobotConstants.flowerRampStowedPos);
+            }
+            prevRB1 = gamepad1.right_bumper;
+            prevRB2 = gamepad2.right_bumper;
 
             // =====================================================================================
             // SHOOTER
@@ -366,8 +420,8 @@ public class BiobuzzShooterTeleOp extends LinearOpMode {
                     || gamepad2.left_trigger > TRIGGER_THRESHOLD;
 
             // Whatever you last reached for is what the dpad edits.
-            if (pollenFeed || gamepad2.right_bumper) selected = pollen;
-            if (nectarFeed || gamepad2.left_bumper) selected = nectar;
+            if (pollenFeed) selected = pollen;
+            if (nectarFeed) selected = nectar;
             if (gamepad2.x && !prevX2) selected = selected == pollen ? nectar : pollen;
             prevX2 = gamepad2.x;
 
@@ -380,14 +434,20 @@ public class BiobuzzShooterTeleOp extends LinearOpMode {
             if (up) selected.target += VELOCITY_STEP;
             if (down) selected.target = Math.max(0.0, selected.target - VELOCITY_STEP);
 
-            pollen.update(flywheelsOn || pollenFeed || gamepad2.right_bumper, pollenFeed);
-            nectar.update(flywheelsOn || nectarFeed || gamepad2.left_bumper, nectarFeed);
+            // One transfer feeds both wheels, so they spin up together.
+            boolean spin = flywheelsOn || pollenFeed || nectarFeed;
+            pollen.update(spin, pollenFeed);
+            nectar.update(spin, nectarFeed);
 
             // =====================================================================================
-            // INTAKE + TRANSFER - separate motors. The transfer runs only while a wheel feeds; the
+            // INTAKE + TRANSFER - one motor each. The transfer runs while at least one gate is open
+            // and every open gate's wheel is ready; the closed side spins against its gate. The
             // intake follows its toggle/reverse, except that a shot can drive it forward too.
             // =====================================================================================
-            boolean transferring = pollen.feeding || nectar.feeding;
+            boolean transferring = (pollen.gateOpen || nectar.gateOpen)
+                    && (!pollen.gateOpen || pollen.ready) && (!nectar.gateOpen || nectar.ready);
+            pollen.drive(transferring && pollen.gateOpen);
+            nectar.drive(transferring && nectar.gateOpen);
             double transferPower = transferring ? BiobuzzRobotConstants.transferPower : 0.0;
             double rollerPower = transferring && BiobuzzRobotConstants.transferAlsoRunsIntake ? BiobuzzRobotConstants.transferPower
                     : reverseHeld ? BiobuzzRobotConstants.intakeReversePower
@@ -419,6 +479,8 @@ public class BiobuzzShooterTeleOp extends LinearOpMode {
                                 : reverseHeld ? "REVERSE (B held)" : intakeOn ? "IN (A toggle)" : "off");
                 telemetry.addData("Transfer", transfer == null ? "MISSING"
                         : String.format("%.2f  %s", transferPower, transferring ? "FEEDING" : "off"));
+                telemetry.addData("Flower ramp", (flowerRampDown ? "DOWN (intake)" : "stowed")
+                        + (flowerRamp == null ? " - not configured" : ""));
 
                 telemetry.addLine("--- DRIVE ---");
                 telemetry.addData("FULL SPEED (temporary)", FULL_SPEED);

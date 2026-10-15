@@ -60,12 +60,12 @@ public class BiobuzzRobotConstants {
      */
     public static boolean
         transferReversed = true,
-        transferAlsoRunsIntake = false;
+        transferAlsoRunsIntake = true;
 
     public static String flowerRamp = "flowerRamp";
     public static double
-        flowerRampStowedPos = 0.100,
-        flowerRampIntakePos = 0.480;
+        flowerRampStowedPos = 0.15,
+        flowerRampIntakePos = 0.42; 
 
     /**
      * Robot footprint, INCHES: width is side to side, length is front to back (the heading
@@ -172,7 +172,7 @@ public class BiobuzzRobotConstants {
         flywheelKRamp = 1.0;
 
     /** Velocity band counted as "at speed", TICKS/SECOND - the feed interlock. */
-    public static double flywheelAtSpeedTolerance = 30.0;
+    public static double flywheelAtSpeedTolerance = 50.0;
 
     // =============================================================================================
     // INTAKE / TRANSFER POWERS (teleops)
