@@ -135,6 +135,7 @@ public class HiveAutoKit {
     private final ElapsedTime telemetryTimer = new ElapsedTime();
     private final List<String> log = new ArrayList<>();
     private boolean parking = false;
+    private double matchTimeOffsetS = 0;
 
     public HiveAutoKit(MecanumDrive drive, Intake2_0 intake, HiveWatcher hive, Telemetry telemetry,
                        VelConstraint vel, AccelConstraint accel,
@@ -152,12 +153,19 @@ public class HiveAutoKit {
 
     /** Call right after START. */
     public void start() {
+        matchTimeOffsetS = 0;
         clock.reset();
         log("START");
     }
 
+    /** Sets the match clock to {@code seconds} from now on (for previewing decisions off the field). */
+    public void setMatchTime(double seconds) {
+        matchTimeOffsetS = seconds;
+        clock.reset();
+    }
+
     public double t() {
-        return clock.seconds();
+        return matchTimeOffsetS + clock.seconds();
     }
 
     public double remaining() {
@@ -166,7 +174,21 @@ public class HiveAutoKit {
 
     /** True if {@code seconds} of work still leaves time to park from {@code endPose}. */
     public boolean fits(double seconds, Pose2d endPose) {
-        return remaining() >= seconds + estimateRoute(endPose, parkPose) + PARK_MARGIN_S;
+        return fitsAt(t(), seconds, endPose);
+    }
+
+    /** {@link #fits} as it would answer at match time {@code matchTimeS}. */
+    public boolean fitsAt(double matchTimeS, double seconds, Pose2d endPose) {
+        return AUTO_LENGTH_S - matchTimeS >= seconds + estimateRoute(endPose, parkPose) + PARK_MARGIN_S;
+    }
+
+    /** Latest match time at which {@link #fits} still says yes, SECONDS. */
+    public double latestStart(double seconds, Pose2d endPose) {
+        return AUTO_LENGTH_S - (seconds + estimateRoute(endPose, parkPose) + PARK_MARGIN_S);
+    }
+
+    public Pose2d parkPose() {
+        return parkPose;
     }
 
     public void log(String msg) {
@@ -285,7 +307,7 @@ public class HiveAutoKit {
      * is part-way through a tip, for it to come to rest (up to {@link #TIP_WAIT_MAX_S}, never past
      * the park budget). Launching while the HIVE swings can stop the TIP.
      */
-    private Action waitForShot(double freshS) {
+    public Action waitForShot(double freshS) {
         return new Action() {
             private long start = -1;
             private boolean told = false;
@@ -294,16 +316,29 @@ public class HiveAutoKit {
             public boolean run(@NonNull TelemetryPacket p) {
                 if (start < 0) start = System.nanoTime();
                 double elapsed = (System.nanoTime() - start) / 1e9;
-                if (!hive.cameraHealthy()) return false;
-                if (hive.hiveMoving(HIVE_STILL_S)) {
+                ShotWait w = shotWait(freshS);
+                if (w == ShotWait.HIVE_MOVING) {
                     if (!told) log("HIVE moving - waiting for it to settle");
                     told = true;
                     return elapsed < TIP_WAIT_MAX_S && fits(TRANSFER_S, drive.pose);
                 }
-                if (hive.upCell(freshS) != null) return false;
+                if (w == ShotWait.READY) return false;
                 return elapsed < GATE_MAX_WAIT_S;
             }
         };
+    }
+
+    /**
+     * What {@link #waitForShot} is waiting on right now: READY (no camera frames, or fresh evidence),
+     * HIVE_MOVING (waits up to {@link #TIP_WAIT_MAX_S}) or NO_EVIDENCE (waits up to {@link #GATE_MAX_WAIT_S}).
+     */
+    public enum ShotWait { READY, HIVE_MOVING, NO_EVIDENCE }
+
+    public ShotWait shotWait(double freshS) {
+        if (!hive.cameraHealthy()) return ShotWait.READY;
+        if (hive.hiveMoving(HIVE_STILL_S)) return ShotWait.HIVE_MOVING;
+        if (hive.upCell(freshS) != null) return ShotWait.READY;
+        return ShotWait.NO_EVIDENCE;
     }
 
     /**
@@ -343,31 +378,55 @@ public class HiveAutoKit {
         return TipResult.UNKNOWN;
     }
 
-    private Action decideShot(Side side, boolean mayCross, double freshS) {
-        if (hive.cameraHealthy() && hive.moving(side, HIVE_STILL_S)) {
-            log(side + " CELL still swinging - holding");
-            return new NullAction();
-        }
+    /** What a shot at {@code side} decides once its wait is over (see {@link #shotPoint(Side)}). */
+    public enum ShotChoice { SHOOT_UP, SHOOT_NO_VIEW, HOLD_SWINGING, HOLD_DOWN_AGAIN, CROSS, HOLD_NO_TIME }
+
+    /**
+     * The shot decision from the robot at {@code from} at match time {@code matchTimeS}. The autos
+     * call it with the robot's pose and the match clock; it is public so it can be previewed.
+     */
+    public ShotChoice shotChoice(Side side, boolean mayCross, double freshS, Pose2d from, double matchTimeS) {
+        if (hive.cameraHealthy() && hive.moving(side, HIVE_STILL_S)) return ShotChoice.HOLD_SWINGING;
         Side up = hive.upCell(freshS);
         if (up == side.other()) {
-            if (!mayCross) {
-                log(side + " CELL down again after crossing - holding");
-                return new NullAction();
-            }
+            if (!mayCross) return ShotChoice.HOLD_DOWN_AGAIN;
             Pose2d dest = shotPose(side.other());
-            double need = estimateRoute(drive.pose, dest) + GATE_MAX_WAIT_S + TRANSFER_S;
-            if (fits(need, dest)) {
-                log(side + " CELL is DOWN - crossing to shoot " + side.other());
-                return new SequentialAction(
-                        route(drive.pose, dest),
-                        waitForShot(GATE_FRESH_S),
-                        branch(() -> decideShot(side.other(), false, GATE_FRESH_S)));
-            }
-            log(side + " CELL is DOWN, no time to cross - holding");
-            return new NullAction();
+            double need = estimateRoute(from, dest) + GATE_MAX_WAIT_S + TRANSFER_S;
+            return fitsAt(matchTimeS, need, dest) ? ShotChoice.CROSS : ShotChoice.HOLD_NO_TIME;
         }
-        log(up == side ? side + " CELL up - shooting" : "no HIVE view - shooting " + side + " as planned");
-        return transfer();
+        return up == side ? ShotChoice.SHOOT_UP : ShotChoice.SHOOT_NO_VIEW;
+    }
+
+    /** The log line the autos write for a shot decision. */
+    public static String describeShot(Side side, ShotChoice c) {
+        switch (c) {
+            case HOLD_SWINGING:
+                return side + " CELL still swinging - holding";
+            case HOLD_DOWN_AGAIN:
+                return side + " CELL down again after crossing - holding";
+            case CROSS:
+                return side + " CELL is DOWN - crossing to shoot " + side.other();
+            case HOLD_NO_TIME:
+                return side + " CELL is DOWN, no time to cross - holding";
+            case SHOOT_UP:
+                return side + " CELL up - shooting";
+            default:
+                return "no HIVE view - shooting " + side + " as planned";
+        }
+    }
+
+    private Action decideShot(Side side, boolean mayCross, double freshS) {
+        ShotChoice c = shotChoice(side, mayCross, freshS, drive.pose, t());
+        log(describeShot(side, c));
+        if (c == ShotChoice.CROSS) {
+            Pose2d dest = shotPose(side.other());
+            return new SequentialAction(
+                    route(drive.pose, dest),
+                    waitForShot(GATE_FRESH_S),
+                    branch(() -> decideShot(side.other(), false, GATE_FRESH_S)));
+        }
+        if (c == ShotChoice.SHOOT_UP || c == ShotChoice.SHOOT_NO_VIEW) return transfer();
+        return new NullAction();
     }
 
     // =============================================================================================

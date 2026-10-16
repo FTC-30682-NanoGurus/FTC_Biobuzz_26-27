@@ -1,5 +1,8 @@
 package org.firstinspires.ftc.teamcode.opmodes.testing_opmodes;
 
+import com.acmerobotics.dashboard.FtcDashboard;
+import com.acmerobotics.dashboard.config.Config;
+import com.acmerobotics.dashboard.telemetry.MultipleTelemetry;
 import com.acmerobotics.roadrunner.Pose2d;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
@@ -30,13 +33,20 @@ import java.util.List;
  *
  * INIT: B = red, X = blue (either gamepad). RUNNING: A = clear the log.
  * The robot must not move - its pose is not tracked here.
+ *
+ * Telemetry and the camera image also go to FTC Dashboard (192.168.43.1:8080/dash), from INIT on.
  */
+@Config
 @TeleOp(name = "BioBuzz HIVE Tip Recorder", group = "testing")
 public class BiobuzzHiveTipRecorder extends LinearOpMode {
+    /** FTC Dashboard camera stream rate. Keep it low: every frame goes over the hub's WiFi. */
+    public static int DASHBOARD_FPS = 10;
 
     @Override
     public void runOpMode() {
+        telemetry = new MultipleTelemetry(telemetry, FtcDashboard.getInstance().getTelemetry());
         HiveWatcher hive = new HiveWatcher(hardwareMap, telemetry, AllianceSelector.red());
+        hive.startDashboardStream(DASHBOARD_FPS);
         Pose2d still = new Pose2d(0, 0, 0);
 
         while (!isStarted() && !isStopRequested()) {

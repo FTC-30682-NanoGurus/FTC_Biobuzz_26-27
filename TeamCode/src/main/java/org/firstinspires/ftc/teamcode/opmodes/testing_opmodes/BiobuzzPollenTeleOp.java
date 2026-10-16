@@ -289,6 +289,7 @@ public class BiobuzzPollenTeleOp extends LinearOpMode {
         } catch (Exception e) {
             transfer = null;
         }
+
         NGMotor.kLoad = BiobuzzRobotConstants.flywheelKLoad;
         NGMotor.kRamp = BiobuzzRobotConstants.flywheelKRamp;
         pollen = new Shooter("POLLEN", BiobuzzRobotConstants.pollenFlywheel, BiobuzzRobotConstants.pollenGate,

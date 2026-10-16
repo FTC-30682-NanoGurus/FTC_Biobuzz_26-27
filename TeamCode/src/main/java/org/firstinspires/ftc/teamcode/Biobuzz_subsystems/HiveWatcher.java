@@ -2,6 +2,7 @@ package org.firstinspires.ftc.teamcode.Biobuzz_subsystems;
 
 import android.util.Size;
 
+import com.acmerobotics.dashboard.FtcDashboard;
 import com.acmerobotics.dashboard.config.Config;
 import com.acmerobotics.roadrunner.Pose2d;
 import com.qualcomm.robotcore.hardware.HardwareMap;
@@ -210,6 +211,7 @@ public class HiveWatcher {
     private VisionPortal portal;
     private AprilTagProcessor processor;
     private boolean controlsApplied = false;
+    private boolean dashboardStreaming = false;
     private String cameraNote = "";
     private long lastFrameNanos = 0;
     private final List<String> events = new ArrayList<>();
@@ -649,6 +651,12 @@ public class HiveWatcher {
         return String.format("cam %s | L: %s | R: %s", cameraState(), describe(left), describe(right));
     }
 
+    /** One CELL's line of {@link #describe()}: its tag IDs, state, last seen, row height, distance off rest, time missing. */
+    public String describe(Side side) {
+        Track t = track(side);
+        return t.name + ": " + describe(t);
+    }
+
     private String describe(Track t) {
         return String.format("%s, %s, row %s in, off rest %s in, missing %.1fs", t.note, ageText(t.lastSeenNanos),
                 Double.isNaN(t.rowHeight) ? "-" : String.format("%.1f", t.rowHeight + TurretConstants.CAMERA_OFFSET_Z_IN),
@@ -660,7 +668,21 @@ public class HiveWatcher {
         return portal.getCameraState() + (controlsApplied ? "" : " (settings pending)");
     }
 
+    /**
+     * Streams the camera to FTC Dashboard at {@code fps} (keep it low: every frame goes over the
+     * hub's WiFi). Testing only - the autos never call this. Stopped by {@link #close()}.
+     */
+    public void startDashboardStream(int fps) {
+        if (portal == null) return;
+        FtcDashboard.getInstance().startCameraStream(portal, fps);
+        dashboardStreaming = true;
+    }
+
     public void close() {
+        if (dashboardStreaming) {
+            FtcDashboard.getInstance().stopCameraStream();
+            dashboardStreaming = false;
+        }
         if (portal == null) return;
         try {
             portal.close();

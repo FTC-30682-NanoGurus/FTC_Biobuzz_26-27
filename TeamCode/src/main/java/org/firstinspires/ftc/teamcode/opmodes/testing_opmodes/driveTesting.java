@@ -207,7 +207,7 @@ public class driveTesting extends LinearOpMode{
                 transferRollers.setPower(-1.0);
             }
 
-            transferRollers.setPower(gamepad1.right_trigger);
+            //transferRollers.setPower(gamepad1.right_trigger);
 
             if(gamepad1.dpad_down){
                 flowerRamp.setPosition(BiobuzzRobotConstants.flowerRampIntakePos);

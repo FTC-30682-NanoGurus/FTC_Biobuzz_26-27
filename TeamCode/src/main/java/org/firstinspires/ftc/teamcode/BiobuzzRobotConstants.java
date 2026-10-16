@@ -112,7 +112,7 @@ public class BiobuzzRobotConstants {
      * The two shooter flywheels: one dedicated to POLLEN, one to NECTAR. Separate motors, but both
      * run the same PIDF gains - only their distance/velocity tables differ.
      */
-    public static String pollenFlywheel = "flywheels";   // the motor the pollen PIDF was tuned on
+    public static String pollenFlywheel = "pollenFlywheel";   // the motor the pollen PIDF was tuned on
     public static String nectarFlywheel = "nectarFlywheel";
 
     /**
