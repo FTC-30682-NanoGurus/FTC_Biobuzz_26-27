@@ -34,7 +34,7 @@ public class BiobuzzRobotConstants {
     //public static String interTransfer = "interTransfer";
     public static String flywheels = "flywheels";
     public static double
-        pollenFixedShootingVel = 1600,
+        pollenFixedShootingVel = 1620,
         nectarFixedShootingVel = 1600;
 
     /**
@@ -64,8 +64,23 @@ public class BiobuzzRobotConstants {
 
     public static String flowerRamp = "flowerRamp";
     public static double
-        flowerRampStowedPos = 0.15,
-        flowerRampIntakePos = 0.42; 
+        flowerRampStowedPos = 0.35,
+        flowerRampIntakePos = 0.70;
+
+    /**
+     * Every FLOWER intake in the autos ends with a straight forward drive of this many INCHES, at the
+     * intake heading, onto the FLOWER intake pose (HiveAutoKit.approachFlower / flowerRoute), so the
+     * lowered ramp always meets the FLOWER head-on. The ramp is already lowered before this straight
+     * starts. Set it longer than the lowered ramp reaches past where it first touches the FLOWER.
+     */
+    public static double flowerApproachIn = 6.0;
+
+    /**
+     * After a FLOWER intake the ramp stays down until the robot has moved this many INCHES from the
+     * FLOWER intake pose, so it never swings up into the FLOWER (HiveAutoKit.leaveFlower). Keep it
+     * above flowerApproachIn: the ramp reaches up to flowerApproachIn into the FLOWER.
+     */
+    public static double flowerRampClearIn = 8.0;
 
     /**
      * Robot footprint, INCHES: width is side to side, length is front to back (the heading
@@ -130,8 +145,8 @@ public class BiobuzzRobotConstants {
      * TODO: edit after testing gate positions on the real shooter.
      */
     public static double
-        pollenGateClosedPos = 0,
-        pollenGateOpenPos = 0.45,
+        pollenGateClosedPos = 0.60,
+        pollenGateOpenPos = 0.20,
         nectarGateClosedPos = 0,
         nectarGateOpenPos = 0.45;
 
@@ -149,9 +164,9 @@ public class BiobuzzRobotConstants {
         pollenKI = 0,
         pollenKD = 0,
         pollenKpStable = 0.0007,
-        pollenKpRecovery = 0.0096,
+        pollenKpRecovery = 0.011,
         pollenAlpha = 0.7,
-        pollenRecoveryThreshold = 90.0;
+        pollenRecoveryThreshold = 60.0;
 
     /** Nectar: tuned in NectarFlywheelIntakeTestingOpMode. */
     public static double
@@ -168,8 +183,8 @@ public class BiobuzzRobotConstants {
      * NGMotor, so one pair serves both wheels; every opmode writes these into NGMotor at init.
      */
     public static double
-        flywheelKLoad = 0.8,
-        flywheelKRamp = 1.0;
+        flywheelKLoad = 0, //0.1
+        flywheelKRamp = 0; //0.05
 
     /** Velocity band counted as "at speed", TICKS/SECOND - the feed interlock. */
     public static double flywheelAtSpeedTolerance = 50.0;

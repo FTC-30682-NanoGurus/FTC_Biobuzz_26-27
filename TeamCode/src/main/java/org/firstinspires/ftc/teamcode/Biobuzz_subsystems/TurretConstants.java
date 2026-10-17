@@ -288,9 +288,9 @@ public class TurretConstants {
      * a tape measure and a square. An inch of error here is an inch of error in the target
      * estimate at every range.
      */
-    public static double CAMERA_OFFSET_X_IN = 0.0;
+    public static double CAMERA_OFFSET_X_IN = 5.5;
     public static double CAMERA_OFFSET_Y_IN = 0.0;
-    public static double CAMERA_OFFSET_Z_IN = 0.0;
+    public static double CAMERA_OFFSET_Z_IN = 4.5;
 
     /**
      * Camera mount orientation relative to robot forward, DEGREES.
@@ -304,7 +304,7 @@ public class TurretConstants {
      * vertical one, shortening the computed ground range.
      */
     public static double CAMERA_MOUNT_YAW_DEG = 0.0;
-    public static double CAMERA_MOUNT_PITCH_DEG = 0.0;
+    public static double CAMERA_MOUNT_PITCH_DEG = 40.0;
     public static double CAMERA_MOUNT_ROLL_DEG = 0.0;
 
     // =============================================================================================

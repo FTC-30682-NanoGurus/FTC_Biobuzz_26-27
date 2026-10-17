@@ -287,26 +287,29 @@ public class Intake2_0 {
         );
     }
     /**
-     * Intake from a FLOWER: swing the ramp down to the intake position, run the rollers for
-     * {@code time} seconds, then stop them and stow the ramp again. With no ramp configured it is
-     * just collect(time).
+     * Intake from a FLOWER: swing the ramp down to the intake position and run the rollers for
+     * {@code time} seconds. The ramp is left DOWN - it would hit the FLOWER if it swung up here;
+     * HiveAutoKit.leaveFlower stows it once the robot has driven clear. With no ramp configured
+     * it is just collect(time).
      */
     public Action collectFromFlower(double time) {
         return new SequentialAction(
                 new InstantAction(() -> setFlowerRamp(BiobuzzRobotConstants.flowerRampIntakePos)),
                 new InstantAction(() -> runRollers(1)),
                 new SleepAction(time),
-                new InstantAction(() -> stopRollers()),
-                new InstantAction(() -> setFlowerRamp(BiobuzzRobotConstants.flowerRampStowedPos))
+                new InstantAction(() -> stopRollers())
         );
     }
     /**
      * Swings the flower ramp to its intake position and returns immediately, so it can be placed at
      * the start of the turn toward a FLOWER and deploy while the robot is still turning.
-     * collectFromFlower() sets the same position again (harmless) and stows the ramp when done.
+     * collectFromFlower() sets the same position again (harmless).
      */
     public Action deployFlowerRamp() {
         return new InstantAction(() -> setFlowerRamp(BiobuzzRobotConstants.flowerRampIntakePos));
+    }
+    public Action stowFlowerRamp() {
+        return new InstantAction(() -> setFlowerRamp(BiobuzzRobotConstants.flowerRampStowedPos));
     }
     public void setFlowerRamp(double position) {
         if (flowerRamp != null) flowerRamp.setPosition(position);

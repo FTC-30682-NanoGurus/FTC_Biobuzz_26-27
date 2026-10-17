@@ -101,7 +101,7 @@ public class Biobuzz_2_Tip_Auto extends NGAutoOpMode{
 
         telemetry.addLine("Preparing fastest routes...");
         telemetry.update();
-        kit.prepare(leftNear, flowerOne);
+        kit.prepareFlower(leftNear, flowerOne);
         kit.prepare(leftShotBack, parkPose);
         kit.prepare(leftNear, parkPose);
 
@@ -122,16 +122,14 @@ public class Biobuzz_2_Tip_Auto extends NGAutoOpMode{
                 kit.transfer());
 
         Action IntakeFromFlowerOne = new SequentialAction(
-                new ParallelAction(intake2_0.deployFlowerRamp(), kit.route(leftNear, flowerOne)),
+                new ParallelAction(intake2_0.deployFlowerRamp(), kit.flowerRoute(leftNear, flowerOne)),
                 new SleepAction(0.4),
                 intake2_0.collectFromFlower(3));
 
         Action shootFlowerOnePollen = new SequentialAction(
-                drive.actionBuilder(flowerOne)
-                        .setTangent(Math.toRadians(90))
-                        .splineToConstantHeading(new Vector2d(-54, -16.1), Math.toRadians(90), maxVel, maxAccel)
-                        .splineToSplineHeading(leftShotBack, Math.toRadians(90), maxVel, maxAccel)
-                        .build(),
+                kit.leaveFlower(kit.departFlower(drive.actionBuilder(flowerOne), flowerOne)
+                        .splineToSplineHeading(new Pose2d(-52, -14, Math.toRadians(1)), Math.toRadians(155), maxVel, maxAccel)
+                        .build()),
                 kit.transfer());
 
         Action park = new SequentialAction(

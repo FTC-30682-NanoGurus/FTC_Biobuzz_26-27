@@ -28,9 +28,10 @@ import org.firstinspires.ftc.teamcode.library.NGMotorFlywheelTuner;
  *
  * The pollen gate is the feed interlock: it opens only once the right trigger is held AND the
  * wheel is within {@code BiobuzzRobotConstants.flywheelAtSpeedTolerance} of target, then stays
- * open until the trigger is released. The transfer waits {@code GATE_SETTLE_MS} for the gate to
- * swing clear and runs only while the wheel is at speed. While it runs the intake is also driven
- * forward if {@code BiobuzzRobotConstants.transferAlsoRunsIntake}.
+ * open until the trigger is released. The transfer then stays stopped (even with the intake on)
+ * until the gate has had time to reach its open position - see {@link #gateTravelMs()} - and
+ * then runs until the trigger is released. While it runs the intake is also driven forward if
+ * {@code BiobuzzRobotConstants.transferAlsoRunsIntake}.
  *
  * <h2>Flower ramp</h2>
  * {@code BiobuzzRobotConstants.flowerRamp} starts at {@code flowerRampStowedPos}. Right bumper on
@@ -43,7 +44,7 @@ import org.firstinspires.ftc.teamcode.library.NGMotorFlywheelTuner;
  *   Left stick .......... drive (field centric)       Right stick X ... turn
  *   LB (hold) precision                               Y field centric   X heading hold
  *   Dpad left ........... translation hold            Back / Options .. re-zero "forward"
- *   A ................... intake on/off                B (hold) ........ intake reverse
+ *   A ................... intake + transfer on/off     B (hold) ........ both reverse
  *   RB .................. flower ramp down/up (down also turns the intake on)
  *   Right trigger (hold)  SHOOT POLLEN  (spins up, gate opens once at speed, transfer feeds;
  *                         release closes the gate)
@@ -72,8 +73,27 @@ public class BiobuzzPollenTeleOp extends LinearOpMode {
     /** One dpad press, TICKS/SECOND. */
     public static double VELOCITY_STEP = 25.0;
     public static double TRIGGER_THRESHOLD = 0.5;
-    /** Time for a gate to swing clear before the transfer pushes into it, MILLISECONDS. */
-    public static double GATE_SETTLE_MS = 150.0;
+    /**
+     * The gate servo has no position feedback, so "at its open position" is timed from its speed:
+     * REV Smart Robot Servo, 0.14 s per 60 degrees at 6 V, about 0.17 s on the hub's 5 V servo
+     * port. Travel is |open - closed| of its 180-degree range. Plus a margin, MILLISECONDS.
+     */
+    public static double GATE_SEC_PER_60_DEG = 0.17;
+    public static double GATE_RANGE_DEG = 180.0;
+    public static double GATE_SETTLE_MARGIN_MS = 40.0;
+    /** Transfer power while it runs with the intake (A / B) and while it feeds a shot. */
+    public static double
+        TRANSFER_INTAKE_POWER = 0.60,
+        TRANSFER_FEED_POWER = 0.8;
+
+    /**
+     * Flip each motor relative to BiobuzzRobotConstants, for this opmode only (the autos and the
+     * other teleops keep the constants as they are). Read once at init.
+     */
+    public static boolean
+        REVERSE_INTAKE = true,
+        REVERSE_TRANSFER = false,
+        REVERSE_FLYWHEEL = true;
 
     private MecaTank mecaTank;
     private BulkRead bulkRead;
@@ -117,7 +137,7 @@ public class BiobuzzPollenTeleOp extends LinearOpMode {
         double target;
         double velocity = 0.0;
         boolean spinningUp = false;
-        /** Gate open, swung clear and wheel at speed: the transfer may push into this side. */
+        /** Gate open, swung clear and wheel reached speed; held until the gate closes. */
         boolean ready = false;
         /** The transfer is actually pushing into this side this loop (drives the kLoad boost). */
         boolean feeding = false;
@@ -212,7 +232,9 @@ public class BiobuzzPollenTeleOp extends LinearOpMode {
             // Open once at speed, then hold open for the rest of the trigger press.
             if (!spinningUp || !wantFeed) setGate(false);
             else if (!gateOpen && atSpeed()) setGate(true);
-            ready = gateOpen && gateTimer.milliseconds() >= GATE_SETTLE_MS && atSpeed();
+            // Latched like the gate: each artifact dips the wheel below tolerance, and dropping
+            // ready on that dip is what made the transfer pulse.
+            ready = gateOpen && (ready || (gateTimer.milliseconds() >= gateTravelMs() && atSpeed()));
         }
 
         /** Second half of the loop. @param loading the transfer is pushing into the wheel */
@@ -264,6 +286,12 @@ public class BiobuzzPollenTeleOp extends LinearOpMode {
         }
     }
 
+    /** Time for the gate to swing from closed to fully open, MILLISECONDS. */
+    static double gateTravelMs() {
+        double deg = Math.abs(BiobuzzRobotConstants.pollenGateOpenPos - BiobuzzRobotConstants.pollenGateClosedPos) * GATE_RANGE_DEG;
+        return deg / 60.0 * GATE_SEC_PER_60_DEG * 1000.0 + GATE_SETTLE_MARGIN_MS;
+    }
+
     @Override
     public void runOpMode() throws InterruptedException {
         telemetry = new MultipleTelemetry(telemetry, FtcDashboard.getInstance().getTelemetry());
@@ -281,9 +309,11 @@ public class BiobuzzPollenTeleOp extends LinearOpMode {
 
         // ---- INTAKE + SHOOTER SETUP ---------------------------------------------------------------
         rollers = hardwareMap.get(DcMotorEx.class, BiobuzzRobotConstants.rollers);
+        rollers.setDirection(REVERSE_INTAKE ? DcMotor.Direction.REVERSE : DcMotor.Direction.FORWARD);
+        rollers.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
         try {
             transfer = hardwareMap.get(DcMotorEx.class, BiobuzzRobotConstants.transferRollers);
-            transfer.setDirection(BiobuzzRobotConstants.transferReversed
+            transfer.setDirection(BiobuzzRobotConstants.transferReversed != REVERSE_TRANSFER
                     ? DcMotor.Direction.REVERSE : DcMotor.Direction.FORWARD);
             transfer.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
         } catch (Exception e) {
@@ -293,7 +323,7 @@ public class BiobuzzPollenTeleOp extends LinearOpMode {
         NGMotor.kLoad = BiobuzzRobotConstants.flywheelKLoad;
         NGMotor.kRamp = BiobuzzRobotConstants.flywheelKRamp;
         pollen = new Shooter("POLLEN", BiobuzzRobotConstants.pollenFlywheel, BiobuzzRobotConstants.pollenGate,
-                BiobuzzRobotConstants.pollenFlywheelReversed, BiobuzzRobotConstants.pollenFixedShootingVel);
+                BiobuzzRobotConstants.pollenFlywheelReversed != REVERSE_FLYWHEEL, BiobuzzRobotConstants.pollenFixedShootingVel);
         try {
             nectarGate = hardwareMap.get(Servo.class, BiobuzzRobotConstants.nectarGate);
             nectarGate.setPosition(BiobuzzRobotConstants.nectarGateClosedPos);
@@ -395,13 +425,16 @@ public class BiobuzzPollenTeleOp extends LinearOpMode {
             pollen.update(flywheelOn || pollenFeed, pollenFeed);
 
             // =====================================================================================
-            // INTAKE + TRANSFER - one motor each. The transfer runs once the pollen gate is open and
-            // the wheel ready; nectar spins against its closed gate. The intake follows its
-            // toggle/reverse, except that a shot can drive it forward too.
+            // INTAKE + TRANSFER - one motor each. The transfer feeds the wheel once the pollen gate
+            // is open and the wheel ready, and otherwise follows the intake (in with A, out with B)
+            // so artifacts are carried up to the closed gate. A shot can drive the intake forward too.
             // =====================================================================================
             boolean transferring = pollen.ready;
             pollen.drive(transferring);
-            double transferPower = transferring ? BiobuzzRobotConstants.transferPower : 0.0;
+            double transferPower = transferring ? TRANSFER_FEED_POWER
+                    : pollenFeed ? 0.0
+                    : reverseHeld ? -TRANSFER_INTAKE_POWER
+                    : intakeOn ? TRANSFER_INTAKE_POWER : 0.0;
             double rollerPower = transferring && BiobuzzRobotConstants.transferAlsoRunsIntake ? BiobuzzRobotConstants.transferPower
                     : reverseHeld ? BiobuzzRobotConstants.intakeReversePower
                     : intakeOn ? BiobuzzRobotConstants.intakePower : 0.0;
@@ -431,7 +464,9 @@ public class BiobuzzPollenTeleOp extends LinearOpMode {
                         transferring && BiobuzzRobotConstants.transferAlsoRunsIntake ? "pushing to transfer"
                                 : reverseHeld ? "REVERSE (B held)" : intakeOn ? "IN (A toggle)" : "off");
                 telemetry.addData("Transfer", transfer == null ? "MISSING"
-                        : String.format("%.2f  %s", transferPower, transferring ? "FEEDING" : "off"));
+                        : String.format("%.2f  %s", transferPower, transferring ? "FEEDING"
+                                : pollenFeed ? "waiting for gate / wheel"
+                                : reverseHeld ? "REVERSE (B held)" : intakeOn ? "with intake" : "off"));
                 telemetry.addData("Flower ramp", (flowerRampDown ? "DOWN (intake)" : "stowed")
                         + (flowerRamp == null ? " - not configured" : ""));
 

@@ -11,6 +11,7 @@ import com.acmerobotics.roadrunner.Pose2dDual;
 import com.acmerobotics.roadrunner.PosePath;
 import com.acmerobotics.roadrunner.ProfileAccelConstraint;
 import com.acmerobotics.roadrunner.Rotation2dDual;
+import com.acmerobotics.roadrunner.TrajectoryActionBuilder;
 import com.acmerobotics.roadrunner.TranslationalVelConstraint;
 import com.acmerobotics.roadrunner.Vector2d;
 import com.acmerobotics.roadrunner.VelConstraint;
@@ -30,6 +31,64 @@ import java.util.Arrays;
 import javax.imageio.ImageIO;
 
 public class MeepMeepTestingNikhil {
+    // Head-on FLOWER approach, as in the autos: BiobuzzRobotConstants.flowerApproachIn and
+    // HiveAutoKit.flowerStaging / approachFlower. Keep in sync with those.
+    static final double FLOWER_APPROACH_IN = 6.0;
+    // Leaving a FLOWER: straight back this far with the ramp still down, then the ramp goes up
+    // (BiobuzzRobotConstants.flowerRampClearIn, HiveAutoKit.departFlower / leaveFlower).
+    static final double FLOWER_RAMP_CLEAR_IN = 8.0;
+
+    // true: the old paths (before the head-on FLOWER approach) run too, so the two can be compared.
+    //   2 TIP: old = white bot, new = orange bot.   3 TIP: old = green bot, new = red bot.
+    static final boolean SHOW_OLD_PATHS = true;
+
+    /** The pose FLOWER_APPROACH_IN straight back from a FLOWER intake pose, facing the FLOWER. */
+    static Pose2d flowerStaging(Pose2d flower) {
+        double h = flower.heading.toDouble();
+        return new Pose2d(flower.position.x - FLOWER_APPROACH_IN * Math.cos(h),
+                flower.position.y - FLOWER_APPROACH_IN * Math.sin(h), h);
+    }
+
+    /** To the staging pose already facing and moving at the FLOWER, then straight in, without stopping. */
+    static TrajectoryActionBuilder approachFlower(TrajectoryActionBuilder b, Pose2d flower, VelConstraint vel, AccelConstraint accel) {
+        double h = flower.heading.toDouble();
+        return b.splineToSplineHeading(flowerStaging(flower), h, vel, accel)
+                .splineToConstantHeading(flower.position, h, vel, accel);
+    }
+
+    /** Straight back out of a FLOWER, still moving, so the next spline carries on without stopping. */
+    static TrajectoryActionBuilder departFlower(TrajectoryActionBuilder b, Pose2d flower, VelConstraint vel, AccelConstraint accel) {
+        double h = flower.heading.toDouble(), back = h + Math.PI;
+        Vector2d out = new Vector2d(flower.position.x - FLOWER_RAMP_CLEAR_IN * Math.cos(h), flower.position.y - FLOWER_RAMP_CLEAR_IN * Math.sin(h));
+        return b.setTangent(back).splineToConstantHeading(out, back, vel, accel);
+    }
+
+    /** Heading of the straight line from a pose to a FLOWER's staging pose: RouteOptimizer's start tangent. */
+    static double tangentToStaging(Pose2d from, Pose2d flower) {
+        Vector2d s = flowerStaging(flower).position;
+        return Math.atan2(s.y - from.position.y, s.x - from.position.x);
+    }
+
+    static ColorScheme scheme(Color bg, Color body, Color wheel, Color path) {
+        return new ColorScheme() {
+            @NotNull @Override public Color getUI_MAIN_BG() { return bg; }
+            @NotNull @Override public Color getTRAJECTORY_TEXT_COLOR() { return new Color(0, 0, 0); }
+            @NotNull @Override public Color getTRAJECTORY_SLIDER_FG() { return path; }
+            @NotNull @Override public Color getTRAJECTORY_SLIDER_BG() { return new Color(255, 255, 255); }
+            @NotNull @Override public Color getTRAJECTORY_MARKER_COLOR() { return wheel; }
+            @Override public boolean isDark() { return false; }
+            @NotNull @Override public Color getBOT_BODY_COLOR() { return body; }
+            @NotNull @Override public Color getBOT_WHEEL_COLOR() { return wheel; }
+            @NotNull @Override public Color getBOT_DIRECTION_COLOR() { return wheel; }
+            @NotNull @Override public Color getAXIS_X_COLOR() { return path; }
+            @NotNull @Override public Color getAXIS_Y_COLOR() { return path; }
+            @Override public double getAXIS_NORMAL_OPACITY() { return 0.7; }
+            @Override public double getAXIS_HOVER_OPACITY() { return 0.3; }
+            @NotNull @Override public Color getTRAJECTORY_PATH_COLOR() { return path; }
+            @NotNull @Override public Color getTRAJECTORY_TURN_COLOR() { return path; }
+        };
+    }
+
     public static void main(String[] args) {
         MeepMeep meepMeep = new MeepMeep(800);
 
@@ -229,6 +288,16 @@ public class MeepMeepTestingNikhil {
                 })
                 .build();
 
+        RoadRunnerBotEntity twoTipNewBot = new DefaultBotBuilder(meepMeep)
+                .setConstraints(50, 50, Math.toRadians(180), Math.toRadians(180), 15)
+                .setColorScheme(scheme(new Color(100, 50, 0), new Color(255, 140, 0), new Color(120, 60, 0), new Color(255, 150, 0)))
+                .build();
+
+        RoadRunnerBotEntity threeTipNewBot = new DefaultBotBuilder(meepMeep)
+                .setConstraints(50, 50, Math.toRadians(180), Math.toRadians(180), 15)
+                .setColorScheme(scheme(new Color(100, 0, 0), new Color(220, 30, 30), new Color(100, 0, 0), new Color(255, 40, 40)))
+                .build();
+
         AccelConstraint highMode = (robotPose, _path, _disp) -> {
             return new MinMax(-10, 50);
         };
@@ -405,6 +474,7 @@ public class MeepMeepTestingNikhil {
 //                .build());
 
         // Red side (Hive-up side start) -- 2 TIP (Biobuzz_2_Tip_HiveAuto), PRELOAD TIPS (normal run).
+        // OLD PATH (white bot), before the head-on FLOWER approach. The NEW path (orange bot) follows it.
         // Wall set is shot at an ANGLE at the end of the wall-set run instead of driving up to (-52, -16):
         // (-53.48, -43.82) heading 30 = 49.05 in from the LEFT CELL opening (same distance as the proven shot,
         // so 1600 tps holds), 30 deg off its facing, aimed at its centre. Flower one, back to (-52, -14) for the
@@ -447,13 +517,54 @@ public class MeepMeepTestingNikhil {
                 .splineToSplineHeading(new Pose2d(park2, Math.toRadians(90)), laToPark, maxVel, maxAccel)
                 .build());
 
+        // 2 TIP, NEW PATH (orange bot) - exactly what Biobuzz_2_Tip_HiveAuto now drives, same run as above.
+        // Both FLOWER legs end on the staging pose FLOWER_APPROACH_IN in out from the FLOWER, already facing it,
+        // then drive straight in without stopping; the ramp is lowered when each leg starts.
+        //   FLOWER 1: kit.flowerRoute(leftNear, flowerOne) - RouteOptimizer picks route M: (1.94 s, was 1.47 s).
+        //   FLOWER 2: waypoint moved from (-4, -38, -10) to (0, -41, -15) so the turn to -90 finishes before the
+        //             straight run (2.90 s, was 2.61 s), with the same 4.3 in HIVE gap.
+        // Every leg away from a FLOWER backs straight out FLOWER_RAMP_CLEAR_IN first with the ramp still down, and
+        // the ramp goes up once clear, so it never swings up into the FLOWER. Parked ~1.3 s later than the old path.
+        TrajectoryActionBuilder twoTip = twoTipNewBot.getDrive().actionBuilder(new Pose2d(61, -14, Math.toRadians(180)))
+                    .waitSeconds(2)    // preload volley into the RIGHT CELL (TIP 1)
+                    .setTangent(Math.toRadians(-155))
+                .splineToSplineHeading(new Pose2d(62, -58, Math.toRadians(360)), Math.toRadians(25), maxIntakeVel, maxAccel)
+                    .waitSeconds(0.25)
+                    .setReversed(true)
+                .splineToLinearHeading(new Pose2d(20, -48, Math.toRadians(360)), Math.toRadians(-180), maxVel, maxAccel)
+                .splineToLinearHeading(new Pose2d(-33, -44, Math.toRadians(360)), Math.toRadians(170), maxVel, maxAccel)
+                .splineToSplineHeading(leftNear2, Math.toRadians(180), maxVel, maxAccel)
+                    .waitSeconds(1)    // angled wall-set volley, LEFT CELL
+                    .setTangent(tangentToStaging(leftNear2, flowerOne2));
+        twoTip = approachFlower(twoTip, flowerOne2, maxVel, maxAccel)
+                    .waitSeconds(3.4); // SleepAction(0.4) + collectFromFlower(3)
+        // Leave FLOWER 1 straight back 8 in (ramp still down), ramp up, then on to the shot (1.71 s, was 1.66 s).
+        twoTip = departFlower(twoTip, flowerOne2, maxVel, maxAccel)
+                .splineToSplineHeading(new Pose2d(-52, -14, Math.toRadians(1)), Math.toRadians(155), maxVel, maxAccel)
+                    .waitSeconds(1)    // FLOWER 1 volley: 8th pollen -> TIP 2
+                    .setTangent(Math.toRadians(-90))
+                .splineToLinearHeading(new Pose2d(0, -41, Math.toRadians(-15)), Math.toRadians(-15), maxVel, maxAccel);
+        twoTip = approachFlower(twoTip, flowerTwo2, maxVel, maxAccel)
+                    .waitSeconds(3)    // collectFromFlower(3)
+                // kit.routeFromFlower(flowerTwo, leftNear): straight back 8 in to (24, -47) and stop there (ramp up),
+                // then RouteOptimizer route M: (3.09 s in all, was 2.57 s)
+                .strafeToConstantHeading(new Vector2d(24, -47), maxVel, maxAccel)
+                    .setTangent(Math.toRadians(177.65))
+                .splineToSplineHeading(new Pose2d(-14.74, -45.41, Math.toRadians(-2.35)), Math.toRadians(177.65), maxVel, maxAccel)
+                .splineToSplineHeading(leftNear2, Math.toRadians(177.65), maxVel, maxAccel)
+                    .waitSeconds(1)    // backup volley (only if the LEFT CELL is still up)
+                    .setTangent(laToPark)
+                .splineToSplineHeading(new Pose2d(park2, Math.toRadians(90)), laToPark, maxVel, maxAccel);
+        twoTipNewBot.runAction(twoTip.build());
+
         // Same auto, PRELOAD DOES NOT TIP: wall set is shot at the RIGHT CELL from the angled pose near the corner
         // (56.69, -40.01, 155) - that is TIP 1 - then FLOWER 2 and FLOWER 1 both go LEFT (4 + 4 = 8 -> TIP 2).
-        // Parked ~26.2 s. Swap it in for the run above to see it.
+        // Parked ~26.2 s before the head-on FLOWER approach (both FLOWER legs are now RouteOptimizer routes M:
+        // through the staging pose: FLOWER 2 1.98 s, was 1.71 s; FLOWER 1 1.94 s, was 1.47 s).
+        // Swap it in for the NEW run above to see it.
         /*Pose2d rightNear2 = new Pose2d(56.69, -40.01, Math.toRadians(155));
-        double raToF2 = Math.atan2(flowerTwo2.position.y - rightNear2.position.y, flowerTwo2.position.x - rightNear2.position.x);
         double lToPark = Math.atan2(park2.y - -14, park2.x - -52);
-        sampleBot.runAction(sampleBot.getDrive().actionBuilder(new Pose2d(61, -14, Math.toRadians(180)))
+        TrajectoryActionBuilder noTip = twoTipNewBot.getDrive().actionBuilder(new Pose2d(61, -14, Math.toRadians(180)))
                     .waitSeconds(3)    // preload volley + 1 s waiting for a tip that does not start
                     .setTangent(Math.toRadians(-155))
                 .splineToSplineHeading(new Pose2d(62, -58, Math.toRadians(360)), Math.toRadians(25), maxIntakeVel, maxAccel)
@@ -462,24 +573,23 @@ public class MeepMeepTestingNikhil {
                 .splineToSplineHeading(new Pose2d(58, -48, Math.toRadians(30)), Math.toRadians(105.57), maxVel, maxAccel)
                 .splineToSplineHeading(rightNear2, Math.atan2(rightNear2.position.y + 48, rightNear2.position.x - 58), maxVel, maxAccel)
                     .waitSeconds(1)    // angled wall-set volley, RIGHT CELL -> TIP 1
-                    .setTangent(raToF2)
-                .splineToSplineHeading(new Pose2d(flowerTwo2.position, Math.toRadians(270)), raToF2, maxVel, maxAccel)
+                    .setTangent(tangentToStaging(rightNear2, flowerTwo2));
+        noTip = approachFlower(noTip, flowerTwo2, maxVel, maxAccel)
                     .waitSeconds(3)    // collectFromFlower(3)
-                    .setTangent(f2ToLa)
-                .splineToSplineHeading(new Pose2d(new Vector2d((flowerTwo2.position.x + leftNear2.position.x) / 2,
-                        (flowerTwo2.position.y + leftNear2.position.y) / 2), f2ToLa - Math.PI), f2ToLa, maxVel, maxAccel)
-                .splineToSplineHeading(leftNear2, f2ToLa, maxVel, maxAccel)
+                .strafeToConstantHeading(new Vector2d(24, -47), maxVel, maxAccel)   // routeFromFlower: back out 8 in, ramp up
+                    .setTangent(Math.toRadians(177.65))
+                .splineToSplineHeading(new Pose2d(-14.74, -45.41, Math.toRadians(-2.35)), Math.toRadians(177.65), maxVel, maxAccel)
+                .splineToSplineHeading(leftNear2, Math.toRadians(177.65), maxVel, maxAccel)
                     .waitSeconds(1)    // FLOWER 2 volley, LEFT CELL
-                    .setTangent(laToF1)
-                .splineToSplineHeading(flowerOne2, laToF1, maxVel, maxAccel)
-                    .waitSeconds(3.4)
-                    .setTangent(Math.toRadians(90))
-                .splineToConstantHeading(new Vector2d(-54, -16.1), Math.toRadians(90), maxVel, maxAccel)
-                .splineToSplineHeading(new Pose2d(-52, -14, Math.toRadians(360)), Math.toRadians(90), maxVel, maxAccel)
+                    .setTangent(tangentToStaging(leftNear2, flowerOne2));
+        noTip = approachFlower(noTip, flowerOne2, maxVel, maxAccel)
+                    .waitSeconds(3.4);
+        noTip = departFlower(noTip, flowerOne2, maxVel, maxAccel)
+                .splineToSplineHeading(new Pose2d(-52, -14, Math.toRadians(1)), Math.toRadians(155), maxVel, maxAccel)
                     .waitSeconds(1)    // FLOWER 1 volley: 8th pollen -> TIP 2
                     .setTangent(lToPark)
-                .splineToSplineHeading(new Pose2d(park2, Math.toRadians(450)), lToPark, maxVel, maxAccel)
-                .build());*/
+                .splineToSplineHeading(new Pose2d(park2, Math.toRadians(450)), lToPark, maxVel, maxAccel);
+        twoTipNewBot.runAction(noTip.build());*/
 
 
         // Red side (Hive-down side start)
@@ -532,7 +642,8 @@ public class MeepMeepTestingNikhil {
                 .splineToSplineHeading(new Pose2d(-53.5, -57, Math.toRadians(90)), Math.toRadians(-90), maxVel, maxAccel)
                 .build());*/
 
-        // 3-TIP, current HIVE-detection version (Biobuzz3Tip_HiveAuto), nominal run with the alliance wait at its
+        // OLD PATH (green bot), before the head-on FLOWER approach. The NEW path (red bot) follows it.
+        // 3-TIP, HIVE-detection version (Biobuzz3Tip_HiveAuto), nominal run with the alliance wait at its
         // 4.2 s maximum. Same as the old path up to the right shooting pose; then the wall set is shot from an
         // ANGLED pose instead of driving back up to (61, -14):
         //   - the angled pose is 49.05 in from the RIGHT CELL opening centre (12.232, -19.277) - exactly the
@@ -578,6 +689,49 @@ public class MeepMeepTestingNikhil {
                 .splineToSplineHeading(new Pose2d(parkClose, Math.toRadians(180)), toPark, maxVel, maxAccel)
                 .build());
 
+        // 3 TIP, NEW PATH (red bot) - exactly what Biobuzz3Tip_HiveAuto now drives, same nominal run as above.
+        //   FLOWER 1: start tangent -30 -> -32, then the staging pose 6 in out and straight in (1.60 s, was 1.20 s);
+        //             the ramp is lowered at the start of the leg, 1.22 s before the straight run.
+        //   FLOWER 2: waypoint (-4, -38, -10) -> (0, -41, -15), ramp lowered there, then staging + straight in
+        //             (2.90 s, was 2.61 s). Same 4.3 in HIVE gap.
+        //   Leaving FLOWER 1: straight back 8 in with the ramp down, ramp up, then to the shot (1.71 s, was 1.28 s).
+        //   Leaving FLOWER 2 already backs straight out 8 in, so that leg is unchanged.
+        // Nominal timeline ~1.1 s later: parked ~30.0 s at the longest alliance wait (was 28.89). On the robot the
+        // budget checks will drop or shorten the wall set when the alliance wait runs long; the park watchdog still parks.
+        Pose2d flowerOne3 = new Pose2d(-55, -22, Math.toRadians(-179.5));
+        Pose2d flowerTwo3 = new Pose2d(24, -55, Math.toRadians(-90));
+        TrajectoryActionBuilder threeTip = threeTipNewBot.getDrive().actionBuilder(new Pose2d(-65, -11, Math.toRadians(0)))
+                    .setTangent(Math.toRadians(0))
+                .splineToConstantHeading(new Vector2d(-52, -14), Math.toRadians(-75), maxVel, maxAccel)
+                    .waitSeconds(4.2) // alliance wait (ends early once the LEFT CELL is up and at rest)
+                    .waitSeconds(1)   // preload volley, LEFT CELL
+                    .setTangent(Math.toRadians(-32));
+        threeTip = approachFlower(threeTip, flowerOne3, maxVel, maxAccel)
+                    .waitSeconds(3);  // collectFromFlower(3)
+        // Leave FLOWER 1 straight back 8 in (ramp still down), ramp up, then on to the shot (1.71 s, was 1.28 s).
+        threeTip = departFlower(threeTip, flowerOne3, maxVel, maxAccel)
+                .splineToSplineHeading(new Pose2d(-52, -14, Math.toRadians(1)), Math.toRadians(155), maxVel, maxAccel)
+                    .waitSeconds(1)   // shot point LEFT: FLOWER 1 volley (8th pollen -> TIP, RIGHT CELL up)
+                    .setTangent(Math.toRadians(-90))
+                .splineToLinearHeading(new Pose2d(0, -41, Math.toRadians(-15)), Math.toRadians(-15), maxVel, maxAccel);
+        threeTip = approachFlower(threeTip, flowerTwo3, maxVel, maxAccel)
+                    .waitSeconds(3)   // collectFromFlower(3)
+                    .setTangent(Math.toRadians(90))
+                .splineToLinearHeading(new Pose2d(61, -14, Math.toRadians(-179.5)), Math.toRadians(15), maxVel, maxAccel)
+                    .waitSeconds(1)   // shot point RIGHT: FLOWER 2 volley
+                    .setTangent(Math.toRadians(-155))
+                .splineToSplineHeading(new Pose2d(62, -58, Math.toRadians(360)), Math.toRadians(25), maxIntakeVel, maxAccel)
+                    .waitSeconds(0.25)
+                    .setTangent(Math.atan2(10, -4))
+                .splineToSplineHeading(new Pose2d(58, -48, Math.toRadians(30)), Math.toRadians(105.57), maxVel, maxAccel)
+                .splineToSplineHeading(nearShot3, Math.atan2(nearShot3.position.y + 48, nearShot3.position.x - 58), maxVel, maxAccel)
+                    .waitSeconds(1)   // angled volley into the RIGHT CELL (8th pollen -> third TIP)
+                    .setTangent(toPark)
+                .splineToSplineHeading(new Pose2d(new Vector2d((nearShot3.position.x + parkClose.x) / 2, (nearShot3.position.y + parkClose.y) / 2),
+                        toPark + Math.toRadians(360)), toPark, maxVel, maxAccel)
+                .splineToSplineHeading(new Pose2d(parkClose, Math.toRadians(180)), toPark, maxVel, maxAccel);
+        threeTipNewBot.runAction(threeTip.build());
+
 
         // Blue side
         /*sampleBot2.runAction(sampleBot2.getDrive().actionBuilder(new Pose2d(5, 12, Math.toRadians(180)))
@@ -611,10 +765,11 @@ public class MeepMeepTestingNikhil {
         }
 
         meepMeep.setBackground(biobuzzField)
-                .addEntity(sampleBot2)
                 .setDarkMode(true)
-                .setBackgroundAlpha(0.95f)
-                .addEntity(sampleBot)
+                .setBackgroundAlpha(0.95f);
+        if (SHOW_OLD_PATHS) meepMeep.addEntity(sampleBot2).addEntity(sampleBot);
+        meepMeep.addEntity(threeTipNewBot)
+                .addEntity(twoTipNewBot)
                 .start();
     }
 }

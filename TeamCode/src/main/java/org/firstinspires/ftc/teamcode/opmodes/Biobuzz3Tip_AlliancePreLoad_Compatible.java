@@ -96,21 +96,19 @@ public class Biobuzz3Tip_AlliancePreLoad_Compatible extends NGAutoOpMode{
                 .setTangent(Math.toRadians(0))
                 .splineToConstantHeading(new Vector2d(-52, -14), Math.toRadians(-75), maxVel, maxAccel);
 
-        TrajectoryActionBuilder turnToFlowerOne = waitForAlliancePreLoadPath.endTrajectory().fresh()
-                .afterTime(0, intake2_0.deployFlowerRamp())
-                .setTangent(Math.toRadians(-30))
-                .splineToSplineHeading(new Pose2d(-55, -22, Math.toRadians(-179.5)), Math.toRadians(210), maxVel, maxAccel)
+        TrajectoryActionBuilder turnToFlowerOne = HiveAutoKit.approachFlower(waitForAlliancePreLoadPath.endTrajectory().fresh()
+                        .afterTime(0, intake2_0.deployFlowerRamp())
+                        .setTangent(Math.toRadians(-32)), new Pose2d(-55, -22, Math.toRadians(-179.5)), maxVel, maxAccel)
                 .afterTime(0, intake2_0.collectFromFlower(3));
 
-        TrajectoryActionBuilder turnToShoot = turnToFlowerOne.endTrajectory().fresh()
-                .setTangent(Math.toRadians(40))
-                .splineToSplineHeading(new Pose2d(-52, -14, Math.toRadians(1)), Math.toRadians(165), maxVel, maxAccel);
+        TrajectoryActionBuilder turnToShoot = HiveAutoKit.departFlower(turnToFlowerOne.endTrajectory().fresh(),
+                        new Pose2d(-55, -22, Math.toRadians(-179.5)), maxVel, maxAccel)
+                .splineToSplineHeading(new Pose2d(-52, -14, Math.toRadians(1)), Math.toRadians(155), maxVel, maxAccel);
 
-        TrajectoryActionBuilder toFlowerTwo = turnToShoot.endTrajectory().fresh()
-                .setTangent(Math.toRadians(-90))
-                .splineToLinearHeading(new Pose2d(-4, -38, Math.toRadians(-10)), Math.toRadians(0), maxVel, maxAccel)
-                .afterTime(0, intake2_0.deployFlowerRamp())
-                .splineToSplineHeading(new Pose2d(24, -55, Math.toRadians(-90)), Math.toRadians(-90), maxVel, maxAccel)
+        TrajectoryActionBuilder toFlowerTwo = HiveAutoKit.approachFlower(turnToShoot.endTrajectory().fresh()
+                        .setTangent(Math.toRadians(-90))
+                        .splineToLinearHeading(new Pose2d(0, -41, Math.toRadians(-15)), Math.toRadians(-15), maxVel, maxAccel)
+                        .afterTime(0, intake2_0.deployFlowerRamp()), new Pose2d(24, -55, Math.toRadians(-90)), maxVel, maxAccel)
                 .afterTime(0, intake2_0.collectFromFlower(3));
 
         TrajectoryActionBuilder crossToShoot = toFlowerTwo.endTrajectory().fresh()
@@ -135,16 +133,16 @@ public class Biobuzz3Tip_AlliancePreLoad_Compatible extends NGAutoOpMode{
         telemetry.update();
         kit.prepareDefaults();
         kit.prepare(rightNear, parkPose);
-        kit.prepare(leftNear, flowerOne);
+        kit.prepareFlower(leftNear, flowerOne);
         kit.prepare(leftShotBack, parkPose);
 
-        double SOLO_FLOWER_BLOCK_S = 1.47 + 0.4 + 3.0 + 1.66 + 1.0 + 0.3;
+        double SOLO_FLOWER_BLOCK_S = 1.94 + 0.4 + 3.0 + 1.71 + 1.0 + 0.3;
 
         Action shootPreLoad = waitForAlliancePreLoadPath.build();
         Action IntakeFromFlowerOne = turnToFlowerOne.build();
-        Action shootFlowerOnePollen = turnToShoot.build();
+        Action shootFlowerOnePollen = kit.leaveFlower(turnToShoot.build());
         Action IntakeFromFlowerTwo = toFlowerTwo.build();
-        Action shootFlowerTwoPollen = crossToShoot.build();
+        Action shootFlowerTwoPollen = kit.leaveFlower(crossToShoot.build());
 
         Action IntakeWallSetandShoot = kit.withWallCollect(new SequentialAction(
                 drive.actionBuilder(rightShot)
@@ -175,14 +173,12 @@ public class Biobuzz3Tip_AlliancePreLoad_Compatible extends NGAutoOpMode{
                 .build());
 
         Action soloIntakeFromFlowerOne = new SequentialAction(
-                new ParallelAction(intake2_0.deployFlowerRamp(), kit.route(leftNear, flowerOne)),
+                new ParallelAction(intake2_0.deployFlowerRamp(), kit.flowerRoute(leftNear, flowerOne)),
                 new SleepAction(0.4),
                 intake2_0.collectFromFlower(3));
 
-        Action soloShootFlowerOnePollen = drive.actionBuilder(flowerOne)
-                .setTangent(Math.toRadians(90))
-                .splineToConstantHeading(new Vector2d(-54, -16.1), Math.toRadians(90), maxVel, maxAccel)
-                .splineToSplineHeading(leftShotBack, Math.toRadians(90), maxVel, maxAccel)
+        Action soloShootFlowerOnePollen = kit.departFlower(drive.actionBuilder(flowerOne), flowerOne)
+                .splineToSplineHeading(new Pose2d(-52, -14, Math.toRadians(1)), Math.toRadians(155), maxVel, maxAccel)
                 .build();
 
         Action soloPark = kit.route(leftShotBack, parkPose);
@@ -227,8 +223,8 @@ public class Biobuzz3Tip_AlliancePreLoad_Compatible extends NGAutoOpMode{
                 HiveAutoKit.branch(() -> {
                     if (kit.fits(SOLO_FLOWER_BLOCK_S, leftShotBack)) {
                         return new SequentialAction(
-                                kit.leg(leftNear, soloIntakeFromFlowerOne, flowerOne, intake2_0.collectFromFlower(3)),
-                                soloShootFlowerOnePollen,
+                                kit.flowerLeg(leftNear, soloIntakeFromFlowerOne, flowerOne, intake2_0.collectFromFlower(3)),
+                                kit.leaveFlower(soloShootFlowerOnePollen),
                                 intake2_0.transferUsingRollersForTime(1.0, 0.8),
                                 kit.beginPark(),
                                 kit.leg(leftShotBack, soloPark, parkPose, null)

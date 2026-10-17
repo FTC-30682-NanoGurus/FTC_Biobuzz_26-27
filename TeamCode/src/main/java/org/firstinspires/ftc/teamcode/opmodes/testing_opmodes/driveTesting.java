@@ -196,7 +196,7 @@ public class driveTesting extends LinearOpMode{
 
             if(gamepad1.right_stick_button){
                 intake.setPower(-1.0);
-                transferRollers.setPower(1.0);
+                transferRollers.setPower(-1.0);
             }
             if(gamepad1.left_stick_button){
                 intake.setPower(0);
@@ -204,7 +204,7 @@ public class driveTesting extends LinearOpMode{
             }
             if(gamepad1.b){
                 intake.setPower(1.0);
-                transferRollers.setPower(-1.0);
+                transferRollers.setPower(1.0);
             }
 
             //transferRollers.setPower(gamepad1.right_trigger);

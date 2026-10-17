@@ -2,6 +2,7 @@ package org.firstinspires.ftc.teamcode.Biobuzz_subsystems;
 
 import androidx.annotation.NonNull;
 
+import com.acmerobotics.dashboard.canvas.Canvas;
 import com.acmerobotics.dashboard.config.Config;
 import com.acmerobotics.dashboard.telemetry.TelemetryPacket;
 import com.acmerobotics.roadrunner.AccelConstraint;
@@ -253,12 +254,110 @@ public class HiveAutoKit {
     public Action beginPark() {
         return instant(() -> {
             parking = true;
+            stowRamp();
             log("parking");
         });
     }
 
+    /** Also stows the FLOWER ramp, in case a leg back from a FLOWER was cut short. */
     public Action transfer() {
-        return intake.transferUsingRollersForTime(TRANSFER_S, TRANSFER_POWER);
+        return new SequentialAction(instant(this::stowRamp),
+                intake.transferUsingRollersForTime(TRANSFER_S, TRANSFER_POWER));
+    }
+
+    private void stowRamp() {
+        if (intake != null) intake.setFlowerRamp(BiobuzzRobotConstants.flowerRampStowedPos);
+    }
+
+    /**
+     * Runs {@code leg} away from a FLOWER with the ramp still down, and stows the ramp once the robot
+     * is {@link BiobuzzRobotConstants#flowerRampClearIn} from where the leg started (or when the leg
+     * ends, if sooner), so it never swings up into the FLOWER. Pair it with a leg that backs
+     * straight out first ({@link #departFlower}, {@link #routeFromFlower}).
+     */
+    public Action leaveFlower(Action leg) {
+        return new Action() {
+            private Vector2d start = null;
+            private boolean stowed = false;
+
+            @Override
+            public boolean run(@NonNull TelemetryPacket p) {
+                if (start == null) start = drive.pose.position;
+                boolean running = leg.run(p);
+                if (!stowed && (!running || dist(drive.pose.position, start)
+                        >= BiobuzzRobotConstants.flowerRampClearIn - RAMP_CLEAR_TOLERANCE_IN)) {
+                    stowRamp();
+                    stowed = true;
+                }
+                return running;
+            }
+
+            @Override
+            public void preview(@NonNull Canvas c) {
+                leg.preview(c);
+            }
+        };
+    }
+
+    /** Slack on {@link BiobuzzRobotConstants#flowerRampClearIn} for the follower ending a little short, INCHES. */
+    public static double RAMP_CLEAR_TOLERANCE_IN = 0.5;
+
+    /** The point {@link BiobuzzRobotConstants#flowerRampClearIn} straight back from {@code pose}, opposite its heading. */
+    public static Vector2d flowerDepart(Pose2d pose) {
+        double h = pose.heading.toDouble(), d = BiobuzzRobotConstants.flowerRampClearIn;
+        return new Vector2d(pose.position.x - d * Math.cos(h), pose.position.y - d * Math.sin(h));
+    }
+
+    /**
+     * Starts a prebuilt path out of a FLOWER: straight back to {@link #flowerDepart} at the intake
+     * heading, still moving, so the next spline carries on from it without stopping.
+     */
+    public static TrajectoryActionBuilder departFlower(TrajectoryActionBuilder b, Pose2d flower,
+                                                       VelConstraint vel, AccelConstraint accel) {
+        double back = flower.heading.toDouble() + Math.PI;
+        return b.setTangent(back).splineToConstantHeading(flowerDepart(flower), back, vel, accel);
+    }
+
+    public TrajectoryActionBuilder departFlower(TrajectoryActionBuilder b, Pose2d flower) {
+        return departFlower(b, flower, vel, accel);
+    }
+
+    /** {@link #route} that first backs straight out of the FLOWER the robot is at ({@link #flowerDepart}). */
+    public Action routeFromFlower(Pose2d from, Pose2d to) {
+        return routeFromFlower(from, to, robotEnv());
+    }
+
+    public Action routeFromFlower(Pose2d from, Pose2d to, RouteOptimizer.Env env) {
+        Vector2d depart = flowerDepart(from);
+        RouteOptimizer.Result r = RouteOptimizer.search(from, depart, to, null, plan(depart, to.position), env,
+                vel, accel, preparedPattern(from, to), RouteOptimizer.MAX_SEARCH_S);
+        log(String.format("route from FLOWER to %s: %s %.2f s (%d tried)", fmt(to), r.pattern, r.seconds, r.built));
+        lastPattern = r.pattern;
+        return r.action;
+    }
+
+    /** {@link #prepare} for a {@link #routeFromFlower}. */
+    public void prepareFromFlower(Pose2d from, Pose2d to) {
+        prepareFromFlower(from, to, robotEnv());
+    }
+
+    public void prepareFromFlower(Pose2d from, Pose2d to, RouteOptimizer.Env env) {
+        Vector2d depart = flowerDepart(from);
+        RouteOptimizer.Result r = RouteOptimizer.search(from, depart, to, null, plan(depart, to.position), env,
+                vel, accel, null, Double.MAX_VALUE);
+        prepared.add(new Object[]{from, to, r.pattern, r.seconds});
+    }
+
+    /**
+     * {@link #leg} away from a FLOWER: the ramp stays down until clear ({@link #leaveFlower}), and a
+     * rebuilt leg is a {@link #routeFromFlower}, so it backs straight out too.
+     */
+    public Action fromFlowerLeg(Pose2d expectedStart, Action prebuilt, Pose2d target) {
+        return leaveFlower(branch(() -> {
+            if (near(drive.pose, expectedStart)) return prebuilt;
+            log("rebuilding leg from FLOWER to " + fmt(target));
+            return routeFromFlower(drive.pose, target);
+        }));
     }
 
     /**
@@ -738,6 +837,74 @@ public class HiveAutoKit {
         RouteOptimizer.Result r = RouteOptimizer.search(from, to, plan(from.position, to.position), env, vel, accel,
                 null, Double.MAX_VALUE);
         prepared.add(new Object[]{from, to, r.pattern, r.seconds});
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // FLOWER approach: always head-on, in one continuous motion
+    // ---------------------------------------------------------------------------------------------
+
+    /**
+     * The pose {@link BiobuzzRobotConstants#flowerApproachIn} straight back from a FLOWER intake
+     * pose, at the intake heading - where the straight run into the FLOWER begins.
+     */
+    public static Pose2d flowerStaging(Pose2d flower) {
+        double h = flower.heading.toDouble(), d = BiobuzzRobotConstants.flowerApproachIn;
+        return new Pose2d(flower.position.x - d * Math.cos(h), flower.position.y - d * Math.sin(h), h);
+    }
+
+    /**
+     * Ends a prebuilt path at a FLOWER: to the staging pose already facing the FLOWER and moving
+     * straight at it, then straight forward onto the intake pose, in the same trajectory (no stop).
+     */
+    public TrajectoryActionBuilder approachFlower(TrajectoryActionBuilder b, Pose2d flower) {
+        return approachFlower(b, flower, vel, accel);
+    }
+
+    public static TrajectoryActionBuilder approachFlower(TrajectoryActionBuilder b, Pose2d flower,
+                                                         VelConstraint vel, AccelConstraint accel) {
+        double h = flower.heading.toDouble();
+        return b.splineToSplineHeading(flowerStaging(flower), h, vel, accel)
+                .splineToConstantHeading(flower.position, h, vel, accel);
+    }
+
+    /** The fastest safe runtime route to a FLOWER intake pose, ending with the head-on approach. */
+    public Action flowerRoute(Pose2d from, Pose2d flower) {
+        return flowerRoute(from, flower, robotEnv());
+    }
+
+    public Action flowerRoute(Pose2d from, Pose2d flower, RouteOptimizer.Env env) {
+        Pose2d staging = flowerStaging(flower);
+        RouteOptimizer.Result r = RouteOptimizer.search(from, staging, flower.position,
+                plan(from.position, staging.position), env, vel, accel, preparedPattern(from, flower),
+                RouteOptimizer.MAX_SEARCH_S);
+        log(String.format("FLOWER route to %s: %s %.2f s (%d tried)", fmt(flower), r.pattern, r.seconds, r.built));
+        lastPattern = r.pattern;
+        return r.action;
+    }
+
+    /** {@link #prepare} for a {@link #flowerRoute}. */
+    public void prepareFlower(Pose2d from, Pose2d flower) {
+        prepareFlower(from, flower, robotEnv());
+    }
+
+    public void prepareFlower(Pose2d from, Pose2d flower, RouteOptimizer.Env env) {
+        Pose2d staging = flowerStaging(flower);
+        RouteOptimizer.Result r = RouteOptimizer.search(from, staging, flower.position,
+                plan(from.position, staging.position), env, vel, accel, null, Double.MAX_VALUE);
+        prepared.add(new Object[]{from, flower, r.pattern, r.seconds});
+    }
+
+    /**
+     * {@link #leg} for a FLOWER: if the robot is not where {@code prebuilt} starts, the rebuilt leg
+     * lowers the ramp at once and drives a {@link #flowerRoute}, then runs {@code thenIfRebuilt}.
+     */
+    public Action flowerLeg(Pose2d expectedStart, Action prebuilt, Pose2d flower, Action thenIfRebuilt) {
+        return branch(() -> {
+            if (near(drive.pose, expectedStart)) return prebuilt;
+            log("rebuilding FLOWER leg to " + fmt(flower));
+            Action approach = new ParallelAction(intake.deployFlowerRamp(), flowerRoute(drive.pose, flower));
+            return thenIfRebuilt == null ? approach : new SequentialAction(approach, thenIfRebuilt);
+        });
     }
 
     /** Prepares the routes every HIVE auto may need: between the shot poses and from them to park. */

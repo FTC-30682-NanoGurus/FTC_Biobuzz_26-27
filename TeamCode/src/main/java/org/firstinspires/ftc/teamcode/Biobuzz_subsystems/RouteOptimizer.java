@@ -45,6 +45,16 @@ import java.util.List;
  *
  * Runtime searches are time-capped ({@link #MAX_SEARCH_S}); INIT can prepare routes with no cap
  * (HiveAutoKit.prepare) and the winning pattern is tried first at runtime.
+ *
+ * <h2>FLOWER approach</h2>
+ * With an {@code approach} point, {@code to} is a staging pose facing that point: every smooth
+ * candidate arrives there already travelling along the staging heading and carries straight on to
+ * the approach point in the same trajectory, so the robot drives head-on into the FLOWER without
+ * stopping ("stops" still stops at the staging pose).
+ *
+ * With a {@code depart} point the route first drives straight back from {@code from} to it at
+ * constant heading (out of a FLOWER, ramp still down), then carries on from it without stopping;
+ * every pattern is also tried with a stop there (suffix "!"), which can turn more freely.
  */
 public final class RouteOptimizer {
 
@@ -118,31 +128,51 @@ public final class RouteOptimizer {
      */
     public static Result search(Pose2d from, Pose2d to, HiveAutoKit.Plan plan, Env env,
                                 VelConstraint vel, AccelConstraint accel, String preferred, double maxSearchS) {
+        return search(from, to, null, plan, env, vel, accel, preferred, maxSearchS);
+    }
+
+    /** {@link #search} ending with a straight run from {@code to} on to {@code approach} (null = none). */
+    public static Result search(Pose2d from, Pose2d to, Vector2d approach, HiveAutoKit.Plan plan, Env env,
+                                VelConstraint vel, AccelConstraint accel, String preferred, double maxSearchS) {
+        return search(from, null, to, approach, plan, env, vel, accel, preferred, maxSearchS);
+    }
+
+    /**
+     * {@link #search} starting with a straight run back from {@code from} to {@code depart} and
+     * ending with one from {@code to} on to {@code approach} (either null = none). With a depart
+     * point, {@code plan} runs from it.
+     */
+    public static Result search(Pose2d from, Vector2d depart, Pose2d to, Vector2d approach, HiveAutoKit.Plan plan, Env env,
+                                VelConstraint vel, AccelConstraint accel, String preferred, double maxSearchS) {
         long start = System.nanoTime();
+        Pose2d end = approach == null ? to : new Pose2d(approach, to.heading);
         Vector2d escape = plan.escaped ? plan.points.get(0) : null;
         List<Vector2d> corners = plan.escaped ? plan.points.subList(1, plan.points.size()) : plan.points;
 
-        Action stops = build("stops", from, to, escape, corners, env, vel, accel);
+        Action stops = build("stops", from, depart, to, escape, corners, approach, env, vel, accel);
         Result best = new Result(stops, "stops", env.seconds(stops), 1);
-        double bestMargin = margin(env.poses(stops), from, to, escape);
+        double bestMargin = margin(env.poses(stops), from, end, escape);
         double stopsSeconds = best.seconds;
         int built = 1;
 
         List<String> order = new ArrayList<>();
         if (preferred != null && !preferred.equals("stops")) order.add(preferred);
-        for (String p : patterns(corners.size())) if (!p.equals(preferred)) order.add(p);
+        for (String p : patterns(corners.size())) {
+            if (!p.equals(preferred)) order.add(p);
+            if (depart != null && !(p + "!").equals(preferred)) order.add(p + "!");
+        }
 
         for (String p : order) {
             if (built >= 2 && (System.nanoTime() - start) / 1e9 > maxSearchS) break;
             try {
-                Action a = build(p, from, to, escape, corners, env, vel, accel);
+                Action a = build(p, from, depart, to, escape, corners, approach, env, vel, accel);
                 built++;
                 double s = env.seconds(a);
                 boolean bestOk = bestMargin >= -1e-6;
                 if (bestOk && s >= best.seconds) continue;
                 // Never slower than "stops": the park watchdog times "stops" as its upper bound.
                 if (s > stopsSeconds) continue;
-                double m = margin(env.poses(a), from, to, escape);
+                double m = margin(env.poses(a), from, end, escape);
                 boolean ok = m >= -1e-6;
                 // Fastest of the valid ones; if none is valid yet, the one that stays clearest.
                 if ((ok && (!bestOk || s < best.seconds)) || (!ok && !bestOk && m > bestMargin)) {
@@ -159,10 +189,36 @@ public final class RouteOptimizer {
     /** Builds one pattern (see the class comment). */
     public static Action build(String pattern, Pose2d from, Pose2d to, Vector2d escape, List<Vector2d> corners,
                                Env env, VelConstraint vel, AccelConstraint accel) {
+        return build(pattern, from, to, escape, corners, null, env, vel, accel);
+    }
+
+    /** {@link #build} ending with a straight run from {@code to} on to {@code approach} (null = none). */
+    public static Action build(String pattern, Pose2d from, Pose2d to, Vector2d escape, List<Vector2d> corners,
+                               Vector2d approach, Env env, VelConstraint vel, AccelConstraint accel) {
+        return build(pattern, from, null, to, escape, corners, approach, env, vel, accel);
+    }
+
+    /** {@link #build} with a straight run back from {@code from} to {@code depart} first (null = none). */
+    public static Action build(String pattern, Pose2d from, Vector2d depart, Pose2d to, Vector2d escape, List<Vector2d> corners,
+                               Vector2d approach, Env env, VelConstraint vel, AccelConstraint accel) {
         double h0 = from.heading.toDouble(), hE = to.heading.toDouble();
         TrajectoryActionBuilder b = env.builder(from);
         Vector2d first = from.position;
+        boolean moving = false;
+        boolean stopAtDepart = pattern.endsWith("!");
+        if (stopAtDepart) pattern = pattern.substring(0, pattern.length() - 1);
+        if (depart != null) {
+            if (stopAtDepart) {
+                b = b.strafeToConstantHeading(depart, vel, accel);
+            } else {
+                double back = angle(from.position, depart);
+                b = b.setTangent(back).splineToConstantHeading(depart, back, vel, accel);
+                moving = true;
+            }
+            first = depart;
+        }
         if (escape != null) {
+            moving = false;
             b = b.strafeToLinearHeading(escape, h0, vel, accel);
             first = escape;
         }
@@ -174,7 +230,9 @@ public final class RouteOptimizer {
 
         if (pattern.equals("stops")) {
             for (int i = 1; i <= n; i++) b = b.strafeToLinearHeading(all.get(i), near(hE, h0), vel, accel);
-            return b.strafeToLinearHeading(to.position, near(hE, h0), vel, accel).build();
+            b = b.strafeToLinearHeading(to.position, near(hE, h0), vel, accel);
+            if (approach != null) b = b.strafeToLinearHeading(approach, near(hE, h0), vel, accel);
+            return b.build();
         }
 
         String fam = pattern.substring(0, 1);
@@ -183,9 +241,11 @@ public final class RouteOptimizer {
             double d = angle(first, to.position);
             double hm = ch[0].equals("H") ? h0 : near(d + (ch[0].equals("R") ? Math.PI : 0), h0);
             Vector2d mid = new Vector2d((first.x + to.position.x) / 2, (first.y + to.position.y) / 2);
-            return b.setTangent(d)
-                    .splineToSplineHeading(new Pose2d(mid, hm), d, vel, accel)
-                    .splineToSplineHeading(new Pose2d(to.position, near(hE, hm)), d, vel, accel).build();
+            if (!moving) b = b.setTangent(d);
+            b = b.splineToSplineHeading(new Pose2d(mid, hm), d, vel, accel)
+                    .splineToSplineHeading(new Pose2d(to.position, near(hE, hm)), approach == null ? d : hE, vel, accel);
+            if (approach != null) b = b.splineToConstantHeading(approach, hE, vel, accel);
+            return b.build();
         }
 
         double[] hs = new double[n + 2];
@@ -199,7 +259,7 @@ public final class RouteOptimizer {
         }
         hs[n + 1] = near(hE, hs[n]);
 
-        b = b.setTangent(angle(all.get(0), all.get(1)));
+        if (!moving) b = b.setTangent(angle(all.get(0), all.get(1)));
         for (int i = 1; i <= n + 1; i++) {
             Vector2d p = all.get(i), q = all.get(i - 1);
             double d = angle(q, p);
@@ -209,9 +269,10 @@ public final class RouteOptimizer {
                 b = b.splineToSplineHeading(new Pose2d(new Vector2d((p.x + q.x) / 2, (p.y + q.y) / 2), hm), d, vel, accel);
                 hs[i] = near(hs[i], hm);
             }
-            double tangent = i <= n ? d + wrap(angle(p, all.get(i + 1)) - d) / 2 : d;
+            double tangent = i <= n ? d + wrap(angle(p, all.get(i + 1)) - d) / 2 : approach == null ? d : hE;
             b = b.splineToSplineHeading(new Pose2d(p, hs[i]), tangent, vel, accel);
         }
+        if (approach != null) b = b.splineToConstantHeading(approach, hE, vel, accel);
         return b.build();
     }
 
