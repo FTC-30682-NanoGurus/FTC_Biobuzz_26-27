@@ -55,10 +55,10 @@ public final class TwoDeadWheelLocalizer implements Localizer {
 
     public TwoDeadWheelLocalizer(HardwareMap hardwareMap, IMU imu, double inPerTick) {
 
-        par = new OverflowEncoder(new RawEncoder(hardwareMap.get(DcMotorEx.class, DECODERobotConstants.fl)));
-        perp = new OverflowEncoder(new RawEncoder(hardwareMap.get(DcMotorEx.class, DECODERobotConstants.fr)));
+        par = new OverflowEncoder(new RawEncoder(hardwareMap.get(DcMotorEx.class, DECODERobotConstants.fr)));
+        perp = new OverflowEncoder(new RawEncoder(hardwareMap.get(DcMotorEx.class, DECODERobotConstants.fl)));
 
-        perp.setDirection(DcMotorSimple.Direction.REVERSE);
+        perp.setDirection(DcMotorSimple.Direction.FORWARD);
         // REVERSE because the fl MOTOR is now FORWARD (MecanumDrive). RawEncoder negates the count
         // once for a REVERSE motor and once for a REVERSE encoder, so this keeps the parallel pod's
         // sign exactly what it was when the localizer was tuned.

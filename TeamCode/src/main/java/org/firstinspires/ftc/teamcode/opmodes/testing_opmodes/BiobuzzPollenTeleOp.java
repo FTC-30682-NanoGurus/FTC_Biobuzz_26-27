@@ -4,18 +4,24 @@ import com.acmerobotics.dashboard.FtcDashboard;
 import com.acmerobotics.dashboard.config.Config;
 import com.acmerobotics.dashboard.telemetry.MultipleTelemetry;
 import com.acmerobotics.roadrunner.Pose2d;
+import com.acmerobotics.roadrunner.PoseVelocity2d;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.hardware.Servo;
 import com.qualcomm.robotcore.util.ElapsedTime;
+import com.qualcomm.robotcore.util.Range;
 
+import org.firstinspires.ftc.robotcore.external.navigation.CurrentUnit;
 import org.firstinspires.ftc.teamcode.BiobuzzRobotConstants;
+import org.firstinspires.ftc.teamcode.Biobuzz_subsystems.AllianceSelector;
+import org.firstinspires.ftc.teamcode.Biobuzz_subsystems.HiveAligner;
 import org.firstinspires.ftc.teamcode.Biobuzz_subsystems.MecaTank;
 import org.firstinspires.ftc.teamcode.library.BulkRead;
 import org.firstinspires.ftc.teamcode.library.NGMotor;
 import org.firstinspires.ftc.teamcode.library.NGMotorFlywheelTuner;
+import org.firstinspires.ftc.teamcode.roadrunner.PoseStorage;
 
 /**
  * BiobuzzShooterTeleOp with POLLEN shooting only: same drive, intake, flower ramp and pollen
@@ -47,7 +53,10 @@ import org.firstinspires.ftc.teamcode.library.NGMotorFlywheelTuner;
  *   A ................... intake + transfer on/off     B (hold) ........ both reverse
  *   RB .................. flower ramp down/up (down also turns the intake on)
  *   Right trigger (hold)  SHOOT POLLEN  (spins up, gate opens once at speed, transfer feeds;
- *                         release closes the gate)
+ *                         release closes the gate). With WHEEL_LOCK_ENABLED the robot also holds
+ *                         its spot against pushes; with AUTO_ALIGN_ENABLED it turns onto our up
+ *                         HIVE CELL and the gate waits for ON TARGET.
+ * INIT: B = RED alliance, X = BLUE (either pad) - picks which HIVE tags auto-align uses.
  *   Dpad right .......... flywheel on/off (keep it spinning between shots)
  *   Dpad up / down ...... target velocity +/- VELOCITY_STEP
  *
@@ -83,8 +92,8 @@ public class BiobuzzPollenTeleOp extends LinearOpMode {
     public static double GATE_SETTLE_MARGIN_MS = 40.0;
     /** Transfer power while it runs with the intake (A / B) and while it feeds a shot. */
     public static double
-        TRANSFER_INTAKE_POWER = 0.60,
-        TRANSFER_FEED_POWER = 0.8;
+        TRANSFER_INTAKE_POWER = 0.25,
+        TRANSFER_FEED_POWER = 0.85;
 
     /**
      * Flip each motor relative to BiobuzzRobotConstants, for this opmode only (the autos and the
@@ -94,6 +103,59 @@ public class BiobuzzPollenTeleOp extends LinearOpMode {
         REVERSE_INTAKE = true,
         REVERSE_TRANSFER = false,
         REVERSE_FLYWHEEL = true;
+
+    /**
+     * POLLEN counter: counts current spikes on the intake rollers (one per POLLEN pulled in) while
+     * the intake runs forward from A. Reaching POLLEN_CAPACITY switches the intake and transfer off
+     * once; A turns them back on as usual. A finished shot resets the count.
+     * false = the opmode behaves exactly as without it (no current reads at all).
+     */
+    public static boolean POLLEN_COUNTER_ENABLED = true;
+    public static int POLLEN_CAPACITY = 4;
+    /** A spike starts this many AMPS above the running baseline and ends below RELEASE above it. */
+    public static double SPIKE_RISE_A = 0.5; //0.8
+    public static double SPIKE_RELEASE_A = 0.34;
+    /** Spikes closer together than this count once, MILLISECONDS. */
+    public static double MIN_SPIKE_GAP_MS = 160; //150.0
+    /** Ignore the motor's start-up surge for this long after the intake turns on, MILLISECONDS. */
+    public static double STARTUP_IGNORE_MS = 300.0;
+    /** How fast the baseline follows the current between spikes, 0..1 per loop. */
+    public static double BASELINE_ALPHA = 0.05;
+
+    /**
+     * WHEEL LOCK while the right trigger is held: the robot actively holds the spot (and heading)
+     * where the trigger was pressed on odometry, pushing back against defense instead of just
+     * braking. Sticks are ignored while it is locked. false = RT only shoots, as before.
+     */
+    public static boolean WHEEL_LOCK_ENABLED = true;
+    /** in/s of push-back per inch the robot is moved off its spot, and the cap. */
+    public static double LOCK_KP = 6.0;
+    public static double LOCK_MAX_IN_S = 30.0;
+    /** Errors below these are left alone, so the wheels do not buzz on sensor LSBs. */
+    public static double LOCK_DEADBAND_IN = 0.15;
+    public static double LOCK_HEADING_KP = 6.0;
+    public static double LOCK_HEADING_DEADBAND_DEG = 0.3;
+    public static double LOCK_MAX_TURN_RATE = 4.0;
+
+    /**
+     * AUTO-ALIGN while the right trigger is held: turns to aim at OUR alliance's up HIVE CELL
+     * (HiveAligner - odometry runs the heading loop, the camera only locates the CELL), and the gate
+     * waits for ON TARGET before the first artifact goes. With the wheel lock it aims in place; without
+     * it the left stick still translates. Read at INIT (it opens the camera). false = no camera at all.
+     */
+    public static boolean AUTO_ALIGN_ENABLED = false;
+    /** Start from the pose the last auto stored (field coordinates: can aim before seeing a tag). */
+    public static boolean USE_AUTO_END_POSE = true;
+    /** Translation while aligning without the wheel lock: full-stick in/s, accel in/s^2, turn rad/s. */
+    public static double ALIGN_DRIVE_MAX_IN_S = 40.0;
+    public static double ALIGN_DRIVE_ACCEL_IN_S2 = 70.0;
+    public static double DRIVER_MAX_TURN_RATE = 3.0;
+
+    private HiveAligner aligner;
+    private boolean shotHoldActive = false;
+    private Pose2d holdPose;
+    private double cmdVx = 0, cmdVy = 0, driverForwardRef = 0;
+    private String holdNote = "";
 
     private MecaTank mecaTank;
     private BulkRead bulkRead;
@@ -106,6 +168,8 @@ public class BiobuzzPollenTeleOp extends LinearOpMode {
     private Servo nectarGate;
 
     private boolean intakeOn = false;
+    private final PollenCounter counter = new PollenCounter();
+    private boolean wasTransferring = false;
     private boolean flywheelOn = false;
     private double lastRollerPower = Double.NaN;
     /** Null when "flowerRamp" is not configured - the toggle then only switches the intake on. */
@@ -207,6 +271,11 @@ public class BiobuzzPollenTeleOp extends LinearOpMode {
          * @param wantFeed  shoot trigger is held
          */
         void update(boolean wantSpin, boolean wantFeed) {
+            update(wantSpin, wantFeed, true);
+        }
+
+        /** @param aimReady the aim allows the gate to open (always true without auto-align) */
+        void update(boolean wantSpin, boolean wantFeed, boolean aimReady) {
             armedThisLoop = false;
             if (motor == null) {
                 setGate(false);
@@ -231,7 +300,7 @@ public class BiobuzzPollenTeleOp extends LinearOpMode {
 
             // Open once at speed, then hold open for the rest of the trigger press.
             if (!spinningUp || !wantFeed) setGate(false);
-            else if (!gateOpen && atSpeed()) setGate(true);
+            else if (!gateOpen && atSpeed() && aimReady) setGate(true);
             // Latched like the gate: each artifact dips the wheel below tolerance, and dropping
             // ready on that dip is what made the transfer pulse.
             ready = gateOpen && (ready || (gateTimer.milliseconds() >= gateTravelMs() && atSpeed()));
@@ -292,6 +361,116 @@ public class BiobuzzPollenTeleOp extends LinearOpMode {
         return deg / 60.0 * GATE_SEC_PER_60_DEG * 1000.0 + GATE_SETTLE_MARGIN_MS;
     }
 
+    // =============================================================================================
+    // POLLEN counter - intake roller current spikes
+    // =============================================================================================
+    private class PollenCounter {
+        int count = 0;
+        /** Set on the spike that reaches POLLEN_CAPACITY; the opmode clears it once acted on. */
+        boolean justFilled = false;
+        double amps = 0.0, baseline = Double.NaN, lastPeakA = 0.0, peakA = 0.0;
+        private boolean running = false, inSpike = false;
+        private final ElapsedTime runTimer = new ElapsedTime();
+        private final ElapsedTime spikeTimer = new ElapsedTime();
+
+        /** @param counting the intake is running forward from A (not shooting, not reversing) */
+        void update(boolean counting) {
+            if (!counting) {
+                running = false;
+                inSpike = false;
+                return;
+            }
+            if (!running) {
+                running = true;
+                runTimer.reset();
+                baseline = Double.NaN;
+            }
+            amps = rollers.getCurrent(CurrentUnit.AMPS);   // a hub round trip; only read while counting
+            if (runTimer.milliseconds() < STARTUP_IGNORE_MS) return;
+            if (Double.isNaN(baseline)) baseline = amps;
+            double rise = amps - baseline;
+            if (!inSpike) {
+                if (rise >= SPIKE_RISE_A && (count == 0 || spikeTimer.milliseconds() >= MIN_SPIKE_GAP_MS)) {
+                    inSpike = true;
+                    peakA = rise;
+                    spikeTimer.reset();
+                    count++;
+                    if (count == POLLEN_CAPACITY) justFilled = true;
+                } else {
+                    baseline += BASELINE_ALPHA * rise;
+                }
+            } else {
+                peakA = Math.max(peakA, rise);
+                if (rise <= SPIKE_RELEASE_A) {
+                    inSpike = false;
+                    lastPeakA = peakA;
+                }
+            }
+        }
+
+        void reset() {
+            count = 0;
+            justFilled = false;
+            inSpike = false;
+            running = false;
+        }
+    }
+
+    /**
+     * Drives while RT is held: wheel lock (hold the spot on odometry), auto-align (heading from
+     * HiveAligner), or both. Everything is a velocity through Road Runner's kinematics.
+     */
+    private void driveShotHold(Pose2d pose, boolean lockOn, boolean alignOn, double dt) {
+        double x = pose.position.x, y = pose.position.y, h = pose.heading.toDouble();
+        double wantVx, wantVy;
+        if (lockOn) {
+            double ex = holdPose.position.x - x, ey = holdPose.position.y - y;
+            double e = Math.hypot(ex, ey);
+            double v = e < LOCK_DEADBAND_IN ? 0.0 : Math.min(LOCK_MAX_IN_S, LOCK_KP * e);
+            wantVx = e > 1e-9 ? ex / e * v : 0.0;
+            wantVy = e > 1e-9 ? ey / e * v : 0.0;
+            cmdVx = wantVx;
+            cmdVy = wantVy;
+        } else {
+            double speed = ALIGN_DRIVE_MAX_IN_S * (gamepad1.left_bumper ? MecaTank.PRECISION_SCALE : 1.0);
+            double fwd = -gamepad1.left_stick_y * speed, left = -gamepad1.left_stick_x * speed;
+            double ref = MecaTank.FIELD_CENTRIC ? driverForwardRef : h;
+            wantVx = Math.cos(ref) * fwd - Math.sin(ref) * left;
+            wantVy = Math.sin(ref) * fwd + Math.cos(ref) * left;
+            double ddx = wantVx - cmdVx, ddy = wantVy - cmdVy;
+            double d = Math.hypot(ddx, ddy), step = ALIGN_DRIVE_ACCEL_IN_S2 * dt;
+            if (d > step) {
+                ddx *= step / d;
+                ddy *= step / d;
+            }
+            cmdVx += ddx;
+            cmdVy += ddy;
+        }
+
+        double turn = alignOn ? aligner.turnRate(pose, cmdVx, cmdVy, dt, !pollen.ready) : Double.NaN;
+        if (Double.isNaN(turn)) {
+            if (lockOn) {
+                double err = holdPose.heading.toDouble() - h;
+                while (err > Math.PI) err -= 2 * Math.PI;
+                while (err <= -Math.PI) err += 2 * Math.PI;
+                turn = Math.abs(Math.toDegrees(err)) < LOCK_HEADING_DEADBAND_DEG ? 0.0
+                        : Range.clip(LOCK_HEADING_KP * err, -LOCK_MAX_TURN_RATE, LOCK_MAX_TURN_RATE);
+            } else {
+                turn = -gamepad1.right_stick_x * DRIVER_MAX_TURN_RATE;
+            }
+        } else if (lockOn) {
+            // Aiming turns the robot about its centre, so the held spot is unchanged; only the
+            // heading it holds follows the aim.
+            holdPose = new Pose2d(holdPose.position, h);
+        }
+        holdNote = (lockOn ? String.format("WHEELS LOCKED, %.2f in off the spot", Math.hypot(holdPose.position.x - x, holdPose.position.y - y))
+                : "driving with the left stick")
+                + (alignOn ? (aligner.hasTarget() ? (aligner.onTarget() ? ", ON TARGET" : ", aligning") : ", no CELL seen - heading held") : "");
+
+        double c = Math.cos(h), sn = Math.sin(h);
+        HiveAligner.driveRobotVelocity(mecaTank, c * cmdVx + sn * cmdVy, -sn * cmdVx + c * cmdVy, turn);
+    }
+
     @Override
     public void runOpMode() throws InterruptedException {
         telemetry = new MultipleTelemetry(telemetry, FtcDashboard.getInstance().getTelemetry());
@@ -347,8 +526,35 @@ public class BiobuzzPollenTeleOp extends LinearOpMode {
         if (flowerRamp == null) telemetry.addLine("FLOWER RAMP MISSING: '" + BiobuzzRobotConstants.flowerRamp + "'");
         telemetry.update();
 
-        waitForStart();
-        if (isStopRequested()) return;
+        boolean alignAtInit = AUTO_ALIGN_ENABLED;
+        if (alignAtInit) aligner = new HiveAligner(hardwareMap, mecaTank, AllianceSelector.red());
+        while (!isStarted() && !isStopRequested()) {
+            AllianceSelector.poll(gamepad1, gamepad2);
+            if (aligner != null) aligner.setAlliance(AllianceSelector.red());
+            telemetry.addLine("BIOBUZZ DRIVE + POLLEN SHOOTER TEST");
+            AllianceSelector.show(telemetry);
+            telemetry.addData("Wheel lock (RT)", WHEEL_LOCK_ENABLED ? "ON" : "off");
+            telemetry.addData("Auto-align (RT)", aligner == null ? "off"
+                    : "ON - aims at the up " + (AllianceSelector.red() ? "RED" : "BLUE") + " CELL, camera " + aligner.cameraState());
+            if (pollen.motor == null) telemetry.addLine("POLLEN FLYWHEEL MISSING: " + pollen.fault);
+            if (transfer == null) telemetry.addLine("TRANSFER MOTOR MISSING");
+            telemetry.update();
+            idle();
+        }
+        if (isStopRequested()) {
+            if (aligner != null) aligner.close();
+            return;
+        }
+        boolean red = AllianceSelector.red();
+        if (aligner != null) aligner.setAlliance(red);
+        Pose2d stored = red ? PoseStorage.getLastRedPose() : PoseStorage.getLastBluePose();
+        if (USE_AUTO_END_POSE && stored != null) {
+            mecaTank.setPoseEstimate(stored);
+            if (aligner != null) aligner.setFieldReferenced();
+        }
+        mecaTank.updatePoseEstimate();
+        mecaTank.resetDriveHeading();
+        driverForwardRef = mecaTank.getPoseEstimate().heading.toDouble();
 
         telemetryTimer.reset();
         double lastLoopTime = System.nanoTime();
@@ -362,24 +568,54 @@ public class BiobuzzPollenTeleOp extends LinearOpMode {
             // DRIVE - gamepad1, as driveTesting (translation hold moved from A to dpad left)
             // =====================================================================================
             mecaTank.setFullSpeed(FULL_SPEED);
-            if (mecaTank.smoothDriveNeedsPose()) {
+            boolean shootHeld = gamepad1.right_trigger > TRIGGER_THRESHOLD
+                    || gamepad2.right_trigger > TRIGGER_THRESHOLD;
+            boolean lockOn = WHEEL_LOCK_ENABLED && shootHeld;
+            boolean alignOn = AUTO_ALIGN_ENABLED && aligner != null && shootHeld;
+            long nowNanos = System.nanoTime();
+            double dt = Range.clip((nowNanos - lastLoopTime) / 1e9, 1e-4, 0.1);
+            if (aligner != null || WHEEL_LOCK_ENABLED || mecaTank.smoothDriveNeedsPose()) {
                 mecaTank.updatePoseEstimate();
             }
+            Pose2d pose = mecaTank.getPoseEstimate();
+            PoseVelocity2d velRobot = mecaTank.getMeasuredRobotVelocity();
+            if (aligner != null) aligner.update(nowNanos, pose, velRobot, dt);
             if (gamepad1.y && !prevY) MecaTank.FIELD_CENTRIC = !MecaTank.FIELD_CENTRIC;
             if (gamepad1.x && !prevX) MecaTank.HEADING_HOLD = !MecaTank.HEADING_HOLD;
             if (gamepad1.dpad_left && !prevLeft1) MecaTank.TRANSLATION_HOLD = !MecaTank.TRANSLATION_HOLD;
-            if (gamepad1.back && !prevBack) mecaTank.resetDriveHeading();
-            if (gamepad1.options && !prevOptions) mecaTank.resetDriveHeading();
+            if ((gamepad1.back && !prevBack) || (gamepad1.options && !prevOptions)) {
+                mecaTank.resetDriveHeading();
+                driverForwardRef = pose.heading.toDouble();
+            }
             prevY = gamepad1.y;
             prevX = gamepad1.x;
             prevLeft1 = gamepad1.dpad_left;
             prevBack = gamepad1.back;
             prevOptions = gamepad1.options;
 
-            mecaTank.setDrivePowersSmoothArcade(
-                    gamepad1.left_stick_x, gamepad1.left_stick_y,
-                    gamepad1.right_stick_x,
-                    gamepad1.left_bumper, false);
+            if (lockOn || alignOn) {
+                if (!shotHoldActive) {
+                    shotHoldActive = true;
+                    holdPose = pose;
+                    double c = Math.cos(pose.heading.toDouble()), sn = Math.sin(pose.heading.toDouble());
+                    double vx = velRobot == null ? 0 : velRobot.linearVel.x, vy = velRobot == null ? 0 : velRobot.linearVel.y;
+                    cmdVx = c * vx - sn * vy;
+                    cmdVy = sn * vx + c * vy;
+                    if (alignOn) aligner.engage(pose, velRobot);
+                }
+                driveShotHold(pose, lockOn, alignOn, dt);
+            } else {
+                if (shotHoldActive) {
+                    shotHoldActive = false;
+                    if (aligner != null) aligner.release();
+                    // Hand back from the robot's real motion: no lurch, heading hold re-latches here.
+                    mecaTank.resetSmoothDriveState(velRobot);
+                }
+                mecaTank.setDrivePowersSmoothArcade(
+                        gamepad1.left_stick_x, gamepad1.left_stick_y,
+                        gamepad1.right_stick_x,
+                        gamepad1.left_bumper, false);
+            }
 
             // =====================================================================================
             // INTAKE - A toggles, B (hold) reverses, either pad
@@ -422,7 +658,8 @@ public class BiobuzzPollenTeleOp extends LinearOpMode {
             if (up) pollen.target += VELOCITY_STEP;
             if (down) pollen.target = Math.max(0.0, pollen.target - VELOCITY_STEP);
 
-            pollen.update(flywheelOn || pollenFeed, pollenFeed);
+            boolean aimReady = aligner == null || !aligner.engaged() || !aligner.hasTarget() || aligner.onTarget();
+            pollen.update(flywheelOn || pollenFeed, pollenFeed, aimReady);
 
             // =====================================================================================
             // INTAKE + TRANSFER - one motor each. The transfer feeds the wheel once the pollen gate
@@ -431,6 +668,18 @@ public class BiobuzzPollenTeleOp extends LinearOpMode {
             // =====================================================================================
             boolean transferring = pollen.ready;
             pollen.drive(transferring);
+            if (POLLEN_COUNTER_ENABLED) {
+                // A finished shot empties the robot: the feed ran and the trigger is released.
+                if (wasTransferring && !pollenFeed) counter.reset();
+                counter.update(intakeOn && !reverseHeld && !pollenFeed && !transferring);
+                if (counter.justFilled) {
+                    intakeOn = false;
+                    counter.justFilled = false;
+                }
+            } else if (counter.count > 0) {
+                counter.reset();
+            }
+            wasTransferring = transferring || (wasTransferring && pollenFeed);
             double transferPower = transferring ? TRANSFER_FEED_POWER
                     : pollenFeed ? 0.0
                     : reverseHeld ? -TRANSFER_INTAKE_POWER
@@ -467,9 +716,19 @@ public class BiobuzzPollenTeleOp extends LinearOpMode {
                         : String.format("%.2f  %s", transferPower, transferring ? "FEEDING"
                                 : pollenFeed ? "waiting for gate / wheel"
                                 : reverseHeld ? "REVERSE (B held)" : intakeOn ? "with intake" : "off"));
+                if (POLLEN_COUNTER_ENABLED) {
+                    telemetry.addData("POLLEN count", "%d / %d%s", counter.count, POLLEN_CAPACITY,
+                            counter.count >= POLLEN_CAPACITY ? "  FULL" : "");
+                    telemetry.addData("   intake current", "%.2f A  baseline %.2f A  last spike +%.2f A",
+                            counter.amps, Double.isNaN(counter.baseline) ? 0.0 : counter.baseline, counter.lastPeakA);
+                }
                 telemetry.addData("Flower ramp", (flowerRampDown ? "DOWN (intake)" : "stowed")
                         + (flowerRamp == null ? " - not configured" : ""));
 
+                if (shotHoldActive) {
+                    telemetry.addData("SHOT HOLD", holdNote);
+                }
+                if (aligner != null && (shotHoldActive || AUTO_ALIGN_ENABLED)) aligner.telemetry(telemetry);
                 telemetry.addLine("--- DRIVE ---");
                 telemetry.addData("FULL SPEED (temporary)", FULL_SPEED);
                 telemetry.addData("Precision", gamepad1.left_bumper);
@@ -485,6 +744,7 @@ public class BiobuzzPollenTeleOp extends LinearOpMode {
         }
 
         pollen.stop();
+        if (aligner != null) aligner.close();
         rollers.setPower(0.0);
         if (transfer != null) transfer.setPower(0.0);
     }

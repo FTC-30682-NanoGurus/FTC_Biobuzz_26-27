@@ -179,6 +179,7 @@ public class BiobuzzHiveTagTest extends LinearOpMode {
             return;
         }
 
+
         int firstOurId = cells[0].firstId;
         int lastOurId = cells[1].firstId + 3;
 

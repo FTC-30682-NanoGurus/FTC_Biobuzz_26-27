@@ -34,7 +34,7 @@ public class BiobuzzRobotConstants {
     //public static String interTransfer = "interTransfer";
     public static String flywheels = "flywheels";
     public static double
-        pollenFixedShootingVel = 1620,
+        pollenFixedShootingVel = 1720,
         nectarFixedShootingVel = 1600;
 
     /**
@@ -64,8 +64,8 @@ public class BiobuzzRobotConstants {
 
     public static String flowerRamp = "flowerRamp";
     public static double
-        flowerRampStowedPos = 0.35,
-        flowerRampIntakePos = 0.70;
+        flowerRampStowedPos = 0.86,
+        flowerRampIntakePos = 0.46;
 
     /**
      * Every FLOWER intake in the autos ends with a straight forward drive of this many INCHES, at the
@@ -145,8 +145,8 @@ public class BiobuzzRobotConstants {
      * TODO: edit after testing gate positions on the real shooter.
      */
     public static double
-        pollenGateClosedPos = 0.60,
-        pollenGateOpenPos = 0.20,
+        pollenGateClosedPos = 1.0,
+        pollenGateOpenPos = 0.52,
         nectarGateClosedPos = 0,
         nectarGateOpenPos = 0.45;
 
@@ -164,7 +164,7 @@ public class BiobuzzRobotConstants {
         pollenKI = 0,
         pollenKD = 0,
         pollenKpStable = 0.0007,
-        pollenKpRecovery = 0.011,
+        pollenKpRecovery = 0.01, //O.012
         pollenAlpha = 0.7,
         pollenRecoveryThreshold = 60.0;
 
@@ -193,8 +193,7 @@ public class BiobuzzRobotConstants {
     // INTAKE / TRANSFER POWERS (teleops)
     // =============================================================================================
     public static double
-        intakePower = 1.0,
-        intakeReversePower = -1.0,
+        intakePower = 0.76,
+        intakeReversePower = -0.7,
         transferPower = 0.7;
 }
-

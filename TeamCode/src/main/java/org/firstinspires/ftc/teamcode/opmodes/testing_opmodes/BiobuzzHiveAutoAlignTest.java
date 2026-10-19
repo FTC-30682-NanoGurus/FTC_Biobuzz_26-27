@@ -27,6 +27,7 @@ import org.firstinspires.ftc.teamcode.Biobuzz_subsystems.MecaTank;
 import org.firstinspires.ftc.teamcode.Biobuzz_subsystems.TurretConstants;
 import org.firstinspires.ftc.teamcode.library.BulkRead;
 import org.firstinspires.ftc.teamcode.roadrunner.PoseStorage;
+import org.firstinspires.ftc.teamcode.roadrunner.MecanumDrive;
 import org.firstinspires.ftc.vision.VisionPortal;
 import org.firstinspires.ftc.vision.apriltag.AprilTagDetection;
 import org.firstinspires.ftc.vision.apriltag.AprilTagLibrary;
@@ -659,7 +660,12 @@ public class BiobuzzHiveAutoAlignTest extends LinearOpMode {
             double ks = Math.signum(v) * PARAMS.kS * Math.min(1.0, Math.abs(v) / Math.max(1e-9, KS_RAMP_IN_S));
             p[i] = (ks + kVin * v) / voltage;
         }
-        mecaTank.setWheelPowersGuarded(p[0], p[1], p[2], p[3]);
+        // p is by WHEEL {lf, lb, rf, rb}; setWheelPowersGuarded takes motor PORTS {fl, bl, fr, br}.
+        if (MecanumDrive.DRIVE_SIDES_SWAPPED) {
+            mecaTank.setWheelPowersGuarded(-p[2], -p[3], -p[0], -p[1]);
+        } else {
+            mecaTank.setWheelPowersGuarded(p[0], p[1], p[2], p[3]);
+        }
     }
 
     /** Wheel speeds, in/s, ordered {frontLeft, backLeft, frontRight, backRight} like MecaTank. */

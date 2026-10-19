@@ -169,6 +169,33 @@ public final class MecanumDrive {
 
     public final DcMotorEx frontLeft, backLeft, backRight, frontRight;
 
+    /**
+     * true: the motor ports named frontLeft/backLeft drive the robot's RIGHT wheels and
+     * frontRight/backRight its LEFT wheels (the configuration's left and right are swapped).
+     * Symptom: forward/back drives the wrong way while strafe and turn are right - no motor
+     * direction flip can do that, but a side swap plus the existing directions does. Corrected in
+     * {@link #setWheelPowers} by sending each wheel's command to the motor actually on that wheel,
+     * negated for its direction. The motor directions are deliberately left alone: the dead wheels
+     * share frontLeft/frontRight's ports and RawEncoder's sign follows the motor direction, so
+     * odometry is untouched. MecaTank.DRIVE_FORWARD_SIGN = -1 is the same correction for TeleOp.
+     */
+    public static boolean DRIVE_SIDES_SWAPPED = true;
+
+    /** Wheel powers by WHEEL (robot's front-left etc.), routed to the right motor ports. */
+    public void setWheelPowers(double lf, double lb, double rb, double rf) {
+        if (DRIVE_SIDES_SWAPPED) {
+            frontLeft.setPower(-rf);
+            backLeft.setPower(-rb);
+            backRight.setPower(-lb);
+            frontRight.setPower(-lf);
+        } else {
+            frontLeft.setPower(lf);
+            backLeft.setPower(lb);
+            backRight.setPower(rb);
+            frontRight.setPower(rf);
+        }
+    }
+
     public final VoltageSensor voltageSensor;
 
     public final LazyImu lazyImu;
@@ -364,10 +391,8 @@ public final class MecanumDrive {
             maxPowerMag = Math.max(maxPowerMag, power.value());
         }
 
-        frontLeft.setPower(wheelVels.leftFront.get(0) / maxPowerMag);
-        backLeft.setPower(wheelVels.leftBack.get(0) / maxPowerMag);
-        backRight.setPower(wheelVels.rightBack.get(0) / maxPowerMag);
-        frontRight.setPower(wheelVels.rightFront.get(0) / maxPowerMag);
+        setWheelPowers(wheelVels.leftFront.get(0) / maxPowerMag, wheelVels.leftBack.get(0) / maxPowerMag,
+                wheelVels.rightBack.get(0) / maxPowerMag, wheelVels.rightFront.get(0) / maxPowerMag);
     }
 
 
@@ -517,10 +542,7 @@ public final class MecanumDrive {
                     return false;
                 }
                 trafficLight.red(true);
-                frontLeft.setPower(SPEED);
-                frontRight.setPower(SPEED);
-                backLeft.setPower(SPEED);
-                backRight.setPower(SPEED);
+                setWheelPowers(SPEED, SPEED, SPEED, SPEED);
 
 
             }
@@ -564,10 +586,7 @@ public final class MecanumDrive {
             power = Math.max(-1.0, Math.min(1.0, power));
             power -= kF * Math.signum(power);
 // Set motor power proportionally to the error
-            frontLeft.setPower(power);
-            backLeft.setPower(power);
-            backRight.setPower(power);
-            frontRight.setPower(power);
+            setWheelPowers(power, power, power, power);
 
             time_stop = timer.seconds();
 
@@ -639,10 +658,7 @@ public final class MecanumDrive {
                     voltage, leftFrontPower, leftBackPower, rightBackPower, rightFrontPower
             ));
 
-            frontLeft.setPower(leftFrontPower);
-            backLeft.setPower(leftBackPower);
-            backRight.setPower(rightBackPower);
-            frontRight.setPower(rightFrontPower);
+            setWheelPowers(leftFrontPower, leftBackPower, rightBackPower, rightFrontPower);
 
             p.put("x", pose.position.x);
             p.put("y", pose.position.y);
@@ -749,10 +765,7 @@ public final class MecanumDrive {
                     voltage, leftFrontPower, leftBackPower, rightBackPower, rightFrontPower
             ));
 
-            frontLeft.setPower(leftFrontPower);
-            backLeft.setPower(leftBackPower);
-            backRight.setPower(rightBackPower);
-            frontRight.setPower(rightFrontPower);
+            setWheelPowers(leftFrontPower, leftBackPower, rightBackPower, rightFrontPower);
 
             p.put("x", pose.position.x);
             p.put("y", pose.position.y);
@@ -869,10 +882,7 @@ public final class MecanumDrive {
                     voltage, leftFrontPower, leftBackPower, rightBackPower, rightFrontPower
             ));
 
-            frontLeft.setPower(leftFrontPower);
-            backLeft.setPower(leftBackPower);
-            backRight.setPower(rightBackPower);
-            frontRight.setPower(rightFrontPower);
+            setWheelPowers(leftFrontPower, leftBackPower, rightBackPower, rightFrontPower);
 
             p.put("x", pose.position.x);
             p.put("y", pose.position.y);
@@ -969,10 +979,7 @@ public final class MecanumDrive {
                     voltage, leftFrontPower, leftBackPower, rightBackPower, rightFrontPower
             ));
 
-            frontLeft.setPower(feedforward.compute(wheelVels.leftFront) / voltage);
-            backLeft.setPower(feedforward.compute(wheelVels.leftBack) / voltage);
-            backRight.setPower(feedforward.compute(wheelVels.rightBack) / voltage);
-            frontRight.setPower(feedforward.compute(wheelVels.rightFront) / voltage);
+            setWheelPowers(leftFrontPower, leftBackPower, rightBackPower, rightFrontPower);
 
             Canvas c = p.fieldOverlay();
             drawPoseHistory(c);
