@@ -715,6 +715,22 @@ public class HiveAligner {
 
     // ---- telemetry ---------------------------------------------------------------------------
 
+    /**
+     * Distance from the robot centre to the CELL it aims at (the locked target, otherwise the one
+     * it would pick: the up CELL, else the closest), INCHES. NaN until the CELL has been seen (or
+     * seeded from the surveyed positions). Measured on odometry, so it updates every loop.
+     */
+    public double distanceToHive(Pose2d pose) {
+        Cell c = hasTarget() ? target : pickTarget(pose);
+        return c == null ? Double.NaN : Math.hypot(c.ex - pose.position.x, c.ey - pose.position.y);
+    }
+
+    /** Label of the CELL {@link #distanceToHive} measures to, or null. */
+    public String distanceCellLabel(Pose2d pose) {
+        Cell c = hasTarget() ? target : pickTarget(pose);
+        return c == null ? null : c.label;
+    }
+
     public void telemetry(Telemetry t) {
         if (hasTarget()) {
             t.addData("AIM", "%s  %s  err %.2f deg  %.0f in", onTarget ? "ON TARGET" : "aligning",

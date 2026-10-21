@@ -151,10 +151,34 @@ public class BiobuzzPollenTeleOp extends LinearOpMode {
     public static double ALIGN_DRIVE_ACCEL_IN_S2 = 70.0;
     public static double DRIVER_MAX_TURN_RATE = 3.0;
 
+    /**
+     * DRIVE WHILE AIMING: while the wheel lock AND auto-align are both active (RT held), the left
+     * stick moves the locked spot instead of being ignored, so the robot can be repositioned while
+     * it aims - and is still pushed back to that moving spot if another robot shoves it. The stick
+     * tops out at AIMING_DRIVE_MAX_IN_S, and artifacts only feed while the robot is actually slower
+     * than AIMING_FEED_MAX_IN_S (a shot carries the robot's velocity sideways into the miss).
+     * false = exactly the behaviour before it: the lock holds a fixed spot and ignores the sticks.
+     */
+    public static boolean DRIVE_WHILE_AIMING_ENABLED = true;
+    /**
+     * Full-stick speed while aiming, in/s. A shot inherits the robot's velocity: at ~0.5 s flight,
+     * 5 in/s puts it ~2.5 in sideways, inside the CELL opening's margin. Raise it only after
+     * checking shots at that speed on the field.
+     */
+    public static double AIMING_DRIVE_MAX_IN_S = 5.0;
+    /** Feeding pauses while the measured speed is above this, and resumes below 80% of it, in/s. */
+    public static double AIMING_FEED_MAX_IN_S = 6.0;
+    /** The moving spot never runs more than this ahead of the robot (blocked = no lunge later), in. */
+    public static double AIMING_LEASH_IN = 3.0;
+    public static double AIMING_DRIVE_ACCEL_IN_S2 = 40.0;
+
     private HiveAligner aligner;
     private boolean shotHoldActive = false;
     private Pose2d holdPose;
     private double cmdVx = 0, cmdVy = 0, driverForwardRef = 0;
+    /** Drive while aiming: the stick's (accel-limited) field velocity, and whether feeding is allowed. */
+    private double stickVx = 0, stickVy = 0;
+    private boolean slowEnoughToFeed = true;
     private String holdNote = "";
 
     private MecaTank mecaTank;
@@ -420,10 +444,38 @@ public class BiobuzzPollenTeleOp extends LinearOpMode {
      * Drives while RT is held: wheel lock (hold the spot on odometry), auto-align (heading from
      * HiveAligner), or both. Everything is a velocity through Road Runner's kinematics.
      */
-    private void driveShotHold(Pose2d pose, boolean lockOn, boolean alignOn, double dt) {
+    private void driveShotHold(Pose2d pose, boolean lockOn, boolean alignOn, boolean moveWhileAiming, double dt) {
         double x = pose.position.x, y = pose.position.y, h = pose.heading.toDouble();
         double wantVx, wantVy;
-        if (lockOn) {
+        if (lockOn && moveWhileAiming) {
+            // The stick moves the locked spot; the lock then tracks it with the stick velocity as
+            // feedforward, so driving makes no error and only an outside push gets corrected.
+            double speed = AIMING_DRIVE_MAX_IN_S * (gamepad1.left_bumper ? MecaTank.PRECISION_SCALE : 1.0);
+            double fwd = -gamepad1.left_stick_y * speed, left = -gamepad1.left_stick_x * speed;
+            double ref = MecaTank.FIELD_CENTRIC ? driverForwardRef : h;
+            wantVx = Math.cos(ref) * fwd - Math.sin(ref) * left;
+            wantVy = Math.sin(ref) * fwd + Math.cos(ref) * left;
+            double ddx = wantVx - stickVx, ddy = wantVy - stickVy;
+            double d = Math.hypot(ddx, ddy), step = AIMING_DRIVE_ACCEL_IN_S2 * dt;
+            if (d > step) {
+                ddx *= step / d;
+                ddy *= step / d;
+            }
+            stickVx += ddx;
+            stickVy += ddy;
+            double hx = holdPose.position.x + stickVx * dt, hy = holdPose.position.y + stickVy * dt;
+            double lx = hx - x, ly = hy - y, lead = Math.hypot(lx, ly);
+            if (lead > AIMING_LEASH_IN) {
+                hx = x + lx * AIMING_LEASH_IN / lead;
+                hy = y + ly * AIMING_LEASH_IN / lead;
+            }
+            holdPose = new Pose2d(hx, hy, holdPose.heading.toDouble());
+            double ex = hx - x, ey = hy - y;
+            double e = Math.hypot(ex, ey);
+            double v = e < LOCK_DEADBAND_IN ? 0.0 : Math.min(LOCK_MAX_IN_S, LOCK_KP * e);
+            cmdVx = stickVx + (e > 1e-9 ? ex / e * v : 0.0);
+            cmdVy = stickVy + (e > 1e-9 ? ey / e * v : 0.0);
+        } else if (lockOn) {
             double ex = holdPose.position.x - x, ey = holdPose.position.y - y;
             double e = Math.hypot(ex, ey);
             double v = e < LOCK_DEADBAND_IN ? 0.0 : Math.min(LOCK_MAX_IN_S, LOCK_KP * e);
@@ -463,7 +515,9 @@ public class BiobuzzPollenTeleOp extends LinearOpMode {
             // heading it holds follows the aim.
             holdPose = new Pose2d(holdPose.position, h);
         }
-        holdNote = (lockOn ? String.format("WHEELS LOCKED, %.2f in off the spot", Math.hypot(holdPose.position.x - x, holdPose.position.y - y))
+        holdNote = (lockOn ? String.format(moveWhileAiming ? "LOCKED, stick moves the spot (%.2f in off)%s"
+                        : "WHEELS LOCKED, %.2f in off the spot%s", Math.hypot(holdPose.position.x - x, holdPose.position.y - y),
+                        moveWhileAiming && !slowEnoughToFeed ? ", TOO FAST TO FEED" : "")
                 : "driving with the left stick")
                 + (alignOn ? (aligner.hasTarget() ? (aligner.onTarget() ? ", ON TARGET" : ", aligning") : ", no CELL seen - heading held") : "");
 
@@ -572,6 +626,7 @@ public class BiobuzzPollenTeleOp extends LinearOpMode {
                     || gamepad2.right_trigger > TRIGGER_THRESHOLD;
             boolean lockOn = WHEEL_LOCK_ENABLED && shootHeld;
             boolean alignOn = AUTO_ALIGN_ENABLED && aligner != null && shootHeld;
+            boolean moveWhileAiming = DRIVE_WHILE_AIMING_ENABLED && lockOn && alignOn;
             long nowNanos = System.nanoTime();
             double dt = Range.clip((nowNanos - lastLoopTime) / 1e9, 1e-4, 0.1);
             if (aligner != null || WHEEL_LOCK_ENABLED || mecaTank.smoothDriveNeedsPose()) {
@@ -602,8 +657,11 @@ public class BiobuzzPollenTeleOp extends LinearOpMode {
                     cmdVx = c * vx - sn * vy;
                     cmdVy = sn * vx + c * vy;
                     if (alignOn) aligner.engage(pose, velRobot);
+                    stickVx = 0;
+                    stickVy = 0;
+                    slowEnoughToFeed = true;
                 }
-                driveShotHold(pose, lockOn, alignOn, dt);
+                driveShotHold(pose, lockOn, alignOn, moveWhileAiming, dt);
             } else {
                 if (shotHoldActive) {
                     shotHoldActive = false;
@@ -659,6 +717,12 @@ public class BiobuzzPollenTeleOp extends LinearOpMode {
             if (down) pollen.target = Math.max(0.0, pollen.target - VELOCITY_STEP);
 
             boolean aimReady = aligner == null || !aligner.engaged() || !aligner.hasTarget() || aligner.onTarget();
+            if (moveWhileAiming) {
+                double speed = velRobot == null ? 0.0 : Math.hypot(velRobot.linearVel.x, velRobot.linearVel.y);
+                if (speed > AIMING_FEED_MAX_IN_S) slowEnoughToFeed = false;
+                else if (speed < 0.8 * AIMING_FEED_MAX_IN_S) slowEnoughToFeed = true;
+                aimReady &= slowEnoughToFeed;
+            }
             pollen.update(flywheelOn || pollenFeed, pollenFeed, aimReady);
 
             // =====================================================================================
@@ -666,7 +730,7 @@ public class BiobuzzPollenTeleOp extends LinearOpMode {
             // is open and the wheel ready, and otherwise follows the intake (in with A, out with B)
             // so artifacts are carried up to the closed gate. A shot can drive the intake forward too.
             // =====================================================================================
-            boolean transferring = pollen.ready;
+            boolean transferring = pollen.ready && (!moveWhileAiming || slowEnoughToFeed);
             pollen.drive(transferring);
             if (POLLEN_COUNTER_ENABLED) {
                 // A finished shot empties the robot: the feed ran and the trigger is released.
@@ -727,6 +791,13 @@ public class BiobuzzPollenTeleOp extends LinearOpMode {
 
                 if (shotHoldActive) {
                     telemetry.addData("SHOT HOLD", holdNote);
+                }
+                if (aligner == null) {
+                    telemetry.addData("HIVE distance", "unknown - auto-align is off (no camera)");
+                } else {
+                    double hiveIn = aligner.distanceToHive(pose);
+                    telemetry.addData("HIVE distance", Double.isNaN(hiveIn) ? "unknown - our CELL not seen yet"
+                            : String.format("%.1f in (%.2f ft) to %s", hiveIn, hiveIn / 12.0, aligner.distanceCellLabel(pose)));
                 }
                 if (aligner != null && (shotHoldActive || AUTO_ALIGN_ENABLED)) aligner.telemetry(telemetry);
                 telemetry.addLine("--- DRIVE ---");
