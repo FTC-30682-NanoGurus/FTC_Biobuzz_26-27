@@ -92,7 +92,7 @@ public class BiobuzzPollenTeleOp extends LinearOpMode {
     public static double GATE_SETTLE_MARGIN_MS = 40.0;
     /** Transfer power while it runs with the intake (A / B) and while it feeds a shot. */
     public static double
-        TRANSFER_INTAKE_POWER = 0.25,
+        TRANSFER_INTAKE_POWER = 0.30,
         TRANSFER_FEED_POWER = 0.85;
 
     /**
