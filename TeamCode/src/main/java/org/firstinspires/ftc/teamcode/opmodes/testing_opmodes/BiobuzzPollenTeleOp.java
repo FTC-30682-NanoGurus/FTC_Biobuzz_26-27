@@ -110,7 +110,7 @@ public class BiobuzzPollenTeleOp extends LinearOpMode {
      * once; A turns them back on as usual. A finished shot resets the count.
      * false = the opmode behaves exactly as without it (no current reads at all).
      */
-    public static boolean POLLEN_COUNTER_ENABLED = true;
+    public static boolean POLLEN_COUNTER_ENABLED = false;
     public static int POLLEN_CAPACITY = 4;
     /** A spike starts this many AMPS above the running baseline and ends below RELEASE above it. */
     public static double SPIKE_RISE_A = 0.5; //0.8
@@ -129,7 +129,7 @@ public class BiobuzzPollenTeleOp extends LinearOpMode {
      */
     public static boolean WHEEL_LOCK_ENABLED = true;
     /** in/s of push-back per inch the robot is moved off its spot, and the cap. */
-    public static double LOCK_KP = 6.0;
+    public static double LOCK_KP = 6.5;
     public static double LOCK_MAX_IN_S = 30.0;
     /** Errors below these are left alone, so the wheels do not buzz on sensor LSBs. */
     public static double LOCK_DEADBAND_IN = 0.15;
