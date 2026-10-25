@@ -95,7 +95,7 @@ public class FlywheelIntakeTestingOpMode extends LinearOpMode {
         bulkRead.setManual();
 
         flywheel = new NGMotor(hardwareMap, telemetry, BiobuzzRobotConstants.flywheels);
-        flywheel.setDirection(DcMotorSimple.Direction.REVERSE);
+        flywheel.setDirection(DcMotorSimple.Direction.FORWARD);
         flywheel.init();
 
         intake = new Intake(hardwareMap, telemetry);

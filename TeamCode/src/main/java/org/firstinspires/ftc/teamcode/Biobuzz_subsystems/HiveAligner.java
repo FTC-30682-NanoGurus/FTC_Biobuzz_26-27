@@ -73,12 +73,28 @@ public class HiveAligner {
     public static double AIM_OFFSET_TOWARD_ALLIANCE_IN = 0.0;
 
     // ---- heading control -------------------------------------------------------------------
-    /** rad/s of turn per rad of error (the autos' Road Runner headingGain). */
-    public static double HEADING_KP = 6.0;
+    /**
+     * Turn rate per rad of error near the target, rad/s per rad. Higher = snappier final settle;
+     * too high and it buzzes or overshoots by a degree or two.
+     */
+    public static double HEADING_KP = 14.0;
     public static double HEADING_DEADBAND_DEG = 0.2;
+    /** Top turn speed, rad/s. The drive tops out around 4.6 rad/s, so this is close to flat out. */
     public static double MAX_TURN_RATE = 4.0;
-    /** Turn-rate change limit, rad/s^2: no kick on engage, retarget or a big error. */
-    public static double MAX_TURN_ACCEL = 14.0;
+    /** How fast the turn may SPEED UP, rad/s^2: no kick on engage or retarget. Slowing down is not limited by this. */
+    public static double MAX_TURN_ACCEL = 16.0;
+    /**
+     * Braking the aim plans on, rad/s^2: the turn is slowed so it could stop in the error left at
+     * this deceleration. This is what stops the overshoot. Lower it if big turns still overshoot;
+     * raise it (never past what the robot can really brake, ~9) to finish big turns sooner.
+     */
+    public static double TURN_DECEL = 8.0;
+    /**
+     * How far ahead the aim looks, SECONDS: the error is judged where the robot WILL be after the
+     * drive's response lag, at its measured turn rate. Raise it if it still swings past the target
+     * and comes back; lower it if it creeps in slowly at the end.
+     */
+    public static double TURN_LEAD_S = 0.10;
     /** How fast the aim point may follow the target estimate, in/s: vision corrections blend in. */
     public static double AIM_POINT_SLEW_IN_S = 6.0;
     public static boolean TURN_FEEDFORWARD = true;
@@ -179,6 +195,21 @@ public class HiveAligner {
     private boolean aimPointSet = false;
     private double aimX, aimY;
     private double turnCmd = 0.0, headingErrDeg = 0.0, distanceIn = 0.0;
+    /**
+     * Turn rate, rad/s CCW, differentiated from the odometry heading every update(). NOT the
+     * localizer's reported angVel: its issue-#617 workaround can add a permanent 2*PI offset, and
+     * folding that back out only works below PI rad/s - the aim turns faster than that, and a
+     * wrong-signed rate made the look-ahead brake and push at the wrong moments (back-and-forth).
+     */
+    private double measuredYawRate = 0.0;
+    private double lastHeading = Double.NaN;
+    /** Low-pass on the differentiated turn rate, 0..1 per loop (1 = raw). */
+    public static double YAW_RATE_FILTER = 0.6;
+    /**
+     * When the stick is also asking to translate, rotation may use at most this fraction of the
+     * wheel speed, so a big aim turn cannot starve the driving (or the wheel lock's push-back).
+     */
+    public static double ROTATION_WHEEL_SHARE = 0.7;
     private boolean onTarget = false;
     private String lastEvent = "";
 
@@ -258,7 +289,13 @@ public class HiveAligner {
                 && visionPortal.getCameraState() == VisionPortal.CameraState.STREAMING) {
             applyCameraControls();
         }
-        pushPose(nowNanos, pose.position.x, pose.position.y, pose.heading.toDouble(), yawRate(robotVel));
+        double heading = pose.heading.toDouble();
+        if (!Double.isNaN(lastHeading) && dt > 1e-4) {
+            double raw = wrap(heading - lastHeading) / dt;
+            measuredYawRate += YAW_RATE_FILTER * (raw - measuredYawRate);
+        }
+        lastHeading = heading;
+        pushPose(nowNanos, pose.position.x, pose.position.y, pose.heading.toDouble(), measuredYawRate);
         double q = PROCESS_NOISE_IN * PROCESS_NOISE_IN * dt;
         for (Cell c : cells) {
             if (c.hasEstimate) {
@@ -274,7 +311,7 @@ public class HiveAligner {
         engaged = true;
         target = pickTarget(pose);
         aimPointSet = false;
-        turnCmd = yawRate(robotVel);
+        turnCmd = measuredYawRate;
         onTarget = false;
         if (target != null) lastEvent = "LOCKED ON " + target.label;
     }
@@ -343,12 +380,25 @@ public class HiveAligner {
         headingErrDeg = Math.toDegrees(err);
 
         double ff = TURN_FEEDFORWARD ? (dy * cmdVx - dx * cmdVy) / (r * r) : 0.0;
-        double fb = Math.abs(headingErrDeg) < HEADING_DEADBAND_DEG ? 0.0 : HEADING_KP * err;
-        double want = Range.clip(ff + fb, -MAX_TURN_RATE, MAX_TURN_RATE);
-        double step = MAX_TURN_ACCEL * dt;
-        turnCmd += Range.clip(want - turnCmd, -step, step);
+        // The error is closing at (measured rate - bearing rate); judge it where the robot will be
+        // once the drive has caught up, so the aim brakes early instead of swinging past.
+        double closing = measuredYawRate - ff;
+        double ePred = err - TURN_LEAD_S * closing;
+        double m = Math.abs(ePred);
+        // Fastest rate that can still stop within the remaining error at TURN_DECEL, and a plain
+        // proportional term for the last few degrees.
+        double fbMag = Math.toDegrees(m) < HEADING_DEADBAND_DEG ? 0.0
+                : Math.min(MAX_TURN_RATE, Math.min(Math.sqrt(2.0 * TURN_DECEL * m), HEADING_KP * m));
+        double want = Range.clip(ff + Math.copySign(fbMag, ePred), -MAX_TURN_RATE, MAX_TURN_RATE);
+        if (want * turnCmd < 0) turnCmd = 0.0;
+        if (Math.abs(want) > Math.abs(turnCmd)) {
+            double step = MAX_TURN_ACCEL * dt;
+            turnCmd += Range.clip(want - turnCmd, -step, step);
+        } else {
+            turnCmd = want;   // slowing down follows the braking curve at once
+        }
 
-        onTarget = Math.abs(headingErrDeg) < ON_TARGET_DEG && Math.abs(turnCmd) < ON_TARGET_MAX_RATE;
+        onTarget = Math.abs(headingErrDeg) < ON_TARGET_DEG && Math.abs(closing) < ON_TARGET_MAX_RATE;
         return turnCmd;
     }
 
@@ -605,11 +655,6 @@ public class HiveAligner {
         return null;
     }
 
-    private static double yawRate(PoseVelocity2d v) {
-        if (v == null || !Double.isFinite(v.angVel)) return 0.0;
-        return wrap(v.angVel);
-    }
-
     // ---- driving in physical units -----------------------------------------------------------
 
     /**
@@ -628,9 +673,11 @@ public class HiveAligner {
         double voltage = cachedVoltage;
         double kVin = PARAMS.kV / PARAMS.inPerTick;
         double vMax = Math.max(1.0, WHEEL_SPEED_HEADROOM * (voltage - PARAMS.kS) / kVin);
-        double rMax = 0;
+        double rMax = 0, tMax = 0;
         for (double v : rot) rMax = Math.max(rMax, Math.abs(v));
-        if (rMax > vMax) for (int i = 0; i < 4; i++) rot[i] *= vMax / rMax;
+        for (double v : tr) tMax = Math.max(tMax, Math.abs(v));
+        double rCap = tMax > 1e-6 ? ROTATION_WHEEL_SHARE * vMax : vMax;
+        if (rMax > rCap) for (int i = 0; i < 4; i++) rot[i] *= rCap / rMax;
         double k = 1.0;
         for (int i = 0; i < 4; i++) {
             if (tr[i] > 1e-9) k = Math.min(k, (vMax - rot[i]) / tr[i]);

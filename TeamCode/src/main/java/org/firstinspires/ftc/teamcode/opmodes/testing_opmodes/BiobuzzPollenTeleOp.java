@@ -92,8 +92,8 @@ public class BiobuzzPollenTeleOp extends LinearOpMode {
     public static double GATE_SETTLE_MARGIN_MS = 40.0;
     /** Transfer power while it runs with the intake (A / B) and while it feeds a shot. */
     public static double
-        TRANSFER_INTAKE_POWER = 0.30,
-        TRANSFER_FEED_POWER = 0.85;
+        TRANSFER_INTAKE_POWER = 1.0, //0.5
+        TRANSFER_FEED_POWER = 1.0; //0.9
 
     /**
      * Flip each motor relative to BiobuzzRobotConstants, for this opmode only (the autos and the
@@ -143,7 +143,7 @@ public class BiobuzzPollenTeleOp extends LinearOpMode {
      * waits for ON TARGET before the first artifact goes. With the wheel lock it aims in place; without
      * it the left stick still translates. Read at INIT (it opens the camera). false = no camera at all.
      */
-    public static boolean AUTO_ALIGN_ENABLED = false;
+    public static boolean AUTO_ALIGN_ENABLED = true;
     /** Start from the pose the last auto stored (field coordinates: can aim before seeing a tag). */
     public static boolean USE_AUTO_END_POSE = true;
     /** Translation while aligning without the wheel lock: full-stick in/s, accel in/s^2, turn rad/s. */
@@ -162,12 +162,12 @@ public class BiobuzzPollenTeleOp extends LinearOpMode {
     public static boolean DRIVE_WHILE_AIMING_ENABLED = true;
     /**
      * Full-stick speed while aiming, in/s. A shot inherits the robot's velocity: at ~0.5 s flight,
-     * 5 in/s puts it ~2.5 in sideways, inside the CELL opening's margin. Raise it only after
-     * checking shots at that speed on the field.
+     * 8 in/s puts it ~4 in sideways, about half the CELL opening's margin (5 in/s barely overcame
+     * the drive's friction). Lower it if moving shots miss; raise it if shots still land.
      */
-    public static double AIMING_DRIVE_MAX_IN_S = 5.0;
+    public static double AIMING_DRIVE_MAX_IN_S = 8.0;
     /** Feeding pauses while the measured speed is above this, and resumes below 80% of it, in/s. */
-    public static double AIMING_FEED_MAX_IN_S = 6.0;
+    public static double AIMING_FEED_MAX_IN_S = 9.0;
     /** The moving spot never runs more than this ahead of the robot (blocked = no lunge later), in. */
     public static double AIMING_LEASH_IN = 3.0;
     public static double AIMING_DRIVE_ACCEL_IN_S2 = 40.0;

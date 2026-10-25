@@ -34,8 +34,8 @@ public class BiobuzzRobotConstants {
     //public static String interTransfer = "interTransfer";
     public static String flywheels = "flywheels";
     public static double
-        pollenFixedShootingVel = 1720,
-        nectarFixedShootingVel = 1600;
+        pollenFixedShootingVel = 1280,
+        nectarFixedShootingVel = 1400;
 
     /**
      * Flywheel motor directions for the autos (Intake2_0). Pollen is REVERSE because that is how
@@ -164,19 +164,19 @@ public class BiobuzzRobotConstants {
         pollenKI = 0,
         pollenKD = 0,
         pollenKpStable = 0.0007,
-        pollenKpRecovery = 0.01, //O.012
+        pollenKpRecovery = 0.0075, //O.012
         pollenAlpha = 0.7,
-        pollenRecoveryThreshold = 60.0;
+        pollenRecoveryThreshold = 90.0;
 
     /** Nectar: tuned in NectarFlywheelIntakeTestingOpMode. */
     public static double
-        nectarKF = 0.000426,
+        nectarKF = 0.000498, //0.000426
         nectarKI = 0,
         nectarKD = 0,
-        nectarKpStable = 0.0007,
-        nectarKpRecovery = 0.0075,
+        nectarKpStable = 0.0006, //0.0007
+        nectarKpRecovery = 0, //0.0075
         nectarAlpha = 0.7,
-        nectarRecoveryThreshold = 90.0;
+        nectarRecoveryThreshold = 0; //90
 
     /**
      * Load boost while artifacts go through a flywheel: kLoad + kRamp * seconds feeding. STATIC on
