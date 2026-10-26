@@ -77,10 +77,10 @@ public class HiveAligner {
      * Turn rate per rad of error near the target, rad/s per rad. Higher = snappier final settle;
      * too high and it buzzes or overshoots by a degree or two.
      */
-    public static double HEADING_KP = 14.0;
-    public static double HEADING_DEADBAND_DEG = 0.2;
+    public static double HEADING_KP = 4.8;
+    public static double HEADING_DEADBAND_DEG = 0.3;
     /** Top turn speed, rad/s. The drive tops out around 4.6 rad/s, so this is close to flat out. */
-    public static double MAX_TURN_RATE = 4.0;
+    public static double MAX_TURN_RATE = 6.0;
     /** How fast the turn may SPEED UP, rad/s^2: no kick on engage or retarget. Slowing down is not limited by this. */
     public static double MAX_TURN_ACCEL = 16.0;
     /**
@@ -88,13 +88,21 @@ public class HiveAligner {
      * this deceleration. This is what stops the overshoot. Lower it if big turns still overshoot;
      * raise it (never past what the robot can really brake, ~9) to finish big turns sooner.
      */
-    public static double TURN_DECEL = 8.0;
+    public static double TURN_DECEL = 4.0;
     /**
      * How far ahead the aim looks, SECONDS: the error is judged where the robot WILL be after the
      * drive's response lag, at its measured turn rate. Raise it if it still swings past the target
      * and comes back; lower it if it creeps in slowly at the end.
      */
-    public static double TURN_LEAD_S = 0.10;
+    public static double TURN_LEAD_S = 0.20;
+    /**
+     * Slow-loop protection. A long loop is extra delay in the aim, and delay is what turns a
+     * correct gain into back-and-forth. The effective gain is capped at LOOP_GAIN_LIMIT / loop time
+     * and the braking at LOOP_DECEL_LIMIT / loop time (both no change below a 40 ms loop), and one
+     * loop time is added to the look-ahead. Telemetry shows the loop time and the gains in use.
+     */
+    public static double LOOP_GAIN_LIMIT = 0.24;
+    public static double LOOP_DECEL_LIMIT = 0.12;
     /** How fast the aim point may follow the target estimate, in/s: vision corrections blend in. */
     public static double AIM_POINT_SLEW_IN_S = 6.0;
     public static boolean TURN_FEEDFORWARD = true;
@@ -127,7 +135,7 @@ public class HiveAligner {
     public static int OFFSET_MIN_SAMPLES = 5;
 
     // ---- velocity drive --------------------------------------------------------------------
-    public static double KS_RAMP_IN_S = 2.0;
+    public static double KS_RAMP_IN_S = 3.0;
     public static double WHEEL_SPEED_HEADROOM = 0.9;
 
     // =========================================================================================
@@ -203,6 +211,11 @@ public class HiveAligner {
      */
     private double measuredYawRate = 0.0;
     private double lastHeading = Double.NaN;
+    private long lastUpdateNanos = 0;
+    /** This loop's period from our own timestamps, SECONDS (used instead of the caller's dt). */
+    private double stepS = 0.02;
+    /** Averaged loop time, SECONDS, and the gains it allowed on the last turnRate(). */
+    private double loopS = 0.02, kpUsed = 0.0, decelUsed = 0.0;
     /** Low-pass on the differentiated turn rate, 0..1 per loop (1 = raw). */
     public static double YAW_RATE_FILTER = 0.6;
     /**
@@ -289,14 +302,19 @@ public class HiveAligner {
                 && visionPortal.getCameraState() == VisionPortal.CameraState.STREAMING) {
             applyCameraControls();
         }
+        // Timed from our own timestamps, so the rate and loop time are right whatever dt the caller has.
         double heading = pose.heading.toDouble();
-        if (!Double.isNaN(lastHeading) && dt > 1e-4) {
-            double raw = wrap(heading - lastHeading) / dt;
+        double ownDt = lastUpdateNanos == 0 ? 0.0 : (nowNanos - lastUpdateNanos) / 1e9;
+        lastUpdateNanos = nowNanos;
+        if (!Double.isNaN(lastHeading) && ownDt > 1e-3 && ownDt < 0.25) {
+            double raw = wrap(heading - lastHeading) / ownDt;
             measuredYawRate += YAW_RATE_FILTER * (raw - measuredYawRate);
+            loopS += 0.1 * (Range.clip(ownDt, 0.005, 0.2) - loopS);
+            stepS = Range.clip(ownDt, 0.001, 0.1);
         }
         lastHeading = heading;
         pushPose(nowNanos, pose.position.x, pose.position.y, pose.heading.toDouble(), measuredYawRate);
-        double q = PROCESS_NOISE_IN * PROCESS_NOISE_IN * dt;
+        double q = PROCESS_NOISE_IN * PROCESS_NOISE_IN * stepS;
         for (Cell c : cells) {
             if (c.hasEstimate) {
                 c.pxx += q;
@@ -343,6 +361,7 @@ public class HiveAligner {
      */
     public double turnRate(Pose2d pose, double cmdVx, double cmdVy, double dt, boolean allowRetarget) {
         if (!engaged) return Double.NaN;
+        dt = stepS;
         if (target == null) {
             target = pickTarget(pose);
             if (target == null) return Double.NaN;
@@ -383,12 +402,14 @@ public class HiveAligner {
         // The error is closing at (measured rate - bearing rate); judge it where the robot will be
         // once the drive has caught up, so the aim brakes early instead of swinging past.
         double closing = measuredYawRate - ff;
-        double ePred = err - TURN_LEAD_S * closing;
+        kpUsed = Math.min(HEADING_KP, LOOP_GAIN_LIMIT / loopS);
+        decelUsed = Math.min(TURN_DECEL, LOOP_DECEL_LIMIT / loopS);
+        double ePred = err - (TURN_LEAD_S + loopS) * closing;
         double m = Math.abs(ePred);
-        // Fastest rate that can still stop within the remaining error at TURN_DECEL, and a plain
-        // proportional term for the last few degrees.
+        // Fastest rate that can still stop within the remaining error at the braking rate, and a
+        // plain proportional term for the last few degrees.
         double fbMag = Math.toDegrees(m) < HEADING_DEADBAND_DEG ? 0.0
-                : Math.min(MAX_TURN_RATE, Math.min(Math.sqrt(2.0 * TURN_DECEL * m), HEADING_KP * m));
+                : Math.min(MAX_TURN_RATE, Math.min(Math.sqrt(2.0 * decelUsed * m), kpUsed * m));
         double want = Range.clip(ff + Math.copySign(fbMag, ePred), -MAX_TURN_RATE, MAX_TURN_RATE);
         if (want * turnCmd < 0) turnCmd = 0.0;
         if (Math.abs(want) > Math.abs(turnCmd)) {
@@ -786,6 +807,8 @@ public class HiveAligner {
             t.addData("AIM", "SEARCHING - no %s CELL seen yet", red ? "RED" : "BLUE");
         }
         if (!lastEvent.isEmpty()) t.addData("   last", lastEvent);
+        t.addData("   aim loop", "%.0f ms  (gain %.1f, braking %.1f%s)", loopS * 1000.0, kpUsed, decelUsed,
+                kpUsed < HEADING_KP - 1e-6 ? " - LOWERED: loop is slow" : "");
         t.addData("   camera", "%s, last frame %s", cameraState(), lastFrameNanos == 0 ? "none"
                 : String.format("%.0f ms ago", (System.nanoTime() - lastFrameNanos) / 1e6));
         for (int i = 0; i < 2; i++) {

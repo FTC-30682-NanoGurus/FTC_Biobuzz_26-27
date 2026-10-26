@@ -92,7 +92,7 @@ public class BiobuzzPollenTeleOp extends LinearOpMode {
     public static double GATE_SETTLE_MARGIN_MS = 40.0;
     /** Transfer power while it runs with the intake (A / B) and while it feeds a shot. */
     public static double
-        TRANSFER_INTAKE_POWER = 1.0, //0.5
+        TRANSFER_INTAKE_POWER = 0.5, //0.5
         TRANSFER_FEED_POWER = 1.0; //0.9
 
     /**
@@ -165,9 +165,9 @@ public class BiobuzzPollenTeleOp extends LinearOpMode {
      * 8 in/s puts it ~4 in sideways, about half the CELL opening's margin (5 in/s barely overcame
      * the drive's friction). Lower it if moving shots miss; raise it if shots still land.
      */
-    public static double AIMING_DRIVE_MAX_IN_S = 8.0;
+    public static double AIMING_DRIVE_MAX_IN_S = 10.0;
     /** Feeding pauses while the measured speed is above this, and resumes below 80% of it, in/s. */
-    public static double AIMING_FEED_MAX_IN_S = 9.0;
+    public static double AIMING_FEED_MAX_IN_S = 11.0;
     /** The moving spot never runs more than this ahead of the robot (blocked = no lunge later), in. */
     public static double AIMING_LEASH_IN = 3.0;
     public static double AIMING_DRIVE_ACCEL_IN_S2 = 40.0;
@@ -612,6 +612,7 @@ public class BiobuzzPollenTeleOp extends LinearOpMode {
 
         telemetryTimer.reset();
         double lastLoopTime = System.nanoTime();
+        long lastControlNanos = System.nanoTime();
         double loopMsMax = 0;
 
         while (!isStopRequested() && opModeIsActive()) {
@@ -627,8 +628,11 @@ public class BiobuzzPollenTeleOp extends LinearOpMode {
             boolean lockOn = WHEEL_LOCK_ENABLED && shootHeld;
             boolean alignOn = AUTO_ALIGN_ENABLED && aligner != null && shootHeld;
             boolean moveWhileAiming = DRIVE_WHILE_AIMING_ENABLED && lockOn && alignOn;
+            // Full loop period, start to start. (lastLoopTime is stamped near the END of the loop for
+            // the loop-time readout, so timing from it gave only the tail of the loop.)
             long nowNanos = System.nanoTime();
-            double dt = Range.clip((nowNanos - lastLoopTime) / 1e9, 1e-4, 0.1);
+            double dt = Range.clip((nowNanos - lastControlNanos) / 1e9, 1e-4, 0.1);
+            lastControlNanos = nowNanos;
             if (aligner != null || WHEEL_LOCK_ENABLED || mecaTank.smoothDriveNeedsPose()) {
                 mecaTank.updatePoseEstimate();
             }

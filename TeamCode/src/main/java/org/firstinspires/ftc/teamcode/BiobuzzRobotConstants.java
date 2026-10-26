@@ -145,8 +145,8 @@ public class BiobuzzRobotConstants {
      * TODO: edit after testing gate positions on the real shooter.
      */
     public static double
-        pollenGateClosedPos = 1.0,
-        pollenGateOpenPos = 0.52,
+        pollenGateClosedPos = 0.90,
+        pollenGateOpenPos = 0.62,
         nectarGateClosedPos = 0,
         nectarGateOpenPos = 0.45;
 
@@ -160,13 +160,13 @@ public class BiobuzzRobotConstants {
 
     /** Pollen: tuned in FlywheelIntakeTestingOpMode. */
     public static double
-        pollenKF = 0.000408,
+        pollenKF = 0.000498,
         pollenKI = 0,
         pollenKD = 0,
-        pollenKpStable = 0.0007,
-        pollenKpRecovery = 0.0075, //O.012
+        pollenKpStable = 0.0006,
+        pollenKpRecovery = 0.0015, //O.012
         pollenAlpha = 0.7,
-        pollenRecoveryThreshold = 90.0;
+        pollenRecoveryThreshold = 80.0;
 
     /** Nectar: tuned in NectarFlywheelIntakeTestingOpMode. */
     public static double
