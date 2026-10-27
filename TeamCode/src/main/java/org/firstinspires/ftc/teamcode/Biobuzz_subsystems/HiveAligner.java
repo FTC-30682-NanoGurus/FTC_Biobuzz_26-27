@@ -77,12 +77,12 @@ public class HiveAligner {
      * Turn rate per rad of error near the target, rad/s per rad. Higher = snappier final settle;
      * too high and it buzzes or overshoots by a degree or two.
      */
-    public static double HEADING_KP = 4.8;
+    public static double HEADING_KP = 5.2;
     public static double HEADING_DEADBAND_DEG = 0.3;
     /** Top turn speed, rad/s. The drive tops out around 4.6 rad/s, so this is close to flat out. */
     public static double MAX_TURN_RATE = 6.0;
     /** How fast the turn may SPEED UP, rad/s^2: no kick on engage or retarget. Slowing down is not limited by this. */
-    public static double MAX_TURN_ACCEL = 16.0;
+    public static double MAX_TURN_ACCEL = 20.0;
     /**
      * Braking the aim plans on, rad/s^2: the turn is slowed so it could stop in the error left at
      * this deceleration. This is what stops the overshoot. Lower it if big turns still overshoot;
@@ -94,7 +94,7 @@ public class HiveAligner {
      * drive's response lag, at its measured turn rate. Raise it if it still swings past the target
      * and comes back; lower it if it creeps in slowly at the end.
      */
-    public static double TURN_LEAD_S = 0.20;
+    public static double TURN_LEAD_S = 0.17;
     /**
      * Slow-loop protection. A long loop is extra delay in the aim, and delay is what turns a
      * correct gain into back-and-forth. The effective gain is capped at LOOP_GAIN_LIMIT / loop time
