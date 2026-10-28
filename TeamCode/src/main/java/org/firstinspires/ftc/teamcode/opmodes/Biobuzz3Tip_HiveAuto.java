@@ -161,7 +161,7 @@ public class Biobuzz3Tip_HiveAuto extends NGAutoOpMode {
 
         Action wallOnly = drive.actionBuilder(rightShot)
                 .setTangent(Math.toRadians(-155))
-                .afterTime(2.1, intake2_0.collect(2.5))
+                .afterTime(2.1, intake2_0.collectToGate(2.5))
                 .splineToSplineHeading(wallSet, Math.toRadians(25), maxIntakeVel, maxAccel)
                 .build();
 

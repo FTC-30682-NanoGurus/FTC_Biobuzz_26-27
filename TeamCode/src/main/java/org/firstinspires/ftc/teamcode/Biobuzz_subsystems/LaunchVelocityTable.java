@@ -50,13 +50,11 @@ public class LaunchVelocityTable {
      * changes fastest there.
      */
     public LaunchVelocityTable() {
-        // TODO-TUNE: distance (in) -> flywheel velocity (ticks/s). Measure all four on the robot.
-        add(24.0, 1000.0);   // TODO-TUNE close range
-        add(48.0, 1000.0);   // TODO-TUNE mid range
-        add(72.0, 1000.0);   // TODO-TUNE long range
-        add(96.0, 1000.0);   // TODO-TUNE max range
+        add(24.0, 1000.0);  // TODO: TUNE close range
+        add(48.0, 1300.0);  // TODO: TUNE mid range
+        add(72.0, 1400.0);  // TODO: TUNE long range
+        add(96.0, 1400.0);  // TODO: TUNE max range
     }
-
     /**
      * Adds or replaces one measured point.
      *

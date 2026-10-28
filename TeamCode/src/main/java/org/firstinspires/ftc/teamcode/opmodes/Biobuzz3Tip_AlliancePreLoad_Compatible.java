@@ -188,21 +188,21 @@ public class Biobuzz3Tip_AlliancePreLoad_Compatible extends NGAutoOpMode{
 
         Action regularPath = new SequentialAction(
                 new SequentialAction(
-                        intake2_0.transferUsingRollersForTime(1.0, 0.8)
+                        intake2_0.feedPollen(1.0)
                 ),
                 new SequentialAction(
                         IntakeFromFlowerOne,
                         shootFlowerOnePollen,
-                        intake2_0.transferUsingRollersForTime(1.0, 0.8)
+                        intake2_0.feedPollen(1.0)
                 ),
                 new SequentialAction(
                         IntakeFromFlowerTwo,
                         shootFlowerTwoPollen,
-                        intake2_0.transferUsingRollersForTime(1.0, 0.8)
+                        intake2_0.feedPollen(1.0)
                 ),
                 new SequentialAction(
                         IntakeWallSetandShoot,
-                        intake2_0.transferUsingRollersForTime(1.0, 0.8)
+                        intake2_0.feedPollen(1.0)
                 ),
                 new SequentialAction(
                         kit.beginPark(),
@@ -214,18 +214,18 @@ public class Biobuzz3Tip_AlliancePreLoad_Compatible extends NGAutoOpMode{
                 HiveAutoKit.branch(() -> kit.route(drive.pose, soloStart)),
                 new ParallelAction(
                         soloShootPreLoad,
-                        intake2_0.transferUsingRollersForTime(1.0, 0.8)
+                        intake2_0.feedPollen(1.0)
                 ),
                 new SequentialAction(
                         soloIntakeWallSetandShoot,
-                        intake2_0.transferUsingRollersForTime(1.0, 0.8)
+                        intake2_0.feedPollen(1.0)
                 ),
                 HiveAutoKit.branch(() -> {
                     if (kit.fits(SOLO_FLOWER_BLOCK_S, leftShotBack)) {
                         return new SequentialAction(
                                 kit.flowerLeg(leftNear, soloIntakeFromFlowerOne, flowerOne, intake2_0.collectFromFlower(3)),
                                 kit.leaveFlower(soloShootFlowerOnePollen),
-                                intake2_0.transferUsingRollersForTime(1.0, 0.8),
+                                intake2_0.feedPollen(1.0),
                                 kit.beginPark(),
                                 kit.leg(leftShotBack, soloPark, parkPose, null)
                         );

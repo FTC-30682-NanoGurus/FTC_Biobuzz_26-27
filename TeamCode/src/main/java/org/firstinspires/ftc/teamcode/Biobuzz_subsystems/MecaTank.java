@@ -638,7 +638,7 @@ public class MecaTank extends Subsystem {
      * Deliberately looser than the axis limits so it only bites on genuine combined transients and
      * stays out of the way of normal driving.
      */
-    public static double WHEEL_POWER_SLEW = 8.0;
+    public static double WHEEL_POWER_SLEW = 12.0; // Previously 8.0
 
     /**
      * Whether the wheel-power backstop stays active while the override button is held.

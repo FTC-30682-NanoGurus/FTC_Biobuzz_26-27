@@ -34,7 +34,7 @@ public class BiobuzzRobotConstants {
     //public static String interTransfer = "interTransfer";
     public static String flywheels = "flywheels";
     public static double
-        pollenFixedShootingVel = 1280,
+        pollenFixedShootingVel = 1265,
         nectarFixedShootingVel = 1400;
 
     /**
@@ -145,7 +145,7 @@ public class BiobuzzRobotConstants {
      * TODO: edit after testing gate positions on the real shooter.
      */
     public static double
-        pollenGateClosedPos = 0.90,
+        pollenGateClosedPos = 0.99,
         pollenGateOpenPos = 0.62,
         nectarGateClosedPos = 0,
         nectarGateOpenPos = 0.45;
@@ -164,7 +164,7 @@ public class BiobuzzRobotConstants {
         pollenKI = 0,
         pollenKD = 0,
         pollenKpStable = 0.0006,
-        pollenKpRecovery = 0.0015, //O.012
+        pollenKpRecovery = 0.002, //O.012
         pollenAlpha = 0.7,
         pollenRecoveryThreshold = 80.0;
 
@@ -193,7 +193,16 @@ public class BiobuzzRobotConstants {
     // INTAKE / TRANSFER POWERS (teleops)
     // =============================================================================================
     public static double
-        intakePower = 0.76,
+        intakePower = 0.80,
         intakeReversePower = -0.7,
         transferPower = 0.7;
+
+    /**
+     * Transfer motor power while it runs WITH the intake (carrying artifacts up to the closed gate),
+     * and while it feeds a shot. Single source for BiobuzzPollenTeleOp and every BIOBUZZ auto
+     * (Intake2_0.collectToGate / collectFromFlower / feedPollen).
+     */
+    public static double
+        TRANSFER_INTAKE_POWER = 0.25,
+        TRANSFER_FEED_POWER = 1.0;
 }

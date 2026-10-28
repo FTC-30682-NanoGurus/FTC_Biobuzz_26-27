@@ -279,6 +279,40 @@ public class Intake2_0 {
                 new InstantAction(() -> stopFlywheels())
         );
     }
+    /**
+     * BIOBUZZ intake: rollers in AND the transfer at TRANSFER_INTAKE_POWER, carrying artifacts up to
+     * the closed gate, for {@code time} seconds - what BiobuzzPollenTeleOp does with the intake on.
+     */
+    public Action collectToGate(double time) {
+        return new SequentialAction(
+                new InstantAction(() -> runRollers(1)),
+                new InstantAction(() -> runTransferRollers(BiobuzzRobotConstants.TRANSFER_INTAKE_POWER)),
+                new SleepAction(time),
+                new InstantAction(() -> stopRollers()),
+                new InstantAction(() -> stopTransferRollers())
+        );
+    }
+
+    /**
+     * One BIOBUZZ volley, as BiobuzzPollenTeleOp shoots: gate open, transfer at TRANSFER_FEED_POWER,
+     * the intake at transferPower if transferAlsoRunsIntake, for {@code time} seconds.
+     */
+    public Action feedPollen(double time) {
+        return new SequentialAction(
+                new InstantAction(() -> openGate()),
+                new InstantAction(() -> feedingPollen = true),
+                new InstantAction(() -> runTransferRollers(BiobuzzRobotConstants.TRANSFER_FEED_POWER)),
+                new InstantAction(() -> {
+                    if (BiobuzzRobotConstants.transferAlsoRunsIntake) runRollers(BiobuzzRobotConstants.transferPower);
+                }),
+                new SleepAction(time),
+                new InstantAction(() -> closeGate()),
+                new InstantAction(() -> stopTransferRollers()),
+                new InstantAction(() -> stopRollers()),
+                new InstantAction(() -> feedingPollen = false)
+        );
+    }
+
     public Action collect(double time) {
         return new SequentialAction(
                 new InstantAction(() -> runRollers(1)),
@@ -288,7 +322,7 @@ public class Intake2_0 {
     }
     /**
      * Intake from a FLOWER: swing the ramp down to the intake position and run the rollers for
-     * {@code time} seconds. The ramp is left DOWN - it would hit the FLOWER if it swung up here;
+     * {@code time} seconds, with the transfer at TRANSFER_INTAKE_POWER. The ramp is left DOWN - it would hit the FLOWER if it swung up here;
      * HiveAutoKit.leaveFlower stows it once the robot has driven clear. With no ramp configured
      * it is just collect(time).
      */
@@ -296,8 +330,10 @@ public class Intake2_0 {
         return new SequentialAction(
                 new InstantAction(() -> setFlowerRamp(BiobuzzRobotConstants.flowerRampIntakePos)),
                 new InstantAction(() -> runRollers(1)),
+                new InstantAction(() -> runTransferRollers(BiobuzzRobotConstants.TRANSFER_INTAKE_POWER)),
                 new SleepAction(time),
-                new InstantAction(() -> stopRollers())
+                new InstantAction(() -> stopRollers()),
+                new InstantAction(() -> stopTransferRollers())
         );
     }
     /**

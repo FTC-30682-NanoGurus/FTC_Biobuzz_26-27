@@ -388,7 +388,9 @@ public final class MecanumDrive {
 
         double maxPowerMag = 1;
         for (DualNum<Time> power : wheelVels.all()) {
-            maxPowerMag = Math.max(maxPowerMag, power.value());
+            // |power|: a wheel past -1 must scale everything down too, or it alone gets clipped and the
+            // direction bends. Matches Road Runner's tuner DriveView.setDrivePowers.
+            maxPowerMag = Math.max(maxPowerMag, Math.abs(power.value()));
         }
 
         setWheelPowers(wheelVels.leftFront.get(0) / maxPowerMag, wheelVels.leftBack.get(0) / maxPowerMag,

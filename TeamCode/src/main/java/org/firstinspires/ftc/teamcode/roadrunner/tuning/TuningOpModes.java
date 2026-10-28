@@ -23,6 +23,7 @@ import com.qualcomm.robotcore.eventloop.opmode.OpModeRegistrar;
 
 import org.firstinspires.ftc.robotcore.internal.opmode.OpModeMeta;
 
+import org.firstinspires.ftc.teamcode.roadrunner.DriveSides;
 import org.firstinspires.ftc.teamcode.roadrunner.MecanumDrive;
 import org.firstinspires.ftc.teamcode.roadrunner.TankDrive;
 import org.firstinspires.ftc.teamcode.roadrunner.ThreeDeadWheelLocalizer;
@@ -86,14 +87,10 @@ public final class TuningOpModes {
                         MecanumDrive.PARAMS.minProfileAccel,
                         MecanumDrive.PARAMS.maxProfileAccel,
                         hardwareMap.getAll(LynxModule.class),
-                        Arrays.asList(
-                                md.frontLeft,
-                                md.backLeft
-                        ),
-                        Arrays.asList(
-                                md.frontRight,
-                                md.backRight
-                        ),
+                        // By WHEEL, not port name: with MecanumDrive.DRIVE_SIDES_SWAPPED the left/right
+                        // ports are swapped, so the tuners get the same mapping setWheelPowers uses.
+                        DriveSides.left(md),
+                        DriveSides.right(md),
                         leftEncs,
                         rightEncs,
                         parEncs,

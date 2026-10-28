@@ -17,6 +17,7 @@ import org.firstinspires.ftc.robotcore.external.navigation.CurrentUnit;
 import org.firstinspires.ftc.teamcode.BiobuzzRobotConstants;
 import org.firstinspires.ftc.teamcode.Biobuzz_subsystems.AllianceSelector;
 import org.firstinspires.ftc.teamcode.Biobuzz_subsystems.HiveAligner;
+import org.firstinspires.ftc.teamcode.Biobuzz_subsystems.LaunchVelocityTable;
 import org.firstinspires.ftc.teamcode.Biobuzz_subsystems.MecaTank;
 import org.firstinspires.ftc.teamcode.library.BulkRead;
 import org.firstinspires.ftc.teamcode.library.NGMotor;
@@ -58,7 +59,7 @@ import org.firstinspires.ftc.teamcode.roadrunner.PoseStorage;
  *                         HIVE CELL and the gate waits for ON TARGET.
  * INIT: B = RED alliance, X = BLUE (either pad) - picks which HIVE tags auto-align uses.
  *   Dpad right .......... flywheel on/off (keep it spinning between shots)
- *   Dpad up / down ...... target velocity +/- VELOCITY_STEP
+ *   Dpad up / down ...... target velocity +/- VELOCITY_STEP (a trim on the table with USE_VELOCITY_TABLE)
  *
  * GAMEPAD 2 (optional)
  *   A / B / RB / right trigger / dpad right / dpad up+down ... same as gamepad 1
@@ -81,6 +82,15 @@ public class BiobuzzPollenTeleOp extends LinearOpMode {
 
     /** One dpad press, TICKS/SECOND. */
     public static double VELOCITY_STEP = 25.0;
+    /**
+     * Pollen flywheel velocity from LaunchVelocityTable by the HIVE distance (HiveAligner, so it
+     * needs AUTO_ALIGN_ENABLED and a CELL seen once), interpolated between its rows and clamped to
+     * its end rows outside them. The target only changes while the gate is closed, so a volley is
+     * shot at one speed; the PIDF keeps running and just follows the new target. Dpad up/down
+     * trims on top of the table. With no distance yet it falls back to pollenFixedShootingVel.
+     * false = the fixed velocity with dpad steps, as before.
+     */
+    public static boolean USE_VELOCITY_TABLE = false;
     public static double TRIGGER_THRESHOLD = 0.5;
     /**
      * The gate servo has no position feedback, so "at its open position" is timed from its speed:
@@ -90,10 +100,6 @@ public class BiobuzzPollenTeleOp extends LinearOpMode {
     public static double GATE_SEC_PER_60_DEG = 0.17;
     public static double GATE_RANGE_DEG = 180.0;
     public static double GATE_SETTLE_MARGIN_MS = 40.0;
-    /** Transfer power while it runs with the intake (A / B) and while it feeds a shot. */
-    public static double
-        TRANSFER_INTAKE_POWER = 0.15, //0.5
-        TRANSFER_FEED_POWER = 1.0; //0.9
 
     /**
      * Flip each motor relative to BiobuzzRobotConstants, for this opmode only (the autos and the
@@ -173,6 +179,9 @@ public class BiobuzzPollenTeleOp extends LinearOpMode {
     public static double AIMING_DRIVE_ACCEL_IN_S2 = 40.0;
 
     private HiveAligner aligner;
+    private final LaunchVelocityTable velocityTable = new LaunchVelocityTable();
+    private double velocityTrim = 0.0;
+    private String velocityNote = "fixed";
     private boolean shotHoldActive = false;
     private Pose2d holdPose;
     private double cmdVx = 0, cmdVy = 0, driverForwardRef = 0;
@@ -717,8 +726,28 @@ public class BiobuzzPollenTeleOp extends LinearOpMode {
             prevUp2 = gamepad2.dpad_up;
             prevDown1 = gamepad1.dpad_down;
             prevDown2 = gamepad2.dpad_down;
-            if (up) pollen.target += VELOCITY_STEP;
-            if (down) pollen.target = Math.max(0.0, pollen.target - VELOCITY_STEP);
+            if (USE_VELOCITY_TABLE) {
+                if (up) velocityTrim += VELOCITY_STEP;
+                if (down) velocityTrim -= VELOCITY_STEP;
+                // Held while the gate is open: one speed for the whole volley.
+                if (!pollen.gateOpen) {
+                    double hiveIn = aligner == null ? Double.NaN : aligner.distanceToHive(pose);
+                    double base;
+                    if (Double.isNaN(hiveIn)) {
+                        base = BiobuzzRobotConstants.pollenFixedShootingVel;
+                        velocityNote = aligner == null ? "fixed - no HIVE distance (auto-align off)"
+                                : "fixed - no HIVE distance yet";
+                    } else {
+                        base = velocityTable.getVelocity(hiveIn);
+                        velocityNote = String.format("table %.0f tps at %.1f in", base, hiveIn);
+                    }
+                    pollen.target = Math.max(0.0, base + velocityTrim);
+                }
+            } else {
+                if (up) pollen.target += VELOCITY_STEP;
+                if (down) pollen.target = Math.max(0.0, pollen.target - VELOCITY_STEP);
+                velocityNote = "fixed (dpad steps)";
+            }
 
             boolean aimReady = aligner == null || !aligner.engaged() || !aligner.hasTarget() || aligner.onTarget();
             if (moveWhileAiming) {
@@ -748,10 +777,10 @@ public class BiobuzzPollenTeleOp extends LinearOpMode {
                 counter.reset();
             }
             wasTransferring = transferring || (wasTransferring && pollenFeed);
-            double transferPower = transferring ? TRANSFER_FEED_POWER
+            double transferPower = transferring ? BiobuzzRobotConstants.TRANSFER_FEED_POWER
                     : pollenFeed ? 0.0
-                    : reverseHeld ? -TRANSFER_INTAKE_POWER
-                    : intakeOn ? TRANSFER_INTAKE_POWER : 0.0;
+                    : reverseHeld ? -BiobuzzRobotConstants.TRANSFER_INTAKE_POWER
+                    : intakeOn ? BiobuzzRobotConstants.TRANSFER_INTAKE_POWER : 0.0;
             double rollerPower = transferring && BiobuzzRobotConstants.transferAlsoRunsIntake ? BiobuzzRobotConstants.transferPower
                     : reverseHeld ? BiobuzzRobotConstants.intakeReversePower
                     : intakeOn ? BiobuzzRobotConstants.intakePower : 0.0;
@@ -776,6 +805,8 @@ public class BiobuzzPollenTeleOp extends LinearOpMode {
                 telemetry.addLine("--- SHOOTER ---");
                 pollen.telemetry();
                 telemetry.addData("Flywheel held on", flywheelOn);
+                telemetry.addData("Flywheel velocity", "%.0f tps  %s%s", pollen.target, velocityNote,
+                        USE_VELOCITY_TABLE && velocityTrim != 0.0 ? String.format(", trim %+.0f", velocityTrim) : "");
                 telemetry.addData("Nectar gate", nectarGate == null ? "not configured" : "held closed");
                 telemetry.addData("Intake", "%.2f  %s", rollerPower,
                         transferring && BiobuzzRobotConstants.transferAlsoRunsIntake ? "pushing to transfer"

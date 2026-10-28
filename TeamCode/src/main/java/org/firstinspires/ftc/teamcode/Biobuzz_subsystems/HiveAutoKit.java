@@ -122,7 +122,6 @@ public class HiveAutoKit {
     public static double WATCHDOG_STOP_SPEED_IN_S = 4.0;
     /** One volley. Same as the original autos. */
     public static double TRANSFER_S = 1.0;
-    public static double TRANSFER_POWER = 0.8;
 
     public final MecanumDrive drive;
     public final Intake2_0 intake;
@@ -262,7 +261,7 @@ public class HiveAutoKit {
     /** Also stows the FLOWER ramp, in case a leg back from a FLOWER was cut short. */
     public Action transfer() {
         return new SequentialAction(instant(this::stowRamp),
-                intake.transferUsingRollersForTime(TRANSFER_S, TRANSFER_POWER));
+                intake.feedPollen(TRANSFER_S));
     }
 
     private void stowRamp() {
@@ -981,7 +980,7 @@ public class HiveAutoKit {
     public Action withWallCollect(Action drive) {
         double run = Math.max(WALL_COLLECT_MIN_S, motionTime(drive) - WALL_COLLECT_START_S);
         return new ParallelAction(drive,
-                new SequentialAction(new SleepAction(WALL_COLLECT_START_S), intake.collect(run)));
+                new SequentialAction(new SleepAction(WALL_COLLECT_START_S), intake.collectToGate(run)));
     }
 
     /**
