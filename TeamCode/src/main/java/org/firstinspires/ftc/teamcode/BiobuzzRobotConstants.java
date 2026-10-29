@@ -193,7 +193,7 @@ public class BiobuzzRobotConstants {
     // INTAKE / TRANSFER POWERS (teleops)
     // =============================================================================================
     public static double
-        intakePower = 0.80,
+        intakePower = 1.0,
         intakeReversePower = -0.7,
         transferPower = 0.7;
 
