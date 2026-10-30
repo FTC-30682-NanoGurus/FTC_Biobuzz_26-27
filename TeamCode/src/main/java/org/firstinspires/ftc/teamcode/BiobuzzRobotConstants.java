@@ -160,13 +160,13 @@ public class BiobuzzRobotConstants {
 
     /** Pollen: tuned in FlywheelIntakeTestingOpMode. */
     public static double
-        pollenKF = 0.000498,
+        pollenKF = 0.000467, //0.000498
         pollenKI = 0,
         pollenKD = 0,
-        pollenKpStable = 0.0006,
-        pollenKpRecovery = 0.002, //O.012
+        pollenKpStable = 0.00051, //0.0006
+        pollenKpRecovery = 0.002, //O.002
         pollenAlpha = 0.7,
-        pollenRecoveryThreshold = 80.0;
+        pollenRecoveryThreshold = 80.0; //80
 
     /** Nectar: tuned in NectarFlywheelIntakeTestingOpMode. */
     public static double
@@ -203,6 +203,6 @@ public class BiobuzzRobotConstants {
      * (Intake2_0.collectToGate / collectFromFlower / feedPollen).
      */
     public static double
-        TRANSFER_INTAKE_POWER = 0.25,
+        TRANSFER_INTAKE_POWER = 1.0, //0.25 
         TRANSFER_FEED_POWER = 1.0;
 }

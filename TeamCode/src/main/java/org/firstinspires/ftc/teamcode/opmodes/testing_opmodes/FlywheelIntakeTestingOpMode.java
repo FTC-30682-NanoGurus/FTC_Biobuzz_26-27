@@ -27,7 +27,7 @@ public class FlywheelIntakeTestingOpMode extends LinearOpMode {
     //Target vel: 1600
     public static double START_KI = 0;
     public static double START_KD = 0;
-    public static double START_KF = 0.000408;
+    public static double START_KF = 0.000467;
 
     public static double TARGET_STEP = 25.0;
 
