@@ -203,6 +203,6 @@ public class BiobuzzRobotConstants {
      * (Intake2_0.collectToGate / collectFromFlower / feedPollen).
      */
     public static double
-        TRANSFER_INTAKE_POWER = 1.0, //0.25 
+        TRANSFER_INTAKE_POWER = 1.0, //0.25
         TRANSFER_FEED_POWER = 1.0;
 }
