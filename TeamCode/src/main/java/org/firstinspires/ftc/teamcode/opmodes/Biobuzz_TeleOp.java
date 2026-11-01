@@ -535,6 +535,8 @@ public class Biobuzz_TeleOp extends LinearOpMode {
 
         // ---- INTAKE SETUP -------------------------------------------------------------------------
         intake = hardwareMap.get(DcMotorEx.class, BiobuzzRobotConstants.rollers);
+        intake.setDirection(BiobuzzRobotConstants.intakeReversed
+                ? DcMotorSimple.Direction.REVERSE : DcMotorSimple.Direction.FORWARD);
         try {
             transfer = hardwareMap.get(DcMotorEx.class, BiobuzzRobotConstants.transferRollers);
             transfer.setDirection(BiobuzzRobotConstants.transferReversed

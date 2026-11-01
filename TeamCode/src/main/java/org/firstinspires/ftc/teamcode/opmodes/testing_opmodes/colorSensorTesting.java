@@ -155,7 +155,7 @@ public class colorSensorTesting extends LinearOpMode {
     public static double BLUE_H_MIN = 210;
     public static double BLUE_H_MAX = 240;
 
-    public static double YELLOW_H_MIN = 90;
+    public static double YELLOW_H_MIN = 88;
     public static double YELLOW_H_MAX = 100;
 
     // H: 90 - 100
@@ -169,8 +169,8 @@ public class colorSensorTesting extends LinearOpMode {
 // Dist: 45 mm
 
     /** Shared by all three: below these the hue is not trustworthy enough to classify. */
-    public static double S_MIN = 0.65;
-    public static double V_MIN = 0.016;
+    public static double S_MIN = 0.660;
+    public static double V_MIN = 0.039;
 
     // ---- sensor setup ----------------------------------------------------------------------
     /**

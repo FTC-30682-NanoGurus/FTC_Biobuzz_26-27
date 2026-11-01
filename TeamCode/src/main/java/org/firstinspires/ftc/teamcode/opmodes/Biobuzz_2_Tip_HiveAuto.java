@@ -99,13 +99,9 @@ public class Biobuzz_2_Tip_HiveAuto extends NGAutoOpMode {
         kit.prepare(leftNear, parkPose);
         kit.prepare(leftShotBack, parkPose);
 
-        double F1_BLOCK_S = 1.94 + 0.4 + 3.0 + 1.71 + 1.0 + 0.3;
-        double F2_FROM_LEFT_S = 2.90 + 3.0 + 3.09 + 1.0 + 0.3;
-        double F2_FROM_RIGHT_S = 1.98 + 3.0 + 3.09 + 1.0 + 0.3;
-
-        Action preloadWait = drive.actionBuilder(beginPose)
-                .waitSeconds(2)
-                .build();
+        double F1_BLOCK_S = 1.94 + 0.4 + 3.0 + 1.71 + BiobuzzRobotConstants.cycleShootingTime + 0.3;
+        double F2_FROM_LEFT_S = 2.90 + 3.0 + 3.09 + BiobuzzRobotConstants.cycleShootingTime + 0.3;
+        double F2_FROM_RIGHT_S = 1.98 + 3.0 + 3.09 + BiobuzzRobotConstants.cycleShootingTime + 0.3;
 
         Action wallSetToLeftNear = kit.withWallCollect(drive.actionBuilder(beginPose)
                 .setTangent(Math.toRadians(-155))
@@ -207,7 +203,7 @@ public class Biobuzz_2_Tip_HiveAuto extends NGAutoOpMode {
                 park);
 
         Action main = new SequentialAction(
-                new ParallelAction(preloadWait, kit.transfer()),
+                kit.preloadShot(),
                 kit.waitForTipStart(Side.RIGHT, HiveAutoKit.OWN_TIP_GRACE_S),
                 HiveAutoKit.branch(() -> {
                     if (hive.settledUp(Side.RIGHT, 0.4)) {

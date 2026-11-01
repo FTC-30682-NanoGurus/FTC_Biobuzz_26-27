@@ -7,6 +7,7 @@ import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.hardware.DcMotorSimple;
+import com.qualcomm.robotcore.hardware.Servo;
 import com.qualcomm.robotcore.util.ElapsedTime;
 
 import org.firstinspires.ftc.teamcode.BiobuzzRobotConstants;
@@ -45,6 +46,13 @@ public class FlywheelIntakeTestingOpMode extends LinearOpMode {
     private Intake intake;
     private DcMotorEx transfer;
     private double lastTransferPower = Double.NaN;
+
+    /** The pollen gate, as in BiobuzzPollenTeleOp. Null when "pollenGate" is not configured. */
+    private Servo gate;
+    private String gateFault = "";
+    private boolean gateOpen = false;
+    /** Last position written, so an unchanged command costs no hub write. */
+    private double lastGatePos = Double.NaN;
 
     private double targetVelocity;
     private boolean flywheelRunning = false;
@@ -107,6 +115,14 @@ public class FlywheelIntakeTestingOpMode extends LinearOpMode {
             transfer = null;
         }
 
+        try {
+            gate = hardwareMap.get(Servo.class, BiobuzzRobotConstants.pollenGate);
+        } catch (Exception e) {
+            gate = null;
+            gateFault = "'" + BiobuzzRobotConstants.pollenGate + "' not in the configuration";
+        }
+        setGate(false);
+
         targetVelocity = START_TARGET_VELOCITY;
         kI = START_KI;
         kD = START_KD;
@@ -124,7 +140,7 @@ public class FlywheelIntakeTestingOpMode extends LinearOpMode {
         telemetry.addLine("FLYWHEEL + INTAKE TESTING (no drive)");
         telemetry.addLine("gp2: Y = run/stop   dpad up/dn = target");
         telemetry.addLine("gp2: X/A = select constant   dpad L/R = adjust");
-        telemetry.addLine("gp2: RT (hold) = transfer   LT = 0.1x step");
+        telemetry.addLine("gp2: RT (hold) = open gate + transfer   LT = 0.1x step");
         telemetry.addLine("gp2: RB = intake   LB = stop   B = reverse");
         telemetry.addLine("");
         telemetry.addLine("Flywheel starts STOPPED. Clear the shooter before pressing Y.");
@@ -186,6 +202,8 @@ public class FlywheelIntakeTestingOpMode extends LinearOpMode {
             NGMotor.kRamp = kRamp;
 
             boolean transferHeld = gamepad2.right_trigger > 0.5;
+            // Testing only: RT opens the gate whatever the flywheel is doing.
+            setGate(transferHeld);
             boolean simulatedFeeder = transferHeld && flywheelRunning;
             double transferPower = transferHeld ? BiobuzzRobotConstants.transferPower : 0.0;
             if (transfer != null && transferPower != lastTransferPower) {
@@ -219,6 +237,9 @@ public class FlywheelIntakeTestingOpMode extends LinearOpMode {
                 telemetry.addData("transfer motor", transfer == null ? "MISSING ("
                         + BiobuzzRobotConstants.transferRollers + ")" : String.format("%.1f", transferPower));
 
+                telemetry.addData("pollen gate", gate == null ? "not configured - skipped (" + gateFault + ")"
+                        : (gateOpen ? "OPEN" : "closed") + String.format(" (%.2f)", lastGatePos));
+
                 telemetry.addLine("--- SHOT RECOVERY ---");
                 telemetry.addData("last dip depth (ticks/s)", Double.isNaN(lastDipDepth) ? "--"
                         : String.format("%.0f", lastDipDepth));
@@ -249,6 +270,19 @@ public class FlywheelIntakeTestingOpMode extends LinearOpMode {
         flywheel.setAbsPower(0.0);
         intake.stop();
         if (transfer != null) transfer.setPower(0.0);
+        setGate(false);
+    }
+
+    /** Same as BiobuzzPollenTeleOp's Shooter.setGate. */
+    private void setGate(boolean open) {
+        if (gate == null) open = false;
+        gateOpen = open;
+        if (gate == null) return;
+        double pos = open ? BiobuzzRobotConstants.pollenGateOpenPos : BiobuzzRobotConstants.pollenGateClosedPos;
+        if (pos != lastGatePos) {
+            gate.setPosition(pos);
+            lastGatePos = pos;
+        }
     }
 
     private double stepMultiplier() {

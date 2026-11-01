@@ -34,17 +34,19 @@ public class BiobuzzRobotConstants {
     //public static String interTransfer = "interTransfer";
     public static String flywheels = "flywheels";
     public static double
-        pollenFixedShootingVel = 1265,
+        pollenFixedShootingVel = 1150,
         nectarFixedShootingVel = 1400;
 
     /**
-     * Flywheel motor directions for the autos (Intake2_0). Pollen is REVERSE because that is how
-     * the pollen wheel was set up when its PIDF was tuned (FlywheelIntakeTestingOpMode). Nectar is
-     * untested: if it reads a negative velocity while spinning, flip it.
+     * Motor directions - the single source for the autos (Intake2_0) and every teleop. Set to what
+     * BiobuzzPollenTeleOp was verified with on the robot: pollen flywheel FORWARD (as
+     * FlywheelIntakeTestingOpMode tunes it), transfer FORWARD, intake REVERSE. Nectar is untested:
+     * if it reads a negative velocity while spinning, flip it.
      */
     public static boolean
-        pollenFlywheelReversed = true,
-        nectarFlywheelReversed = false;
+        pollenFlywheelReversed = false,
+        nectarFlywheelReversed = false,
+        intakeReversed = true;
 
     /**
      * Servo-driven ramp that drops onto a FLOWER to intake from it. Starts at the stowed position and
@@ -53,13 +55,13 @@ public class BiobuzzRobotConstants {
      */
     /**
      * The intake ("rollers") and the transfer into the shooter ("transferRollers") are SEPARATE
-     * motors. transferReversed matches the direction Intake2_0 has always given the transfer motor.
+     * motors. transferReversed: see the motor directions above.
      * transferAlsoRunsIntake: also spin the intake while transferring, so artifacts still sitting in
      * the intake get pushed through to the transfer within the same feed window. Set false if the
      * transfer pulls everything on its own.
      */
     public static boolean
-        transferReversed = true,
+        transferReversed = false,
         transferAlsoRunsIntake = true;
 
     public static String flowerRamp = "flowerRamp";
@@ -145,8 +147,8 @@ public class BiobuzzRobotConstants {
      * TODO: edit after testing gate positions on the real shooter.
      */
     public static double
-        pollenGateClosedPos = 0.99,
-        pollenGateOpenPos = 0.62,
+        pollenGateClosedPos = 0.90,
+        pollenGateOpenPos = 0.59,
         nectarGateClosedPos = 0,
         nectarGateOpenPos = 0.45;
 
@@ -160,11 +162,11 @@ public class BiobuzzRobotConstants {
 
     /** Pollen: tuned in FlywheelIntakeTestingOpMode. */
     public static double
-        pollenKF = 0.000467, //0.000498
+        pollenKF = 0.000490, //0.000498
         pollenKI = 0,
         pollenKD = 0,
-        pollenKpStable = 0.00051, //0.0006
-        pollenKpRecovery = 0.002, //O.002
+        pollenKpStable = 0.00077, //0.0006
+        pollenKpRecovery = 0.001, //O.002
         pollenAlpha = 0.7,
         pollenRecoveryThreshold = 80.0; //80
 
@@ -193,7 +195,7 @@ public class BiobuzzRobotConstants {
     // INTAKE / TRANSFER POWERS (teleops)
     // =============================================================================================
     public static double
-        intakePower = 1.0,
+        intakePower = 0.9,
         intakeReversePower = -0.7,
         transferPower = 0.7;
 
@@ -203,6 +205,16 @@ public class BiobuzzRobotConstants {
      * (Intake2_0.collectToGate / collectFromFlower / feedPollen).
      */
     public static double
-        TRANSFER_INTAKE_POWER = 1.0, //0.25
+        TRANSFER_INTAKE_POWER = 0.25, //0.35
         TRANSFER_FEED_POWER = 1.0;
+
+    /**
+     * Standard time to shoot one complete cycle (4 pollen) in every auto, SECONDS: how long each
+     * volley runs the transfer (HiveAutoKit.transfer / Intake2_0.feedPollen) and what every auto's
+     * time budget allows per shot.
+     */
+    public static double cycleShootingTime = 2.25;
+
+    /** Before the PRELOAD shot only, wait at most this long for the pollen flywheel to reach speed, SECONDS. */
+    public static double preloadSpinUpMaxS = 1.5;
 }

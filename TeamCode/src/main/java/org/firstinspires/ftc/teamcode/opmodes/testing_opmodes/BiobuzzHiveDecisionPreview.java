@@ -23,6 +23,7 @@ import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.util.ElapsedTime;
 
 import org.firstinspires.ftc.teamcode.Biobuzz_subsystems.AllianceSelector;
+import org.firstinspires.ftc.teamcode.BiobuzzRobotConstants;
 import org.firstinspires.ftc.teamcode.Biobuzz_subsystems.HiveAutoKit;
 import org.firstinspires.ftc.teamcode.Biobuzz_subsystems.HiveAutoKit.ShotChoice;
 import org.firstinspires.ftc.teamcode.Biobuzz_subsystems.HiveAutoKit.TipResult;
@@ -83,15 +84,15 @@ public class BiobuzzHiveDecisionPreview extends LinearOpMode {
     public static int EVENT_LINES = 6;
     public static double TELEMETRY_INTERVAL_MS = 250;
 
-    private static final double F1_BLOCK_S = 1.94 + 0.4 + 3.0 + 1.71 + 1.0 + 0.3;
-    private static final double F2_FROM_LEFT_S = 2.90 + 3.0 + 3.09 + 1.0 + 0.3;
-    private static final double F2_FROM_RIGHT_S = 1.98 + 3.0 + 3.09 + 1.0 + 0.3;
+    private static final double F1_BLOCK_S = 1.94 + 0.4 + 3.0 + 1.71 + BiobuzzRobotConstants.cycleShootingTime + 0.3;
+    private static final double F2_FROM_LEFT_S = 2.90 + 3.0 + 3.09 + BiobuzzRobotConstants.cycleShootingTime + 0.3;
+    private static final double F2_FROM_RIGHT_S = 1.98 + 3.0 + 3.09 + BiobuzzRobotConstants.cycleShootingTime + 0.3;
 
-    private static final double FLOWER_TWO_BLOCK_S = 5.90 + 1.84 + 1.0;
-    private static final double WALL_TO_LEFT_S = 6.14 + 1.0;
-    private static final double WALL_NEAR_S = 4.69 + 1.0;
+    private static final double FLOWER_TWO_BLOCK_S = 5.90 + 1.84 + BiobuzzRobotConstants.cycleShootingTime;
+    private static final double WALL_TO_LEFT_S = 6.14 + BiobuzzRobotConstants.cycleShootingTime;
+    private static final double WALL_NEAR_S = 4.69 + BiobuzzRobotConstants.cycleShootingTime;
     private static final double WALL_ONLY_S = 4.6;
-    private static final double SOLO_FLOWER_BLOCK_S = 4.98 + 1.71 + 1.0;
+    private static final double SOLO_FLOWER_BLOCK_S = 4.98 + 1.71 + BiobuzzRobotConstants.cycleShootingTime;
 
     // Biobuzz_2_Tip_HiveAuto poses
     private final Pose2d begin2 = new Pose2d(61, -14, Math.toRadians(180));
@@ -293,8 +294,8 @@ public class BiobuzzHiveDecisionPreview extends LinearOpMode {
         }
 
         void transfer(String what) {
-            line(String.format("%s (%.1f s)", what, HiveAutoKit.TRANSFER_S));
-            t += HiveAutoKit.TRANSFER_S;
+            line(String.format("%s (%.1f s)", what, BiobuzzRobotConstants.cycleShootingTime));
+            t += BiobuzzRobotConstants.cycleShootingTime;
         }
 
         void mark(int cp) {
@@ -449,7 +450,7 @@ public class BiobuzzHiveDecisionPreview extends LinearOpMode {
                             runShot = cp.kit.shotChoice(cp.shotSide, true, cp.freshS, drive.pose, runDecisionT);
                         }
                         if (cp.postVolleyDecision() && shoots(runShot)) {
-                            runWait = new SleepAction(HiveAutoKit.TRANSFER_S);
+                            runWait = new SleepAction(BiobuzzRobotConstants.cycleShootingTime);
                             runPhase = 2;
                         } else {
                             runWait = null;
@@ -780,9 +781,11 @@ public class BiobuzzHiveDecisionPreview extends LinearOpMode {
     /** Arrival time at every checkpoint along the plans with no waits (the dpad's starting point). */
     private void computeNominalTimes() {
         Map<Integer, Double> m2 = new HashMap<>();
-        m2.put(0, 2.0);
-        t2Tipped(new Sim(kit2, 2.0, begin2, new Forecast(false, null, null), m2));
-        t2NotTipped(new Sim(kit2, 2.0 + HiveAutoKit.OWN_TIP_GRACE_S, begin2, new Forecast(false, null, null), m2));
+        // kit.preloadShot(): flywheel spin-up (at most preloadSpinUpMaxS) + one cycle.
+        double preload = BiobuzzRobotConstants.preloadSpinUpMaxS + BiobuzzRobotConstants.cycleShootingTime;
+        m2.put(0, preload);
+        t2Tipped(new Sim(kit2, preload, begin2, new Forecast(false, null, null), m2));
+        t2NotTipped(new Sim(kit2, preload + HiveAutoKit.OWN_TIP_GRACE_S, begin2, new Forecast(false, null, null), m2));
         for (Checkpoint c : cps2) c.nominalT = m2.containsKey(c.id) ? m2.get(c.id) : Double.NaN;
 
         Map<Integer, Double> m3 = new HashMap<>();

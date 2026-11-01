@@ -63,6 +63,7 @@ import org.firstinspires.ftc.teamcode.roadrunner.PoseStorage;
  *                         its spot against pushes; with AUTO_ALIGN_ENABLED it turns onto our up
  *                         HIVE CELL and the gate waits for ON TARGET.
  * INIT: B = RED alliance, X = BLUE (either pad) - picks which HIVE tags auto-align uses.
+ * gamepad2 BACK (during the match) ... auto-align off / back on. Off, RT shoots without aiming.
  *   Dpad right .......... flywheel on/off (keep it spinning between shots)
  *   Dpad up / down ...... target velocity +/- VELOCITY_STEP (a trim on the table with USE_VELOCITY_TABLE)
  *
@@ -105,31 +106,38 @@ public class BiobuzzPollenTeleOp extends LinearOpMode {
     public static double GATE_SEC_PER_60_DEG = 0.17;
     public static double GATE_RANGE_DEG = 180.0;
     public static double GATE_SETTLE_MARGIN_MS = 40.0;
+    /**
+     * When RT is released, run the transfer in REVERSE for TRANSFER_RELEASE_REVERSE_MS, timed from
+     * the moment the gate is commanded shut, pulling the next artifact back so it cannot jam under
+     * the closing gate. false = the transfer just stops on release, as before.
+     */
+    public static boolean TRANSFER_REVERSE_ON_RELEASE = true;
+    public static double TRANSFER_RELEASE_REVERSE_MS = 1400.0;
+    public static double TRANSFER_RELEASE_REVERSE_POWER = 1.0;
 
     /**
      * Flip each motor relative to BiobuzzRobotConstants, for this opmode only (the autos and the
      * other teleops keep the constants as they are). Read once at init.
      */
     public static boolean
-        REVERSE_INTAKE = true,
-        REVERSE_TRANSFER = true,
-        REVERSE_FLYWHEEL = true;
+        REVERSE_INTAKE = false,
+        REVERSE_TRANSFER = false,
+        REVERSE_FLYWHEEL = false;
 
     /**
-     * POLLEN counter on the REV Color Sensor V3 (BiobuzzRobotConstants.colorSensor): counts each
-     * yellow POLLEN that passes it while the intake runs forward from A, using colorSensorTesting's
-     * tuned hue / saturation / value bands, gain and debounce (edit them THERE). Nectar is ignored
-     * for now. Reaching POLLEN_CAPACITY switches the intake and transfer off once; A turns them back
-     * on as usual. A finished shot resets the count.
+     * FULL detection on the REV Color Sensor V3 (BiobuzzRobotConstants.colorSensor): while the
+     * intake runs forward from A, a yellow POLLEN (colorSensorTesting's tuned hue / saturation /
+     * value bands and gain - edit them THERE) held in front of the sensor, closer than
+     * POLLEN_SENSOR_MAX_DISTANCE_MM, for POLLEN_FULL_HOLD_S without a break means the robot is full:
+     * the intake and transfer switch off once. A turns them back on as usual; it re-arms once the
+     * sensor no longer sees a pollen (e.g. after a shot). Nectar is ignored for now.
      * false = the opmode behaves exactly as without it (the sensor is not even read).
      */
     public static boolean COLOR_POLLEN_COUNTER_ENABLED = true;
-    public static int POLLEN_CAPACITY = 4;
-    /**
-     * Anything the sensor reads further away than this, MILLIMETRES, is treated as empty whatever
-     * its colour. A pollen at the working spot read ~45 mm in colorSensorTesting.
-     */
-    public static double POLLEN_SENSOR_MAX_DISTANCE_MM = 60.0;
+    /** How long a pollen must sit in front of the sensor before the robot counts as full, SECONDS. */
+    public static double POLLEN_FULL_HOLD_S = 1.7;
+    /** The pollen must read closer than this, MILLIMETRES (a pollen at the working spot read ~45 mm). */
+    public static double POLLEN_SENSOR_MAX_DISTANCE_MM = 55.0;
 
     /**
      * WHEEL LOCK while the right trigger is held: the robot actively holds the spot (and heading)
@@ -152,7 +160,7 @@ public class BiobuzzPollenTeleOp extends LinearOpMode {
      * waits for ON TARGET before the first artifact goes. With the wheel lock it aims in place; without
      * it the left stick still translates. Read at INIT (it opens the camera). false = no camera at all.
      */
-    public static boolean AUTO_ALIGN_ENABLED = true;
+    public static boolean AUTO_ALIGN_ENABLED = false;
 
     /** Start from the pose the last auto stored (field coordinates: can aim before seeing a tag). */
     public static boolean USE_AUTO_END_POSE = true;
@@ -169,7 +177,7 @@ public class BiobuzzPollenTeleOp extends LinearOpMode {
      * than AIMING_FEED_MAX_IN_S (a shot carries the robot's velocity sideways into the miss).
      * false = exactly the behaviour before it: the lock holds a fixed spot and ignores the sticks.
      */
-    public static boolean DRIVE_WHILE_AIMING_ENABLED = true;
+    public static boolean DRIVE_WHILE_AIMING_ENABLED = false;
     /**
      * Full-stick speed while aiming, in/s. A shot inherits the robot's velocity: at ~0.5 s flight,
      * 8 in/s puts it ~4 in sideways, about half the CELL opening's margin (5 in/s barely overcame
@@ -225,6 +233,8 @@ public class BiobuzzPollenTeleOp extends LinearOpMode {
     // gamepad1 drive toggles
     private boolean prevY, prevX, prevBack, prevOptions, prevLeft1;
     // shooter / intake edges, per pad
+    /** gamepad2 BACK toggles auto-align off/on during the match (starts on). */
+    private boolean alignOffByDriver = false, prevBack2 = false;
     private boolean prevA1, prevA2, prevRight1, prevRight2, prevUp1, prevUp2, prevDown1, prevDown2, prevRB1, prevRB2;
 
     // =============================================================================================
@@ -242,6 +252,14 @@ public class BiobuzzPollenTeleOp extends LinearOpMode {
         /** Last position written, so an unchanged command costs no hub write. */
         double lastGatePos = Double.NaN;
         final ElapsedTime gateTimer = new ElapsedTime();
+        /** Since the gate was last commanded shut after being open; starts far in the past. */
+        final ElapsedTime closeTimer = new ElapsedTime(0);
+        private boolean everClosedAfterOpen = false;
+
+        /** True for TRANSFER_RELEASE_REVERSE_MS after the gate was commanded shut following a shot. */
+        boolean closing() {
+            return everClosedAfterOpen && !gateOpen && closeTimer.milliseconds() < TRANSFER_RELEASE_REVERSE_MS;
+        }
 
         double target;
         double velocity = 0.0;
@@ -287,6 +305,10 @@ public class BiobuzzPollenTeleOp extends LinearOpMode {
         void setGate(boolean open) {
             if (gate == null) open = false;
             if (open && !gateOpen) gateTimer.reset();
+            if (!open && gateOpen) {   // the gate starts swinging shut now
+                closeTimer.reset();
+                everClosedAfterOpen = true;
+            }
             gateOpen = open;
             if (gate == null) return;
             double pos = open ? BiobuzzRobotConstants.pollenGateOpenPos : BiobuzzRobotConstants.pollenGateClosedPos;
@@ -410,19 +432,18 @@ public class BiobuzzPollenTeleOp extends LinearOpMode {
     // POLLEN counter - colour sensor (classification and debounce from colorSensorTesting)
     // =============================================================================================
     private class PollenCounter {
-        int count = 0;
-        /** Set on the pollen that reaches POLLEN_CAPACITY; the opmode clears it once acted on. */
+        /** Set when the robot is detected full; the opmode clears it once acted on. */
         boolean justFilled = false;
-        /** Null when the sensor is not in the configuration - the counter then does nothing. */
+        /** Null when the sensor is not in the configuration - the detector then does nothing. */
         NormalizedColorSensor sensor;
         DistanceSensor distance;
         String fault = "";
         final float[] hsv = new float[3];
         double distanceMm = Double.MAX_VALUE;
         boolean seeing = false;
-        private boolean candidate = false, armed = true;
-        private final ElapsedTime stableTimer = new ElapsedTime();
-        private final ElapsedTime clearTimer = new ElapsedTime();
+        /** False after a FULL until the sensor stops seeing a pollen, so A can run the intake again. */
+        private boolean armed = true;
+        private final ElapsedTime holdTimer = new ElapsedTime();
 
         void init() {
             try {
@@ -435,46 +456,47 @@ public class BiobuzzPollenTeleOp extends LinearOpMode {
             }
         }
 
-        /** colorSensorTesting.classify, pollen only. */
+        /** colorSensorTesting.classify, pollen only, and closer than POLLEN_SENSOR_MAX_DISTANCE_MM. */
         private boolean seesPollen() {
             if (distance != null) {
                 double d = distance.getDistance(DistanceUnit.MM);
                 distanceMm = (Double.isNaN(d) || Double.isInfinite(d)) ? Double.MAX_VALUE : d;
+                if (distanceMm >= POLLEN_SENSOR_MAX_DISTANCE_MM) return false;
             }
-            if (colorSensorTesting.USE_DISTANCE_GATE && distanceMm > POLLEN_SENSOR_MAX_DISTANCE_MM) return false;
             NormalizedRGBA c = sensor.getNormalizedColors();
             Color.colorToHSV(c.toColor(), hsv);
             if (hsv[1] < colorSensorTesting.S_MIN || hsv[2] < colorSensorTesting.V_MIN) return false;
             return hsv[0] >= colorSensorTesting.YELLOW_H_MIN && hsv[0] <= colorSensorTesting.YELLOW_H_MAX;
         }
 
-        /**
-         * colorSensorTesting.updateCount: a pollen counts once it has read steadily for CONFIRM_MS,
-         * and the next one only after the sensor has read empty for CLEAR_MS.
-         * @param counting the intake is running forward from A (not shooting, not reversing)
-         */
+        /** Seconds the current pollen has been held in front of the sensor (0 if none). */
+        double heldS() {
+            return seeing ? holdTimer.seconds() : 0.0;
+        }
+
+        /** @param counting the intake is running forward from A (not shooting, not reversing) */
         void update(boolean counting) {
-            if (sensor == null || !counting) return;   // two I2C reads; only while counting
-            seeing = seesPollen();
-            if (seeing != candidate) {
-                candidate = seeing;
-                stableTimer.reset();
-            }
-            if (!seeing) {
-                if (!armed && clearTimer.milliseconds() >= colorSensorTesting.CLEAR_MS) armed = true;
+            if (sensor == null) return;
+            if (!counting) {   // two I2C reads; only while the intake runs. The hold restarts next time.
+                seeing = false;
                 return;
             }
-            clearTimer.reset();
-            if (armed && stableTimer.milliseconds() >= colorSensorTesting.CONFIRM_MS) {
-                count++;
+            boolean now = seesPollen();
+            if (now && !seeing) holdTimer.reset();
+            seeing = now;
+            if (!seeing) {
+                armed = true;
+                return;
+            }
+            if (armed && holdTimer.seconds() >= POLLEN_FULL_HOLD_S) {
+                justFilled = true;
                 armed = false;
-                if (count == POLLEN_CAPACITY) justFilled = true;
             }
         }
 
         void reset() {
-            count = 0;
             justFilled = false;
+            armed = true;
         }
     }
 
@@ -581,7 +603,8 @@ public class BiobuzzPollenTeleOp extends LinearOpMode {
 
         // ---- INTAKE + SHOOTER SETUP ---------------------------------------------------------------
         rollers = hardwareMap.get(DcMotorEx.class, BiobuzzRobotConstants.rollers);
-        rollers.setDirection(REVERSE_INTAKE ? DcMotor.Direction.REVERSE : DcMotor.Direction.FORWARD);
+        rollers.setDirection(BiobuzzRobotConstants.intakeReversed != REVERSE_INTAKE
+                ? DcMotor.Direction.REVERSE : DcMotor.Direction.FORWARD);
         rollers.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
         try {
             transfer = hardwareMap.get(DcMotorEx.class, BiobuzzRobotConstants.transferRollers);
@@ -666,7 +689,9 @@ public class BiobuzzPollenTeleOp extends LinearOpMode {
             boolean shootHeld = gamepad1.right_trigger > TRIGGER_THRESHOLD
                     || gamepad2.right_trigger > TRIGGER_THRESHOLD;
             boolean lockOn = WHEEL_LOCK_ENABLED && shootHeld;
-            boolean alignOn = AUTO_ALIGN_ENABLED && aligner != null && shootHeld;
+            if (gamepad2.back && !prevBack2) alignOffByDriver = !alignOffByDriver;
+            prevBack2 = gamepad2.back;
+            boolean alignOn = AUTO_ALIGN_ENABLED && aligner != null && shootHeld && !alignOffByDriver;
             boolean moveWhileAiming = DRIVE_WHILE_AIMING_ENABLED && lockOn && alignOn;
             // Full loop period, start to start. (lastLoopTime is stamped near the END of the loop for
             // the loop-time readout, so timing from it gave only the tail of the loop.)
@@ -704,6 +729,11 @@ public class BiobuzzPollenTeleOp extends LinearOpMode {
                     stickVx = 0;
                     stickVy = 0;
                     slowEnoughToFeed = true;
+                }
+                // gamepad2 BACK can switch auto-align off or on while RT is still held.
+                if (aligner != null) {
+                    if (alignOn && !aligner.engaged()) aligner.engage(pose, velRobot);
+                    else if (!alignOn && aligner.engaged()) aligner.release();
                 }
                 driveShotHold(pose, lockOn, alignOn, moveWhileAiming, dt);
             } else {
@@ -805,12 +835,14 @@ public class BiobuzzPollenTeleOp extends LinearOpMode {
                     intakeOn = false;
                     counter.justFilled = false;
                 }
-            } else if (counter.count > 0) {
+            } else if (counter.justFilled) {
                 counter.reset();
             }
             wasTransferring = transferring || (wasTransferring && pollenFeed);
+            boolean unjamming = TRANSFER_REVERSE_ON_RELEASE && !pollenFeed && pollen.closing();
             double transferPower = transferring ? BiobuzzRobotConstants.TRANSFER_FEED_POWER
                     : pollenFeed ? 0.0
+                    : unjamming ? -TRANSFER_RELEASE_REVERSE_POWER
                     : reverseHeld ? -BiobuzzRobotConstants.TRANSFER_INTAKE_POWER
                     : intakeOn ? BiobuzzRobotConstants.TRANSFER_INTAKE_POWER : 0.0;
             double rollerPower = transferring && BiobuzzRobotConstants.transferAlsoRunsIntake ? BiobuzzRobotConstants.transferPower
@@ -846,13 +878,15 @@ public class BiobuzzPollenTeleOp extends LinearOpMode {
                 telemetry.addData("Transfer", transfer == null ? "MISSING"
                         : String.format("%.2f  %s", transferPower, transferring ? "FEEDING"
                                 : pollenFeed ? "waiting for gate / wheel"
+                                : unjamming ? "REVERSE after release (unjam)"
                                 : reverseHeld ? "REVERSE (B held)" : intakeOn ? "with intake" : "off"));
                 if (COLOR_POLLEN_COUNTER_ENABLED) {
                     if (counter.sensor == null) {
-                        telemetry.addData("POLLEN count", "COLOR SENSOR MISSING - %s", counter.fault);
+                        telemetry.addData("POLLEN full check", "COLOR SENSOR MISSING - %s", counter.fault);
                     } else {
-                        telemetry.addData("POLLEN count", "%d / %d%s", counter.count, POLLEN_CAPACITY,
-                                counter.count >= POLLEN_CAPACITY ? "  FULL" : "");
+                        telemetry.addData("POLLEN full check", counter.seeing
+                                ? String.format("pollen held %.1f / %.1f s", counter.heldS(), POLLEN_FULL_HOLD_S)
+                                : "no pollen at the sensor");
                         telemetry.addData("   color sensor", "%s  H %.0f S %.2f V %.3f  %.0f mm",
                                 counter.seeing ? "POLLEN" : "-", counter.hsv[0], counter.hsv[1], counter.hsv[2],
                                 counter.distanceMm == Double.MAX_VALUE ? -1.0 : counter.distanceMm);
@@ -863,6 +897,10 @@ public class BiobuzzPollenTeleOp extends LinearOpMode {
 
                 if (shotHoldActive) {
                     telemetry.addData("SHOT HOLD", holdNote);
+                }
+                if (aligner != null) {
+                    telemetry.addData("Auto-align", alignOffByDriver ? "OFF (gamepad2 BACK) - RT shoots without aiming"
+                            : "on (gamepad2 BACK turns it off)");
                 }
                 if (aligner == null) {
                     telemetry.addData("HIVE distance", "unknown - auto-align is off (no camera)");

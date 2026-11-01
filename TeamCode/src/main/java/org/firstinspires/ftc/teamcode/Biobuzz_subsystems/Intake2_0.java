@@ -65,8 +65,10 @@ public class Intake2_0 {
         this.telemetry = telemetry;
         timer = new ElapsedTime();
         rollers = new NGMotor(hardwareMap, telemetry, BiobuzzRobotConstants.rollers);
+        rollers.setDirection(BiobuzzRobotConstants.intakeReversed ? DcMotor.Direction.REVERSE : DcMotor.Direction.FORWARD);
         flywheels = new NGMotor(hardwareMap, telemetry, BiobuzzRobotConstants.pollenFlywheel);
         gate = findGate(hardwareMap, telemetry);
+        closeGate();   // hold the preload until the first shot opens it
         //flicker = new NGCRServo(hardwareMap, telemetry, BiobuzzRobotConstants.flicker);
         transferRollers = new NGMotor(hardwareMap, telemetry, BiobuzzRobotConstants.transferRollers);
         //interTransfer = new NGMotor(hardwareMap, telemetry, BiobuzzRobotConstants.interTransfer);
@@ -204,7 +206,10 @@ public class Intake2_0 {
             // The flag must stay true for the whole transfer and be read every loop: NGMotor starts
             // the ramp timer on the first loop it sees true and resets it when it goes false, so the
             // boost ramps up across the entire transfer and drops back to zero right after.
-            flywheels.updateFlywheels(feedingPollen || transferRollers.getPower() > 0.1);
+            // The transfer also runs slowly while intaking (TRANSFER_INTAKE_POWER, collectToGate /
+            // collectFromFlower); that must not trigger the load boost, so only a real feed counts.
+            flywheels.updateFlywheels(feedingPollen
+                    || (!intakingToGate && transferRollers.getPower() > 0.1));
             if (nectarFlywheel != null) nectarFlywheel.updateFlywheels(feedingNectar);
 
             telemetry.addData("FW Current Vel", "%.1f", flywheels.getVelocity());
@@ -285,12 +290,37 @@ public class Intake2_0 {
      */
     public Action collectToGate(double time) {
         return new SequentialAction(
+                new InstantAction(() -> intakingToGate = true),
                 new InstantAction(() -> runRollers(1)),
                 new InstantAction(() -> runTransferRollers(BiobuzzRobotConstants.TRANSFER_INTAKE_POWER)),
                 new SleepAction(time),
                 new InstantAction(() -> stopRollers()),
-                new InstantAction(() -> stopTransferRollers())
+                new InstantAction(() -> stopTransferRollers()),
+                new InstantAction(() -> intakingToGate = false)
         );
+    }
+
+    /** True while the transfer is only carrying artifacts up to the closed gate (not feeding a shot). */
+    private boolean intakingToGate = false;
+
+    /**
+     * Waits until the pollen flywheel is within flywheelAtSpeedTolerance of its target, or
+     * {@code maxS} seconds, whichever comes first. For the first shot of an auto, which would
+     * otherwise feed a wheel still spinning up from rest.
+     */
+    public Action waitForPollenSpeed(double maxS) {
+        return new Action() {
+            private long start = -1;
+
+            @Override
+            public boolean run(@NonNull TelemetryPacket p) {
+                if (start < 0) start = System.nanoTime();
+                double target = flywheels.targetVelocity;
+                boolean atSpeed = target > 0
+                        && Math.abs(target - flywheels.getVelocity()) <= BiobuzzRobotConstants.flywheelAtSpeedTolerance;
+                return !atSpeed && (System.nanoTime() - start) / 1e9 < maxS;
+            }
+        };
     }
 
     /**
@@ -329,11 +359,13 @@ public class Intake2_0 {
     public Action collectFromFlower(double time) {
         return new SequentialAction(
                 new InstantAction(() -> setFlowerRamp(BiobuzzRobotConstants.flowerRampIntakePos)),
+                new InstantAction(() -> intakingToGate = true),
                 new InstantAction(() -> runRollers(1)),
                 new InstantAction(() -> runTransferRollers(BiobuzzRobotConstants.TRANSFER_INTAKE_POWER)),
                 new SleepAction(time),
                 new InstantAction(() -> stopRollers()),
-                new InstantAction(() -> stopTransferRollers())
+                new InstantAction(() -> stopTransferRollers()),
+                new InstantAction(() -> intakingToGate = false)
         );
     }
     /**

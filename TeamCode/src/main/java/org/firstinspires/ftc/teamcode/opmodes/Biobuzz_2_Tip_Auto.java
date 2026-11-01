@@ -26,7 +26,6 @@ import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
 import com.qualcomm.robotcore.eventloop.opmode.Disabled;
 
 import org.firstinspires.ftc.teamcode.BiobuzzRobotConstants;
-import org.firstinspires.ftc.teamcode.Biobuzz_subsystems.AllianceSelector;
 import org.firstinspires.ftc.teamcode.library.NGAutoOpMode;
 import org.firstinspires.ftc.teamcode.roadrunner.MecanumDrive;
 
@@ -105,9 +104,7 @@ public class Biobuzz_2_Tip_Auto extends NGAutoOpMode{
         kit.prepare(leftShotBack, parkPose);
         kit.prepare(leftNear, parkPose);
 
-        Action shootPreLoad = new ParallelAction(
-                drive.actionBuilder(beginPose).waitSeconds(2).build(),
-                kit.transfer());
+        Action shootPreLoad = kit.preloadShot();
 
         Action IntakeWallSetandShoot = new SequentialAction(
                 kit.withWallCollect(drive.actionBuilder(beginPose)
@@ -146,8 +143,6 @@ public class Biobuzz_2_Tip_Auto extends NGAutoOpMode{
         double pollenShootingVel = BiobuzzRobotConstants.pollenFixedShootingVel;
         double nectarShootingVel = BiobuzzRobotConstants.nectarFixedShootingVel;
         while (!isStarted() && !isStopRequested()) {
-            AllianceSelector.poll(gamepad1, gamepad2);
-            AllianceSelector.show(telemetry);
             telemetry.addLine("Paths Built - Ready To Start");
             telemetry.update();
         }

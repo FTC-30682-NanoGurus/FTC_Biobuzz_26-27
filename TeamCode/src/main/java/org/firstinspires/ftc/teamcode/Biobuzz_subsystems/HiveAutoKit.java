@@ -120,8 +120,6 @@ public class HiveAutoKit {
     public static double WATCHDOG_STOP_S = 0.4;
     /** ... and stops braking early once slower than this, IN/S. */
     public static double WATCHDOG_STOP_SPEED_IN_S = 4.0;
-    /** One volley. Same as the original autos. */
-    public static double TRANSFER_S = 1.0;
 
     public final MecanumDrive drive;
     public final Intake2_0 intake;
@@ -261,7 +259,15 @@ public class HiveAutoKit {
     /** Also stows the FLOWER ramp, in case a leg back from a FLOWER was cut short. */
     public Action transfer() {
         return new SequentialAction(instant(this::stowRamp),
-                intake.feedPollen(TRANSFER_S));
+                intake.feedPollen(BiobuzzRobotConstants.cycleShootingTime));
+    }
+
+    /**
+     * The first shot of an auto: wait (at most preloadSpinUpMaxS) for the pollen flywheel, which
+     * starts from rest with the auto, to reach speed, then shoot one cycle.
+     */
+    public Action preloadShot() {
+        return new SequentialAction(intake.waitForPollenSpeed(BiobuzzRobotConstants.preloadSpinUpMaxS), transfer());
     }
 
     private void stowRamp() {
@@ -418,7 +424,7 @@ public class HiveAutoKit {
                 if (w == ShotWait.HIVE_MOVING) {
                     if (!told) log("HIVE moving - waiting for it to settle");
                     told = true;
-                    return elapsed < TIP_WAIT_MAX_S && fits(TRANSFER_S, drive.pose);
+                    return elapsed < TIP_WAIT_MAX_S && fits(BiobuzzRobotConstants.cycleShootingTime, drive.pose);
                 }
                 if (w == ShotWait.READY) return false;
                 return elapsed < GATE_MAX_WAIT_S;
@@ -489,7 +495,7 @@ public class HiveAutoKit {
         if (up == side.other()) {
             if (!mayCross) return ShotChoice.HOLD_DOWN_AGAIN;
             Pose2d dest = shotPose(side.other());
-            double need = estimateRoute(from, dest) + GATE_MAX_WAIT_S + TRANSFER_S;
+            double need = estimateRoute(from, dest) + GATE_MAX_WAIT_S + BiobuzzRobotConstants.cycleShootingTime;
             return fitsAt(matchTimeS, need, dest) ? ShotChoice.CROSS : ShotChoice.HOLD_NO_TIME;
         }
         return up == side ? ShotChoice.SHOOT_UP : ShotChoice.SHOOT_NO_VIEW;

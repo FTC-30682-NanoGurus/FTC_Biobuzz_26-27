@@ -136,7 +136,7 @@ public class Biobuzz3Tip_AlliancePreLoad_Compatible extends NGAutoOpMode{
         kit.prepareFlower(leftNear, flowerOne);
         kit.prepare(leftShotBack, parkPose);
 
-        double SOLO_FLOWER_BLOCK_S = 1.94 + 0.4 + 3.0 + 1.71 + 1.0 + 0.3;
+        double SOLO_FLOWER_BLOCK_S = 1.94 + 0.4 + 3.0 + 1.71 + BiobuzzRobotConstants.cycleShootingTime + 0.3;
 
         Action shootPreLoad = waitForAlliancePreLoadPath.build();
         Action IntakeFromFlowerOne = turnToFlowerOne.build();
@@ -188,21 +188,21 @@ public class Biobuzz3Tip_AlliancePreLoad_Compatible extends NGAutoOpMode{
 
         Action regularPath = new SequentialAction(
                 new SequentialAction(
-                        intake2_0.feedPollen(1.0)
+                        intake2_0.feedPollen(BiobuzzRobotConstants.cycleShootingTime)
                 ),
                 new SequentialAction(
                         IntakeFromFlowerOne,
                         shootFlowerOnePollen,
-                        intake2_0.feedPollen(1.0)
+                        intake2_0.feedPollen(BiobuzzRobotConstants.cycleShootingTime)
                 ),
                 new SequentialAction(
                         IntakeFromFlowerTwo,
                         shootFlowerTwoPollen,
-                        intake2_0.feedPollen(1.0)
+                        intake2_0.feedPollen(BiobuzzRobotConstants.cycleShootingTime)
                 ),
                 new SequentialAction(
                         IntakeWallSetandShoot,
-                        intake2_0.feedPollen(1.0)
+                        intake2_0.feedPollen(BiobuzzRobotConstants.cycleShootingTime)
                 ),
                 new SequentialAction(
                         kit.beginPark(),
@@ -214,18 +214,18 @@ public class Biobuzz3Tip_AlliancePreLoad_Compatible extends NGAutoOpMode{
                 HiveAutoKit.branch(() -> kit.route(drive.pose, soloStart)),
                 new ParallelAction(
                         soloShootPreLoad,
-                        intake2_0.feedPollen(1.0)
+                        intake2_0.feedPollen(BiobuzzRobotConstants.cycleShootingTime)
                 ),
                 new SequentialAction(
                         soloIntakeWallSetandShoot,
-                        intake2_0.feedPollen(1.0)
+                        intake2_0.feedPollen(BiobuzzRobotConstants.cycleShootingTime)
                 ),
                 HiveAutoKit.branch(() -> {
                     if (kit.fits(SOLO_FLOWER_BLOCK_S, leftShotBack)) {
                         return new SequentialAction(
                                 kit.flowerLeg(leftNear, soloIntakeFromFlowerOne, flowerOne, intake2_0.collectFromFlower(3)),
                                 kit.leaveFlower(soloShootFlowerOnePollen),
-                                intake2_0.feedPollen(1.0),
+                                intake2_0.feedPollen(BiobuzzRobotConstants.cycleShootingTime),
                                 kit.beginPark(),
                                 kit.leg(leftShotBack, soloPark, parkPose, null)
                         );

@@ -103,11 +103,11 @@ public class Biobuzz3Tip_HiveAuto extends NGAutoOpMode {
         kit.prepare(nearShot, parkPose);
         kit.prepare(wallShotLeft, parkPose);
 
-        double FLOWER_TWO_BLOCK_S = 5.90 + 1.84 + 1.0;
-        double WALL_TO_LEFT_S = 6.14 + 1.0;
-        double WALL_NEAR_S = 4.69 + 1.0;
+        double FLOWER_TWO_BLOCK_S = 5.90 + 1.84 + BiobuzzRobotConstants.cycleShootingTime;
+        double WALL_TO_LEFT_S = 6.14 + BiobuzzRobotConstants.cycleShootingTime;
+        double WALL_NEAR_S = 4.69 + BiobuzzRobotConstants.cycleShootingTime;
         double WALL_ONLY_S = 4.6;
-        double SOLO_FLOWER_BLOCK_S = 4.98 + 1.71 + 1.0;
+        double SOLO_FLOWER_BLOCK_S = 4.98 + 1.71 + BiobuzzRobotConstants.cycleShootingTime;
 
         Action toLeftShot = drive.actionBuilder(beginPose)
                 .setTangent(Math.toRadians(0))
