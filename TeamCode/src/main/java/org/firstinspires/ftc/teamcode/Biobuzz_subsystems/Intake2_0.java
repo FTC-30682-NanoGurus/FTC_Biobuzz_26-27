@@ -324,12 +324,15 @@ public class Intake2_0 {
     }
 
     /**
-     * One BIOBUZZ volley, as BiobuzzPollenTeleOp shoots: gate open, transfer at TRANSFER_FEED_POWER,
-     * the intake at transferPower if transferAlsoRunsIntake, for {@code time} seconds.
+     * One BIOBUZZ volley, as BiobuzzPollenTeleOp shoots: gate open, and once it has swung clear
+     * (BiobuzzRobotConstants.gateTravelS) the transfer at TRANSFER_FEED_POWER and the intake at
+     * transferPower if transferAlsoRunsIntake, for {@code time} seconds. Total: gate time + time.
      */
     public Action feedPollen(double time) {
         return new SequentialAction(
                 new InstantAction(() -> openGate()),
+                // Nothing pushes until the gate has swung clear, as in BiobuzzPollenTeleOp.
+                new SleepAction(BiobuzzRobotConstants.gateTravelS(gateClosedPos, gateOpenPos)),
                 new InstantAction(() -> feedingPollen = true),
                 new InstantAction(() -> runTransferRollers(BiobuzzRobotConstants.TRANSFER_FEED_POWER)),
                 new InstantAction(() -> {

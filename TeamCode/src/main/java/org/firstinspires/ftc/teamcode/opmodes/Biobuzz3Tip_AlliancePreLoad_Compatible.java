@@ -99,7 +99,7 @@ public class Biobuzz3Tip_AlliancePreLoad_Compatible extends NGAutoOpMode{
         TrajectoryActionBuilder turnToFlowerOne = HiveAutoKit.approachFlower(waitForAlliancePreLoadPath.endTrajectory().fresh()
                         .afterTime(0, intake2_0.deployFlowerRamp())
                         .setTangent(Math.toRadians(-32)), new Pose2d(-55, -22, Math.toRadians(-179.5)), maxVel, maxAccel)
-                .afterTime(0, intake2_0.collectFromFlower(3));
+                .afterTime(0, intake2_0.collectFromFlower(BiobuzzRobotConstants.flowerCollectTime));
 
         TrajectoryActionBuilder turnToShoot = HiveAutoKit.departFlower(turnToFlowerOne.endTrajectory().fresh(),
                         new Pose2d(-55, -22, Math.toRadians(-179.5)), maxVel, maxAccel)
@@ -109,7 +109,7 @@ public class Biobuzz3Tip_AlliancePreLoad_Compatible extends NGAutoOpMode{
                         .setTangent(Math.toRadians(-90))
                         .splineToLinearHeading(new Pose2d(0, -41, Math.toRadians(-15)), Math.toRadians(-15), maxVel, maxAccel)
                         .afterTime(0, intake2_0.deployFlowerRamp()), new Pose2d(24, -55, Math.toRadians(-90)), maxVel, maxAccel)
-                .afterTime(0, intake2_0.collectFromFlower(3));
+                .afterTime(0, intake2_0.collectFromFlower(BiobuzzRobotConstants.flowerCollectTime));
 
         TrajectoryActionBuilder crossToShoot = toFlowerTwo.endTrajectory().fresh()
                 .setTangent(Math.toRadians(90))
@@ -136,7 +136,7 @@ public class Biobuzz3Tip_AlliancePreLoad_Compatible extends NGAutoOpMode{
         kit.prepareFlower(leftNear, flowerOne);
         kit.prepare(leftShotBack, parkPose);
 
-        double SOLO_FLOWER_BLOCK_S = 1.94 + 0.4 + 3.0 + 1.71 + BiobuzzRobotConstants.cycleShootingTime + 0.3;
+        double SOLO_FLOWER_BLOCK_S = 1.94 + 0.4 + BiobuzzRobotConstants.flowerCollectTime + 1.71 + BiobuzzRobotConstants.volleyS() + 0.3;
 
         Action shootPreLoad = waitForAlliancePreLoadPath.build();
         Action IntakeFromFlowerOne = turnToFlowerOne.build();
@@ -175,7 +175,7 @@ public class Biobuzz3Tip_AlliancePreLoad_Compatible extends NGAutoOpMode{
         Action soloIntakeFromFlowerOne = new SequentialAction(
                 new ParallelAction(intake2_0.deployFlowerRamp(), kit.flowerRoute(leftNear, flowerOne)),
                 new SleepAction(0.4),
-                intake2_0.collectFromFlower(3));
+                intake2_0.collectFromFlower(BiobuzzRobotConstants.flowerCollectTime));
 
         Action soloShootFlowerOnePollen = kit.departFlower(drive.actionBuilder(flowerOne), flowerOne)
                 .splineToSplineHeading(new Pose2d(-52, -14, Math.toRadians(1)), Math.toRadians(155), maxVel, maxAccel)
@@ -223,7 +223,7 @@ public class Biobuzz3Tip_AlliancePreLoad_Compatible extends NGAutoOpMode{
                 HiveAutoKit.branch(() -> {
                     if (kit.fits(SOLO_FLOWER_BLOCK_S, leftShotBack)) {
                         return new SequentialAction(
-                                kit.flowerLeg(leftNear, soloIntakeFromFlowerOne, flowerOne, intake2_0.collectFromFlower(3)),
+                                kit.flowerLeg(leftNear, soloIntakeFromFlowerOne, flowerOne, intake2_0.collectFromFlower(BiobuzzRobotConstants.flowerCollectTime)),
                                 kit.leaveFlower(soloShootFlowerOnePollen),
                                 intake2_0.feedPollen(BiobuzzRobotConstants.cycleShootingTime),
                                 kit.beginPark(),

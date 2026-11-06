@@ -66,7 +66,7 @@ public class Biobuzz_PreLoad_Auto extends NGAutoOpMode{
         initAuto(beginPose);
 
         Pose2d leftShot = new Pose2d(-52, -14, Math.toRadians(0));
-        Pose2d parkPose = new Pose2d(-21, -59.5, Math.toRadians(180));
+        Pose2d parkPose = new Pose2d(-28.5, -60, Math.toRadians(90));
 
         HiveAutoKit kit = new HiveAutoKit(drive, intake2_0, null, telemetry, maxVel, maxAccel,
                 parkPose, leftShot, beginPose);
@@ -78,10 +78,9 @@ public class Biobuzz_PreLoad_Auto extends NGAutoOpMode{
         Action shootPreLoad = kit.preloadShot();
 
         Action parkPath = drive.actionBuilder(beginPose)
-                .setTangent(Math.toRadians(-90))
-                .splineToConstantHeading(new Vector2d(-5, -42), Math.toRadians(-180), maxVel, maxAccel)
-                .splineToConstantHeading(new Vector2d(-21, -53.5), Math.toRadians(-90), maxVel, maxAccel)
-                .splineToConstantHeading(parkPose.position, Math.toRadians(-90), maxVel, maxAccel)
+                .setTangent(Math.toRadians(-130))
+                .splineToSplineHeading(new Pose2d(-5, -48, Math.toRadians(180)), Math.toRadians(-180), maxVel, maxAccel)
+                .splineToSplineHeading(parkPose, Math.toRadians(-90), maxVel, maxAccel)
                 .build();
 
         Action park = new SequentialAction(

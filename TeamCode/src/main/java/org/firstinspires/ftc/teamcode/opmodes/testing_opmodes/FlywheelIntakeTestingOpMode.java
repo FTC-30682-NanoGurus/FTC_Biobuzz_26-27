@@ -131,8 +131,10 @@ public class FlywheelIntakeTestingOpMode extends LinearOpMode {
         kpStable = NGMotorFlywheelTuner.getStableKp(flywheel);
         alpha = NGMotorFlywheelTuner.getAlpha(flywheel);
         recoveryThreshold = NGMotorFlywheelTuner.getRecoveryThreshold(flywheel);
-        kLoad = NGMotor.kLoad;
-        kRamp = NGMotor.kRamp;
+        kLoad = BiobuzzRobotConstants.flywheelKLoad;
+        kRamp = BiobuzzRobotConstants.flywheelKRamp;
+        NGMotor.kLoad = kLoad;
+        NGMotor.kRamp = kRamp;
 //kF: 0.0007
 //kP stable: 0.005
 //kP recovery: 0.0320

@@ -84,15 +84,16 @@ public class BiobuzzHiveDecisionPreview extends LinearOpMode {
     public static int EVENT_LINES = 6;
     public static double TELEMETRY_INTERVAL_MS = 250;
 
-    private static final double F1_BLOCK_S = 1.94 + 0.4 + 3.0 + 1.71 + BiobuzzRobotConstants.cycleShootingTime + 0.3;
-    private static final double F2_FROM_LEFT_S = 2.90 + 3.0 + 3.09 + BiobuzzRobotConstants.cycleShootingTime + 0.3;
-    private static final double F2_FROM_RIGHT_S = 1.98 + 3.0 + 3.09 + BiobuzzRobotConstants.cycleShootingTime + 0.3;
+    private static final double F1_BLOCK_S = 1.96 + BiobuzzRobotConstants.flowerCollectTime + 1.71 + BiobuzzRobotConstants.volleyS() + 0.3;
+    private static final double F1_TO_NEAR_S = 1.96 + BiobuzzRobotConstants.flowerCollectTime + 1.93 + BiobuzzRobotConstants.volleyS() + 0.3;
+    private static final double F2_FROM_LEFT_S = 2.90 + BiobuzzRobotConstants.flowerCollectTime + 3.09 + BiobuzzRobotConstants.volleyS() + 0.3;
+    private static final double F2_FROM_RIGHT_S = 1.98 + BiobuzzRobotConstants.flowerCollectTime + 3.09 + BiobuzzRobotConstants.volleyS() + 0.3;
 
-    private static final double FLOWER_TWO_BLOCK_S = 5.90 + 1.84 + BiobuzzRobotConstants.cycleShootingTime;
-    private static final double WALL_TO_LEFT_S = 6.14 + BiobuzzRobotConstants.cycleShootingTime;
-    private static final double WALL_NEAR_S = 4.69 + BiobuzzRobotConstants.cycleShootingTime;
+    private static final double FLOWER_TWO_BLOCK_S = 2.90 + BiobuzzRobotConstants.flowerCollectTime + 1.84 + BiobuzzRobotConstants.volleyS();
+    private static final double WALL_TO_LEFT_S = 6.14 + BiobuzzRobotConstants.volleyS();
+    private static final double WALL_NEAR_S = 4.69 + BiobuzzRobotConstants.volleyS();
     private static final double WALL_ONLY_S = 4.6;
-    private static final double SOLO_FLOWER_BLOCK_S = 4.98 + 1.71 + BiobuzzRobotConstants.cycleShootingTime;
+    private static final double SOLO_FLOWER_BLOCK_S = 1.58 + 0.4 + BiobuzzRobotConstants.flowerCollectTime + 1.71 + BiobuzzRobotConstants.volleyS();
 
     // Biobuzz_2_Tip_HiveAuto poses
     private final Pose2d begin2 = new Pose2d(61, -14, Math.toRadians(180));
@@ -101,7 +102,7 @@ public class BiobuzzHiveDecisionPreview extends LinearOpMode {
     private final Pose2d rightShot2 = new Pose2d(61, -14, Math.toRadians(180));
     private final Pose2d wallSet = new Pose2d(62, -58, Math.toRadians(360));
     private final Pose2d rightNear = new Pose2d(56.69, -40.01, Math.toRadians(155));
-    private final Pose2d leftNear = new Pose2d(-53.48, -43.82, Math.toRadians(30));
+    private final Pose2d leftNear = new Pose2d(-55.46, -40.00, Math.toRadians(25.0));
     private final Pose2d flowerOne2 = new Pose2d(-55, -22, Math.toRadians(180));
     private final Pose2d flowerTwo = new Pose2d(24, -55, Math.toRadians(-90));
     private final Pose2d park2 = new Pose2d(-49.5, -58, Math.toRadians(90));
@@ -125,8 +126,9 @@ public class BiobuzzHiveDecisionPreview extends LinearOpMode {
     private VelConstraint maxVel, maxIntakeVel;
     private AccelConstraint maxAccel;
 
+    private Leg parkFromNear2;
     private Leg wallSetToLeftNear, wallSetToRightNear, leftNearToFlowerOne, backToShoot, leftToFlowerTwo,
-            rightNearToFlowerTwo, flowerTwoToLeftNear;
+            rightNearToFlowerTwo, flowerTwoToLeftNear, flowerOneToLeftNear;
     private Leg toLeftShot, toFlowerOne, backFromFlowerOne, toFlowerTwo, crossToRight, wallToLeft, wallToNear,
             wallOnly, parkFromLeft, soloWallSet, soloFlower, soloBack;
     private final Map<String, Leg> routeCache = new HashMap<>();
@@ -294,8 +296,8 @@ public class BiobuzzHiveDecisionPreview extends LinearOpMode {
         }
 
         void transfer(String what) {
-            line(String.format("%s (%.1f s)", what, BiobuzzRobotConstants.cycleShootingTime));
-            t += BiobuzzRobotConstants.cycleShootingTime;
+            line(String.format("%s (%.1f s)", what, BiobuzzRobotConstants.volleyS()));
+            t += BiobuzzRobotConstants.volleyS();
         }
 
         void mark(int cp) {
@@ -354,6 +356,7 @@ public class BiobuzzHiveDecisionPreview extends LinearOpMode {
         kit2.prepareDefaults();
         kit2.prepareFlower(leftNear, flowerOne2);
         kit2.prepareFromFlower(flowerTwo, leftNear);
+        kit2.prepareFromFlower(flowerOne2, leftNear);
         kit2.prepareFlower(rightNear, flowerTwo);
         kit2.prepare(leftNear, park2);
         kit2.prepare(leftShotBack2, park2);
@@ -450,7 +453,7 @@ public class BiobuzzHiveDecisionPreview extends LinearOpMode {
                             runShot = cp.kit.shotChoice(cp.shotSide, true, cp.freshS, drive.pose, runDecisionT);
                         }
                         if (cp.postVolleyDecision() && shoots(runShot)) {
-                            runWait = new SleepAction(BiobuzzRobotConstants.cycleShootingTime);
+                            runWait = new SleepAction(BiobuzzRobotConstants.volleyS());
                             runPhase = 2;
                         } else {
                             runWait = null;
@@ -522,36 +525,54 @@ public class BiobuzzHiveDecisionPreview extends LinearOpMode {
     private void buildCheckpoints() {
         HiveAutoKit k = kit2;
         double fresh = HiveAutoKit.GATE_FRESH_S;
-        cps2.add(new Checkpoint(0, "START: preload volley, then own-tip check on RIGHT", begin2, k, null, 0) {
+        cps2.add(new Checkpoint(0, "START: preload volley, then wait for the RIGHT tip to start", begin2, k, null, 0) {
             @Override
             Action makeWait() {
-                return kit.waitForTipStart(Side.RIGHT, HiveAutoKit.OWN_TIP_GRACE_S);
+                return kit.waitForOwnTipStart(Side.RIGHT, Biobuzz_2_Tip_HiveAuto.TIP_START_WAIT_S);
             }
 
             @Override
             String waitStatus() {
-                return String.format("waitForTipStart(RIGHT, %.1f s): tipping %s, settled up %s -> %s",
-                        HiveAutoKit.OWN_TIP_GRACE_S, yn(hive.tipping(Side.RIGHT, HiveWatcher.TIP_MAX_S)),
-                        yn(hive.settledUp(Side.RIGHT, 0.4)),
-                        !hive.cameraHealthy() || hive.tipping(Side.RIGHT, HiveWatcher.TIP_MAX_S)
-                                || !hive.settledUp(Side.RIGHT, 0.4) ? "ends now" : "keeps waiting");
+                return String.format("waitForOwnTipStart(RIGHT, %.1f s): RIGHT tipping %s, RIGHT down %s, LEFT settled up %s -> %s",
+                        Biobuzz_2_Tip_HiveAuto.TIP_START_WAIT_S, yn(hive.tipping(Side.RIGHT, HiveWatcher.TIP_MAX_S)),
+                        yn(hive.confirmedDown(Side.RIGHT, HiveWatcher.TIP_MAX_S)), yn(hive.settledUp(Side.LEFT, 0.6)),
+                        kit.ownTipStarted(Side.RIGHT) ? "ends now" : "keeps waiting (no tip by the limit = not tipped)");
             }
 
             @Override
             Decision decide(ShotChoice shot) {
-                if (hive.settledUp(Side.RIGHT, 0.4)) {
-                    return new Decision("RIGHT CELL did not tip - wall set, angled shot at RIGHT", BiobuzzHiveDecisionPreview.this::t2NotTipped);
+                if (kit.ownTipStarted(Side.RIGHT)) {
+                    return new Decision("RIGHT CELL tip started - wall set to the LEFT side", BiobuzzHiveDecisionPreview.this::t2Tipped);
                 }
-                return new Decision(hive.tipping(Side.RIGHT, 5.0) ? "RIGHT CELL seen tipping"
-                        : "no RIGHT CELL at rest in view - assuming it tipped", BiobuzzHiveDecisionPreview.this::t2Tipped);
+                return new Decision("no tip start seen - assuming no tip, wall set at RIGHT", BiobuzzHiveDecisionPreview.this::t2NotTipped);
             }
         });
         cps2.add(shotCp(1, "TIPPED plan: wall-set shot at LEFT from leftNear", leftNear, k, Side.LEFT, fresh, this::t2AfterT1));
         cps2.add(shotCp(2, "TIPPED plan: flower-one shot at LEFT", leftShotBack2, k, Side.LEFT, fresh, this::t2AfterT2));
-        cps2.add(shotCp(3, "TIPPED plan: flower-two backup shot at LEFT", leftNear, k, Side.LEFT, fresh, this::park2));
+        cps2.add(new Checkpoint(3, "TIPPED plan: flower-two safety set, always shot at LEFT", leftNear, k, null, 0) {
+            @Override
+            Action makeWait() {
+                return kit.committedShotWait();
+            }
+
+            @Override
+            String waitStatus() {
+                return hive.cameraHealthy() && hive.hiveMoving(HiveAutoKit.HIVE_STILL_S)
+                        ? String.format("HIVE moving - waits up to %.1f s for it to settle", HiveAutoKit.TIP_WAIT_MAX_S)
+                        : "ready - shoots whatever the CELL state";
+            }
+
+            @Override
+            Decision decide(ShotChoice shot) {
+                return new Decision("committed volley at LEFT", s -> {
+                    s.transfer("volley at LEFT (committed)");
+                    park2(s);
+                });
+            }
+        });
         cps2.add(shotCp(4, "NOT TIPPED plan: angled wall-set shot at RIGHT", rightNear, k, Side.RIGHT, 8.0, this::t2AfterN1));
         cps2.add(shotCp(5, "NOT TIPPED plan: flower-two shot at LEFT", leftNear, k, Side.LEFT, fresh, this::t2AfterN2));
-        cps2.add(shotCp(6, "NOT TIPPED plan: flower-one shot at LEFT", leftShotBack2, k, Side.LEFT, fresh, this::park2));
+        cps2.add(shotCp(6, "NOT TIPPED plan: flower-one shot at LEFT from leftNear", leftNear, k, Side.LEFT, fresh, this::park2));
 
         k = kit3;
         cps3.add(new Checkpoint(0, "START: at LEFT shot, wait for the partner's tip", leftShot3, k, null, 0) {
@@ -634,10 +655,11 @@ public class BiobuzzHiveDecisionPreview extends LinearOpMode {
         if (!s.fits("flower two", F2_FROM_LEFT_S, leftNear)) {
             s.note("skipping flower two");
         } else {
-            s.note("flower two - backup shot at the LEFT CELL if it has not tipped");
-            s.flowerLeg(leftShotBack2, leftToFlowerTwo, flowerTwo, 3.0);
+            s.note("flower two - safety set, always shot at LEFT");
+            s.flowerLeg(leftShotBack2, leftToFlowerTwo, flowerTwo, BiobuzzRobotConstants.flowerCollectTime);
             s.fromFlowerLeg(flowerTwo, flowerTwoToLeftNear, leftNear);
-            s.shot(3, Side.LEFT);
+            s.mark(3);
+            s.transfer("committedShot(LEFT) - volley whatever the CELL state");
         }
         park2(s);
     }
@@ -652,7 +674,7 @@ public class BiobuzzHiveDecisionPreview extends LinearOpMode {
         if (!s.fits("flower two", F2_FROM_RIGHT_S, leftNear)) {
             s.note("skipping flower two");
         } else {
-            s.flowerLeg(rightNear, rightNearToFlowerTwo, flowerTwo, 3.0);
+            s.flowerLeg(rightNear, rightNearToFlowerTwo, flowerTwo, BiobuzzRobotConstants.flowerCollectTime);
             s.fromFlowerLeg(flowerTwo, flowerTwoToLeftNear, leftNear);
             s.shot(5, Side.LEFT);
         }
@@ -660,7 +682,13 @@ public class BiobuzzHiveDecisionPreview extends LinearOpMode {
     }
 
     private void t2AfterN2(Sim s) {
-        t2FlowerOne(s, 6);
+        if (!s.fits("flower one", F1_TO_NEAR_S, leftNear)) {
+            s.note("skipping flower one");
+        } else {
+            s.flowerLeg(leftNear, leftNearToFlowerOne, flowerOne2, BiobuzzRobotConstants.flowerCollectTime);
+            s.fromFlowerLeg(flowerOne2, flowerOneToLeftNear, leftNear);
+            s.shot(6, Side.LEFT);
+        }
         park2(s);
     }
 
@@ -669,14 +697,14 @@ public class BiobuzzHiveDecisionPreview extends LinearOpMode {
             s.note("skipping flower one");
             return;
         }
-        s.flowerLeg(leftNear, leftNearToFlowerOne, flowerOne2, 3.0);
+        s.flowerLeg(leftNear, leftNearToFlowerOne, flowerOne2, BiobuzzRobotConstants.flowerCollectTime);
         s.fromFlowerLeg(flowerOne2, backToShoot, leftShotBack2);
         s.shot(cp, Side.LEFT);
     }
 
     private void park2(Sim s) {
         s.note("parking");
-        s.route(park2);
+        s.leg(leftNear, parkFromNear2, park2, 0);
         s.parked();
     }
 
@@ -684,7 +712,7 @@ public class BiobuzzHiveDecisionPreview extends LinearOpMode {
 
     private void nominal3(Sim s) {
         s.transfer("preload volley into LEFT");
-        s.flowerLeg(leftShot3, toFlowerOne, flowerOne3, 3.0);
+        s.flowerLeg(leftShot3, toFlowerOne, flowerOne3, BiobuzzRobotConstants.flowerCollectTime);
         s.drive(backFromFlowerOne, leftShotAfterFlower);
         s.shot(1, Side.LEFT);
         afterN1(s);
@@ -696,7 +724,7 @@ public class BiobuzzHiveDecisionPreview extends LinearOpMode {
             park3(s);
             return;
         }
-        s.flowerLeg(leftShotAfterFlower, toFlowerTwo, flowerTwo, 3.0);
+        s.flowerLeg(leftShotAfterFlower, toFlowerTwo, flowerTwo, BiobuzzRobotConstants.flowerCollectTime);
         s.mark(2);
         Side up = s.forecast.live ? hive.upCell(15.0) : s.forecast.f2Up;
         s.note("flower-two decision, upCell(15 s) " + s.source() + ": " + (up == null ? "none" : up));
@@ -766,7 +794,7 @@ public class BiobuzzHiveDecisionPreview extends LinearOpMode {
             park3(s);
             return;
         }
-        s.flowerLeg(wallShotLeft, soloFlower, flowerOneSolo, 3.0);
+        s.flowerLeg(wallShotLeft, soloFlower, flowerOneSolo, BiobuzzRobotConstants.flowerCollectTime);
         s.drive(soloBack, soloBackEnd);
         s.shot(9, Side.LEFT);
         park3(s);
@@ -782,10 +810,10 @@ public class BiobuzzHiveDecisionPreview extends LinearOpMode {
     private void computeNominalTimes() {
         Map<Integer, Double> m2 = new HashMap<>();
         // kit.preloadShot(): flywheel spin-up (at most preloadSpinUpMaxS) + one cycle.
-        double preload = BiobuzzRobotConstants.preloadSpinUpMaxS + BiobuzzRobotConstants.cycleShootingTime;
+        double preload = BiobuzzRobotConstants.preloadSpinUpMaxS + BiobuzzRobotConstants.volleyS();
         m2.put(0, preload);
         t2Tipped(new Sim(kit2, preload, begin2, new Forecast(false, null, null), m2));
-        t2NotTipped(new Sim(kit2, preload + HiveAutoKit.OWN_TIP_GRACE_S, begin2, new Forecast(false, null, null), m2));
+        t2NotTipped(new Sim(kit2, preload + Biobuzz_2_Tip_HiveAuto.TIP_START_WAIT_S, begin2, new Forecast(false, null, null), m2));
         for (Checkpoint c : cps2) c.nominalT = m2.containsKey(c.id) ? m2.get(c.id) : Double.NaN;
 
         Map<Integer, Double> m3 = new HashMap<>();
@@ -859,11 +887,11 @@ public class BiobuzzHiveDecisionPreview extends LinearOpMode {
                 .splineToSplineHeading(wallSet, Math.toRadians(25), maxIntakeVel, maxAccel)
                 .waitSeconds(dwell2)
                 .setReversed(true)
-                .splineToLinearHeading(new Pose2d(20, -48, Math.toRadians(360)), Math.toRadians(-180), maxVel, maxAccel)
-                .splineToLinearHeading(new Pose2d(-33, -44, Math.toRadians(360)), Math.toRadians(170), maxVel, maxAccel)
+                .splineToLinearHeading(new Pose2d(20, -42, Math.toRadians(360)), Math.toRadians(-180), maxVel, maxAccel)
+                .splineToLinearHeading(new Pose2d(-33, -40, Math.toRadians(360)), Math.toRadians(180), maxVel, maxAccel)
                 .splineToSplineHeading(leftNear, Math.toRadians(180), maxVel, maxAccel)
                 .build()),
-                "start -> wall set (62,-58,0) slow, dwell -> (20,-48,0) -> (-33,-44,0) -> leftNear (-53.5,-43.8,30)");
+                "start -> wall set (62,-58,0) slow, dwell -> (20,-42,0) -> (-33,-40,0) -> leftNear (-55.5,-40.0,25)");
 
         wallSetToRightNear = new Leg("wallSetToRightNear", wallCollect(new SequentialAction(
                 drive.actionBuilder(begin2)
@@ -880,8 +908,9 @@ public class BiobuzzHiveDecisionPreview extends LinearOpMode {
 
         Action r = kit2.flowerRoute(leftNear, flowerOne2);
         leftNearToFlowerOne = new Leg("leftNearToFlowerOne", new SequentialAction(
-                new ParallelAction(noop(), r), new SleepAction(0.4), collect(3)),
-                "ramp down + route [" + kit2.lastPattern + "] leftNear -> staging -> straight in to flowerOne (-55,-22,180), 0.4 s, collect 3 s");
+                new ParallelAction(noop(), r), collect(BiobuzzRobotConstants.flowerCollectTime)),
+                "ramp down + route [" + kit2.lastPattern + "] leftNear -> staging -> straight in to flowerOne (-55,-22,180), collect "
+                        + BiobuzzRobotConstants.flowerCollectTime + " s");
 
         backToShoot = new Leg("backToShoot", kit2.departFlower(drive.actionBuilder(flowerOne2), flowerOne2)
                 .splineToSplineHeading(new Pose2d(-52, -14, Math.toRadians(1)), Math.toRadians(155), maxVel, maxAccel)
@@ -892,20 +921,37 @@ public class BiobuzzHiveDecisionPreview extends LinearOpMode {
                         .setTangent(Math.toRadians(-90))
                         .splineToLinearHeading(new Pose2d(0, -41, Math.toRadians(-15)), Math.toRadians(-15), maxVel, maxAccel)
                         .afterTime(0, noop()), flowerTwo)
-                .afterTime(0, collect(3))
+                .afterTime(0, collect(BiobuzzRobotConstants.flowerCollectTime))
                 .build(),
                 "(-52,-14,360) -> (0,-41,-15), ramp down -> staging " + fmt(HiveAutoKit.flowerStaging(flowerTwo))
-                        + " -> straight in to flowerTwo (24,-55,-90), collect 3 s");
+                        + " -> straight in to flowerTwo (24,-55,-90), collect " + BiobuzzRobotConstants.flowerCollectTime + " s");
 
         r = kit2.flowerRoute(rightNear, flowerTwo);
         rightNearToFlowerTwo = new Leg("rightNearToFlowerTwo", new SequentialAction(
-                new ParallelAction(noop(), r), collect(3)),
-                "ramp down + route [" + kit2.lastPattern + "] rightNear -> staging -> straight in to flowerTwo (24,-55,-90), collect 3 s");
+                new ParallelAction(noop(), r), collect(BiobuzzRobotConstants.flowerCollectTime)),
+                "ramp down + route [" + kit2.lastPattern + "] rightNear -> staging -> straight in to flowerTwo (24,-55,-90), collect "
+                        + BiobuzzRobotConstants.flowerCollectTime + " s");
 
-        r = kit2.routeFromFlower(flowerTwo, leftNear);
-        flowerTwoToLeftNear = new Leg("flowerTwoToLeftNear", r,
-                "flowerTwo, ramp down -> straight back to " + fmtV(HiveAutoKit.flowerDepart(flowerTwo)) + ", ramp up + route ["
-                        + kit2.lastPattern + "] -> leftNear (-53.5,-43.8,30)");
+        flowerTwoToLeftNear = new Leg("flowerTwoToLeftNear", drive.actionBuilder(flowerTwo)
+                .strafeToConstantHeading(HiveAutoKit.flowerDepart(flowerTwo), maxVel, maxAccel)
+                .setTangent(Math.toRadians(180))
+                .splineToSplineHeading(new Pose2d(0, -40, Math.toRadians(0)), Math.toRadians(180), maxVel, maxAccel)
+                .splineToSplineHeading(new Pose2d(-30, -40, Math.toRadians(0)), Math.toRadians(180), maxVel, maxAccel)
+                .splineToSplineHeading(leftNear, Math.toRadians(180), maxVel, maxAccel)
+                .build(),
+                "flowerTwo, ramp down -> straight back to " + fmtV(HiveAutoKit.flowerDepart(flowerTwo))
+                        + " (stop, ramp up) -> (0,-40,0) -> (-30,-40,0) -> leftNear (-55.5,-40.0,25)");
+
+        parkFromNear2 = new Leg("parkFromNear", drive.actionBuilder(leftNear)
+                .setTangent(Math.toRadians(-60))
+                .splineToSplineHeading(park2, Math.toRadians(-90), maxVel, maxAccel)
+                .build(),
+                "leftNear -> park (-49.5,-58,90)");
+
+        r = kit2.routeFromFlower(flowerOne2, leftNear);
+        flowerOneToLeftNear = new Leg("flowerOneToLeftNear", r,
+                "flowerOne, ramp down -> straight back to " + fmtV(HiveAutoKit.flowerDepart(flowerOne2)) + ", ramp up + route ["
+                        + kit2.lastPattern + "] -> leftNear (-55.5,-40.0,25)");
 
         toLeftShot = new Leg("toLeftShot", drive.actionBuilder(begin3)
                 .setTangent(Math.toRadians(0))
@@ -916,10 +962,10 @@ public class BiobuzzHiveDecisionPreview extends LinearOpMode {
         toFlowerOne = new Leg("toFlowerOne", kit3.approachFlower(drive.actionBuilder(leftShot3)
                         .afterTime(0, noop())
                         .setTangent(Math.toRadians(-32)), flowerOne3)
-                .afterTime(0, collect(3))
+                .afterTime(0, collect(BiobuzzRobotConstants.flowerCollectTime))
                 .build(),
                 "leftShot, ramp down -> staging " + fmt(HiveAutoKit.flowerStaging(flowerOne3))
-                        + " -> straight in to flowerOne (-55,-22,-179.5), collect 3 s");
+                        + " -> straight in to flowerOne (-55,-22,-179.5), collect " + BiobuzzRobotConstants.flowerCollectTime + " s");
 
         backFromFlowerOne = new Leg("backFromFlowerOne", kit3.departFlower(drive.actionBuilder(flowerOne3), flowerOne3)
                 .splineToSplineHeading(leftShotAfterFlower, Math.toRadians(155), maxVel, maxAccel)
@@ -930,10 +976,10 @@ public class BiobuzzHiveDecisionPreview extends LinearOpMode {
                         .setTangent(Math.toRadians(-90))
                         .splineToLinearHeading(new Pose2d(0, -41, Math.toRadians(-15)), Math.toRadians(-15), maxVel, maxAccel)
                         .afterTime(0, noop()), flowerTwo)
-                .afterTime(0, collect(3))
+                .afterTime(0, collect(BiobuzzRobotConstants.flowerCollectTime))
                 .build(),
                 "(-52,-14,1) -> (0,-41,-15), ramp down -> staging " + fmt(HiveAutoKit.flowerStaging(flowerTwo))
-                        + " -> straight in to flowerTwo (24,-55,-90), collect 3 s");
+                        + " -> straight in to flowerTwo (24,-55,-90), collect " + BiobuzzRobotConstants.flowerCollectTime + " s");
 
         crossToRight = new Leg("crossToRight", drive.actionBuilder(flowerTwo)
                 .setTangent(Math.toRadians(90))
@@ -989,10 +1035,10 @@ public class BiobuzzHiveDecisionPreview extends LinearOpMode {
         soloFlower = new Leg("soloFlower", kit3.approachFlower(drive.actionBuilder(wallShotLeft)
                         .afterTime(0, noop())
                         .setTangent(Math.toRadians(-27)), flowerOneSolo)
-                .afterTime(0.4, collect(3))
+                .afterTime(0.4, collect(BiobuzzRobotConstants.flowerCollectTime))
                 .build(),
                 "wallShotLeft, ramp down -> staging " + fmt(HiveAutoKit.flowerStaging(flowerOneSolo))
-                        + " -> straight in to flowerOne (-55,-22,180), collect 3 s from 0.4 s");
+                        + " -> straight in to flowerOne (-55,-22,180), collect " + BiobuzzRobotConstants.flowerCollectTime + " s from 0.4 s");
 
         soloBack = new Leg("soloBack", kit3.departFlower(drive.actionBuilder(flowerOneSolo), flowerOneSolo)
                 .splineToSplineHeading(soloBackEnd, Math.toRadians(155), maxVel, maxAccel)

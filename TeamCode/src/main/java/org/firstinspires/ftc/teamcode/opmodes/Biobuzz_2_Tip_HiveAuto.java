@@ -11,7 +11,6 @@ import com.acmerobotics.roadrunner.ParallelAction;
 import com.acmerobotics.roadrunner.Pose2d;
 import com.acmerobotics.roadrunner.Rotation2dDual;
 import com.acmerobotics.roadrunner.SequentialAction;
-import com.acmerobotics.roadrunner.SleepAction;
 import com.acmerobotics.roadrunner.Vector2d;
 import com.acmerobotics.roadrunner.VelConstraint;
 import com.acmerobotics.roadrunner.ftc.Actions;
@@ -31,6 +30,7 @@ import java.util.Arrays;
 @Autonomous
 public class Biobuzz_2_Tip_HiveAuto extends NGAutoOpMode {
     public static double WALL_SET_DWELL_S = 0.25;
+    public static double TIP_START_WAIT_S = 3.5;
 
     @Override
     public void runOpMode() throws InterruptedException {
@@ -81,7 +81,7 @@ public class Biobuzz_2_Tip_HiveAuto extends NGAutoOpMode {
         Pose2d rightShot = new Pose2d(61, -14, Math.toRadians(180));
         Pose2d wallSet = new Pose2d(62, -58, Math.toRadians(360));
         Pose2d rightNear = new Pose2d(56.69, -40.01, Math.toRadians(155));
-        Pose2d leftNear = new Pose2d(-53.48, -43.82, Math.toRadians(30));
+        Pose2d leftNear = new Pose2d(-55.46, -40.00, Math.toRadians(25.0));
         Pose2d flowerOne = new Pose2d(-55, -22, Math.toRadians(180));
         Pose2d flowerTwo = new Pose2d(24, -55, Math.toRadians(-90));
         Pose2d parkPose = new Pose2d(-49.5, -58, Math.toRadians(90));
@@ -95,21 +95,23 @@ public class Biobuzz_2_Tip_HiveAuto extends NGAutoOpMode {
         kit.prepareDefaults();
         kit.prepareFlower(leftNear, flowerOne);
         kit.prepareFromFlower(flowerTwo, leftNear);
+        kit.prepareFromFlower(flowerOne, leftNear);
         kit.prepareFlower(rightNear, flowerTwo);
         kit.prepare(leftNear, parkPose);
         kit.prepare(leftShotBack, parkPose);
 
-        double F1_BLOCK_S = 1.94 + 0.4 + 3.0 + 1.71 + BiobuzzRobotConstants.cycleShootingTime + 0.3;
-        double F2_FROM_LEFT_S = 2.90 + 3.0 + 3.09 + BiobuzzRobotConstants.cycleShootingTime + 0.3;
-        double F2_FROM_RIGHT_S = 1.98 + 3.0 + 3.09 + BiobuzzRobotConstants.cycleShootingTime + 0.3;
+        double F1_BLOCK_S = 1.96 + BiobuzzRobotConstants.flowerCollectTime + 1.71 + BiobuzzRobotConstants.volleyS() + 0.3;
+        double F1_TO_NEAR_S = 1.96 + BiobuzzRobotConstants.flowerCollectTime + 1.93 + BiobuzzRobotConstants.volleyS() + 0.3;
+        double F2_FROM_LEFT_S = 2.90 + BiobuzzRobotConstants.flowerCollectTime + 3.09 + BiobuzzRobotConstants.volleyS() + 0.3;
+        double F2_FROM_RIGHT_S = 1.98 + BiobuzzRobotConstants.flowerCollectTime + 3.09 + BiobuzzRobotConstants.volleyS() + 0.3;
 
         Action wallSetToLeftNear = kit.withWallCollect(drive.actionBuilder(beginPose)
                 .setTangent(Math.toRadians(-155))
                 .splineToSplineHeading(wallSet, Math.toRadians(25), maxIntakeVel, maxAccel)
                 .waitSeconds(WALL_SET_DWELL_S)
                 .setReversed(true)
-                .splineToLinearHeading(new Pose2d(20, -48, Math.toRadians(360)), Math.toRadians(-180), maxVel, maxAccel)
-                .splineToLinearHeading(new Pose2d(-33, -44, Math.toRadians(360)), Math.toRadians(170), maxVel, maxAccel)
+                .splineToLinearHeading(new Pose2d(20, -42, Math.toRadians(360)), Math.toRadians(-180), maxVel, maxAccel)
+                .splineToLinearHeading(new Pose2d(-33, -40, Math.toRadians(360)), Math.toRadians(180), maxVel, maxAccel)
                 .splineToSplineHeading(leftNear, Math.toRadians(180), maxVel, maxAccel)
                 .build());
 
@@ -128,8 +130,7 @@ public class Biobuzz_2_Tip_HiveAuto extends NGAutoOpMode {
 
         Action leftNearToFlowerOne = new SequentialAction(
                 new ParallelAction(intake2_0.deployFlowerRamp(), kit.flowerRoute(leftNear, flowerOne)),
-                new SleepAction(0.4),
-                intake2_0.collectFromFlower(3));
+                intake2_0.collectFromFlower(BiobuzzRobotConstants.flowerCollectTime));
 
         Action backToShoot = kit.departFlower(drive.actionBuilder(flowerOne), flowerOne)
                 .splineToSplineHeading(new Pose2d(-52, -14, Math.toRadians(1)), Math.toRadians(155), maxVel, maxAccel)
@@ -139,23 +140,41 @@ public class Biobuzz_2_Tip_HiveAuto extends NGAutoOpMode {
                         .setTangent(Math.toRadians(-90))
                         .splineToLinearHeading(new Pose2d(0, -41, Math.toRadians(-15)), Math.toRadians(-15), maxVel, maxAccel)
                         .afterTime(0, intake2_0.deployFlowerRamp()), flowerTwo)
-                .afterTime(0, intake2_0.collectFromFlower(3))
+                .afterTime(0, intake2_0.collectFromFlower(BiobuzzRobotConstants.flowerCollectTime))
                 .build();
 
         Action rightNearToFlowerTwo = new SequentialAction(
                 new ParallelAction(intake2_0.deployFlowerRamp(), kit.flowerRoute(rightNear, flowerTwo)),
-                intake2_0.collectFromFlower(3));
+                intake2_0.collectFromFlower(BiobuzzRobotConstants.flowerCollectTime));
 
-        Action flowerTwoToLeftNear = kit.routeFromFlower(flowerTwo, leftNear);
+        Action flowerTwoToLeftNear = drive.actionBuilder(flowerTwo)
+                .strafeToConstantHeading(HiveAutoKit.flowerDepart(flowerTwo), maxVel, maxAccel)
+                .setTangent(Math.toRadians(180))
+                .splineToSplineHeading(new Pose2d(0, -40, Math.toRadians(0)), Math.toRadians(180), maxVel, maxAccel)
+                .splineToSplineHeading(new Pose2d(-30, -40, Math.toRadians(0)), Math.toRadians(180), maxVel, maxAccel)
+                .splineToSplineHeading(leftNear, Math.toRadians(180), maxVel, maxAccel)
+                .build();
+
+        Action flowerOneToLeftNear = kit.routeFromFlower(flowerOne, leftNear);
 
         Action flowerOneBlock = new SequentialAction(
-                kit.flowerLeg(leftNear, leftNearToFlowerOne, flowerOne, intake2_0.collectFromFlower(3)),
+                kit.flowerLeg(leftNear, leftNearToFlowerOne, flowerOne, intake2_0.collectFromFlower(BiobuzzRobotConstants.flowerCollectTime)),
                 kit.fromFlowerLeg(flowerOne, backToShoot, leftShotBack),
                 kit.shotPoint(Side.LEFT));
 
+        Action flowerOneBlockToNear = new SequentialAction(
+                kit.flowerLeg(leftNear, leftNearToFlowerOne, flowerOne, intake2_0.collectFromFlower(BiobuzzRobotConstants.flowerCollectTime)),
+                kit.fromFlowerLeg(flowerOne, flowerOneToLeftNear, leftNear),
+                kit.shotPoint(Side.LEFT));
+
+        Action parkFromNear = drive.actionBuilder(leftNear)
+                .setTangent(Math.toRadians(-60))
+                .splineToSplineHeading(parkPose, Math.toRadians(-90), maxVel, maxAccel)
+                .build();
+
         Action park = new SequentialAction(
                 kit.beginPark(),
-                HiveAutoKit.branch(() -> kit.route(drive.pose, parkPose)));
+                kit.leg(leftNear, parkFromNear, parkPose, null));
 
         Action tippedPlan = new SequentialAction(
                 wallSetToLeftNear,
@@ -172,11 +191,11 @@ public class Biobuzz_2_Tip_HiveAuto extends NGAutoOpMode {
                         kit.log("no time for flower two");
                         return kit.note("skipping flower two");
                     }
-                    kit.log("flower two - backup shot at the LEFT CELL if it has not tipped");
+                    kit.log("flower two - safety set, always shot at LEFT");
                     return new SequentialAction(
-                            kit.flowerLeg(leftShotBack, leftToFlowerTwo, flowerTwo, intake2_0.collectFromFlower(3)),
+                            kit.flowerLeg(leftShotBack, leftToFlowerTwo, flowerTwo, intake2_0.collectFromFlower(BiobuzzRobotConstants.flowerCollectTime)),
                             kit.fromFlowerLeg(flowerTwo, flowerTwoToLeftNear, leftNear),
-                            kit.shotPoint(Side.LEFT));
+                            kit.committedShot(Side.LEFT));
                 }),
                 park);
 
@@ -189,29 +208,29 @@ public class Biobuzz_2_Tip_HiveAuto extends NGAutoOpMode {
                         return kit.note("skipping flower two");
                     }
                     return new SequentialAction(
-                            kit.flowerLeg(rightNear, rightNearToFlowerTwo, flowerTwo, intake2_0.collectFromFlower(3)),
+                            kit.flowerLeg(rightNear, rightNearToFlowerTwo, flowerTwo, intake2_0.collectFromFlower(BiobuzzRobotConstants.flowerCollectTime)),
                             kit.fromFlowerLeg(flowerTwo, flowerTwoToLeftNear, leftNear),
                             kit.shotPoint(Side.LEFT));
                 }),
                 HiveAutoKit.branch(() -> {
-                    if (!kit.fits(F1_BLOCK_S, leftShotBack)) {
+                    if (!kit.fits(F1_TO_NEAR_S, leftNear)) {
                         kit.log("no time for flower one");
                         return kit.note("skipping flower one");
                     }
-                    return flowerOneBlock;
+                    return flowerOneBlockToNear;
                 }),
                 park);
 
         Action main = new SequentialAction(
                 kit.preloadShot(),
-                kit.waitForTipStart(Side.RIGHT, HiveAutoKit.OWN_TIP_GRACE_S),
+                kit.waitForOwnTipStart(Side.RIGHT, TIP_START_WAIT_S),
                 HiveAutoKit.branch(() -> {
-                    if (hive.settledUp(Side.RIGHT, 0.4)) {
-                        kit.log("RIGHT CELL did not tip - wall set, angled shot at RIGHT");
-                        return notTippedPlan;
+                    if (kit.ownTipStarted(Side.RIGHT)) {
+                        kit.log("RIGHT CELL tip started - wall set to the LEFT side");
+                        return tippedPlan;
                     }
-                    kit.log(hive.tipping(Side.RIGHT, 5.0) ? "RIGHT CELL seen tipping" : "no RIGHT CELL at rest in view - assuming it tipped");
-                    return tippedPlan;
+                    kit.log("no tip start in " + TIP_START_WAIT_S + " s - assuming no tip, wall set at RIGHT");
+                    return notTippedPlan;
                 }));
 
         double pollenShootingVel = BiobuzzRobotConstants.pollenFixedShootingVel;
@@ -220,10 +239,12 @@ public class Biobuzz_2_Tip_HiveAuto extends NGAutoOpMode {
         kit.checkPrebuilt("wallSetToLeftNear", wallSetToLeftNear);
         kit.checkPrebuilt("wallSetToRightNear", wallSetToRightNear);
         kit.checkPrebuilt("leftNearToFlowerOne", leftNearToFlowerOne);
+        kit.checkPrebuilt("parkFromNear", parkFromNear);
         kit.checkPrebuilt("backToShoot", backToShoot);
         kit.checkPrebuilt("leftToFlowerTwo", leftToFlowerTwo);
         kit.checkPrebuilt("rightNearToFlowerTwo", rightNearToFlowerTwo);
         kit.checkPrebuilt("flowerTwoToLeftNear", flowerTwoToLeftNear);
+        kit.checkPrebuilt("flowerOneToLeftNear", flowerOneToLeftNear);
 
         while (!isStarted() && !isStopRequested()) {
             if (AllianceSelector.poll(gamepad1, gamepad2)) hive.setAlliance(AllianceSelector.red());

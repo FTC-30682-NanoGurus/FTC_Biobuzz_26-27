@@ -34,8 +34,8 @@ public class BiobuzzRobotConstants {
     //public static String interTransfer = "interTransfer";
     public static String flywheels = "flywheels";
     public static double
-        pollenFixedShootingVel = 1150,
-        nectarFixedShootingVel = 1400;
+        pollenFixedShootingVel = 1135, 
+            nectarFixedShootingVel = 1400;
 
     /**
      * Motor directions - the single source for the autos (Intake2_0) and every teleop. Set to what
@@ -66,8 +66,8 @@ public class BiobuzzRobotConstants {
 
     public static String flowerRamp = "flowerRamp";
     public static double
-        flowerRampStowedPos = 0.86,
-        flowerRampIntakePos = 0.46;
+        flowerRampStowedPos = 0.74,
+        flowerRampIntakePos = 0.0;
 
     /**
      * Every FLOWER intake in the autos ends with a straight forward drive of this many INCHES, at the
@@ -162,11 +162,11 @@ public class BiobuzzRobotConstants {
 
     /** Pollen: tuned in FlywheelIntakeTestingOpMode. */
     public static double
-        pollenKF = 0.000490, //0.000498
+        pollenKF = 0.000477, //0.000498
         pollenKI = 0,
         pollenKD = 0,
-        pollenKpStable = 0.00077, //0.0006
-        pollenKpRecovery = 0.001, //O.002
+        pollenKpStable = 0.00076, //0.0006
+        pollenKpRecovery = 0.0021, //O.002
         pollenAlpha = 0.7,
         pollenRecoveryThreshold = 80.0; //80
 
@@ -213,8 +213,29 @@ public class BiobuzzRobotConstants {
      * volley runs the transfer (HiveAutoKit.transfer / Intake2_0.feedPollen) and what every auto's
      * time budget allows per shot.
      */
-    public static double cycleShootingTime = 2.25;
+    public static double cycleShootingTime = 1.5;
+
+    /** How long each FLOWER intake runs the rollers (Intake2_0.collectFromFlower), SECONDS. */
+    public static double flowerCollectTime = 2.5;
 
     /** Before the PRELOAD shot only, wait at most this long for the pollen flywheel to reach speed, SECONDS. */
-    public static double preloadSpinUpMaxS = 1.5;
+    public static double preloadSpinUpMaxS = 1.0;
+
+    /**
+     * Gate swing timing for the autos (BiobuzzPollenTeleOp uses the same numbers): the servo has no
+     * position feedback, so "open" is timed from its speed - REV Smart Robot Servo, ~0.17 s per 60
+     * degrees on the hub's 5 V port, over a 180-degree range - plus a margin.
+     */
+    public static double gateSecPer60Deg = 0.17;
+    public static double gateSettleMarginS = 0.04;
+
+    /** Time for the gate to swing between these two positions (0..1 over 180 degrees), SECONDS. */
+    public static double gateTravelS(double fromPos, double toPos) {
+        return Math.abs(toPos - fromPos) * 180.0 / 60.0 * gateSecPer60Deg + gateSettleMarginS;
+    }
+
+    /** One auto volley: the gate swinging open (the transfer waits for it), then one cycle. */
+    public static double volleyS() {
+        return gateTravelS(pollenGateClosedPos, pollenGateOpenPos) + cycleShootingTime;
+    }
 }

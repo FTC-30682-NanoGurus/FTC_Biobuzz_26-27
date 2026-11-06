@@ -103,11 +103,11 @@ public class Biobuzz3Tip_HiveAuto extends NGAutoOpMode {
         kit.prepare(nearShot, parkPose);
         kit.prepare(wallShotLeft, parkPose);
 
-        double FLOWER_TWO_BLOCK_S = 5.90 + 1.84 + BiobuzzRobotConstants.cycleShootingTime;
-        double WALL_TO_LEFT_S = 6.14 + BiobuzzRobotConstants.cycleShootingTime;
-        double WALL_NEAR_S = 4.69 + BiobuzzRobotConstants.cycleShootingTime;
+        double FLOWER_TWO_BLOCK_S = 2.90 + BiobuzzRobotConstants.flowerCollectTime + 1.84 + BiobuzzRobotConstants.volleyS();
+        double WALL_TO_LEFT_S = 6.14 + BiobuzzRobotConstants.volleyS();
+        double WALL_NEAR_S = 4.69 + BiobuzzRobotConstants.volleyS();
         double WALL_ONLY_S = 4.6;
-        double SOLO_FLOWER_BLOCK_S = 4.98 + 1.71 + BiobuzzRobotConstants.cycleShootingTime;
+        double SOLO_FLOWER_BLOCK_S = 1.58 + 0.4 + BiobuzzRobotConstants.flowerCollectTime + 1.71 + BiobuzzRobotConstants.volleyS();
 
         Action toLeftShot = drive.actionBuilder(beginPose)
                 .setTangent(Math.toRadians(0))
@@ -117,7 +117,7 @@ public class Biobuzz3Tip_HiveAuto extends NGAutoOpMode {
         Action toFlowerOne = kit.approachFlower(drive.actionBuilder(leftShot)
                         .afterTime(0, intake2_0.deployFlowerRamp())
                         .setTangent(Math.toRadians(-32)), flowerOne)
-                .afterTime(0, intake2_0.collectFromFlower(3))
+                .afterTime(0, intake2_0.collectFromFlower(BiobuzzRobotConstants.flowerCollectTime))
                 .build();
 
         Action backFromFlowerOne = kit.departFlower(drive.actionBuilder(flowerOne), flowerOne)
@@ -128,7 +128,7 @@ public class Biobuzz3Tip_HiveAuto extends NGAutoOpMode {
                         .setTangent(Math.toRadians(-90))
                         .splineToLinearHeading(new Pose2d(0, -41, Math.toRadians(-15)), Math.toRadians(-15), maxVel, maxAccel)
                         .afterTime(0, intake2_0.deployFlowerRamp()), flowerTwo)
-                .afterTime(0, intake2_0.collectFromFlower(3))
+                .afterTime(0, intake2_0.collectFromFlower(BiobuzzRobotConstants.flowerCollectTime))
                 .build();
 
         Action crossToRight = drive.actionBuilder(flowerTwo)
@@ -180,7 +180,7 @@ public class Biobuzz3Tip_HiveAuto extends NGAutoOpMode {
         Action soloFlower = kit.approachFlower(drive.actionBuilder(wallShotLeft)
                         .afterTime(0, intake2_0.deployFlowerRamp())
                         .setTangent(Math.toRadians(-27)), flowerOneSolo)
-                .afterTime(0.4, intake2_0.collectFromFlower(3))
+                .afterTime(0.4, intake2_0.collectFromFlower(BiobuzzRobotConstants.flowerCollectTime))
                 .build();
 
         Action soloBack = kit.departFlower(drive.actionBuilder(flowerOneSolo), flowerOneSolo)
@@ -214,7 +214,7 @@ public class Biobuzz3Tip_HiveAuto extends NGAutoOpMode {
         });
 
         Action flowerTwoBlock = new SequentialAction(
-                kit.flowerLeg(leftShotAfterFlower, toFlowerTwo, flowerTwo, intake2_0.collectFromFlower(3)),
+                kit.flowerLeg(leftShotAfterFlower, toFlowerTwo, flowerTwo, intake2_0.collectFromFlower(BiobuzzRobotConstants.flowerCollectTime)),
                 HiveAutoKit.branch(() -> {
                     if (hive.upCell(15.0) == Side.LEFT) {
                         kit.log("LEFT CELL still up - flower two goes LEFT");
@@ -228,7 +228,7 @@ public class Biobuzz3Tip_HiveAuto extends NGAutoOpMode {
 
         Action nominal = new SequentialAction(
                 kit.transfer(),
-                kit.flowerLeg(leftShot, toFlowerOne, flowerOne, intake2_0.collectFromFlower(3)),
+                kit.flowerLeg(leftShot, toFlowerOne, flowerOne, intake2_0.collectFromFlower(BiobuzzRobotConstants.flowerCollectTime)),
                 kit.leaveFlower(backFromFlowerOne),
                 kit.shotPoint(Side.LEFT),
                 HiveAutoKit.branch(() -> {
@@ -248,7 +248,7 @@ public class Biobuzz3Tip_HiveAuto extends NGAutoOpMode {
                         return parkBlock;
                     }
                     return new SequentialAction(
-                            kit.flowerLeg(wallShotLeft, soloFlower, flowerOneSolo, intake2_0.collectFromFlower(3)),
+                            kit.flowerLeg(wallShotLeft, soloFlower, flowerOneSolo, intake2_0.collectFromFlower(BiobuzzRobotConstants.flowerCollectTime)),
                             kit.leaveFlower(soloBack),
                             kit.shotPoint(Side.LEFT),
                             parkBlock);

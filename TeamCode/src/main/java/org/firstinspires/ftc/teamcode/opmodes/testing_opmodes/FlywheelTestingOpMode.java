@@ -123,8 +123,10 @@ public class FlywheelTestingOpMode extends LinearOpMode {
         kpStable = NGMotorFlywheelTuner.getStableKp(flywheel);
         alpha = NGMotorFlywheelTuner.getAlpha(flywheel);
         recoveryThreshold = NGMotorFlywheelTuner.getRecoveryThreshold(flywheel);
-        kLoad = NGMotor.kLoad;
-        kRamp = NGMotor.kRamp;
+        kLoad = BiobuzzRobotConstants.flywheelKLoad;
+        kRamp = BiobuzzRobotConstants.flywheelKRamp;
+        NGMotor.kLoad = kLoad;
+        NGMotor.kRamp = kRamp;
 
         telemetry.addLine("FLYWHEEL TESTING");
         telemetry.addLine("gp1 = drive (field centric arcade)");

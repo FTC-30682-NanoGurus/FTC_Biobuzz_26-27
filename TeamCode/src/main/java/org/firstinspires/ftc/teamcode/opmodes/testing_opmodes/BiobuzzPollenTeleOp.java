@@ -1,6 +1,5 @@
 package org.firstinspires.ftc.teamcode.opmodes.testing_opmodes;
 
-import android.graphics.Color;
 
 import com.acmerobotics.dashboard.FtcDashboard;
 import com.acmerobotics.dashboard.config.Config;
@@ -12,8 +11,6 @@ import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.hardware.DistanceSensor;
-import com.qualcomm.robotcore.hardware.NormalizedColorSensor;
-import com.qualcomm.robotcore.hardware.NormalizedRGBA;
 import com.qualcomm.robotcore.hardware.Servo;
 import com.qualcomm.robotcore.util.ElapsedTime;
 import com.qualcomm.robotcore.util.Range;
@@ -125,19 +122,29 @@ public class BiobuzzPollenTeleOp extends LinearOpMode {
         REVERSE_FLYWHEEL = false;
 
     /**
-     * FULL detection on the REV Color Sensor V3 (BiobuzzRobotConstants.colorSensor): while the
-     * intake runs forward from A, a yellow POLLEN (colorSensorTesting's tuned hue / saturation /
-     * value bands and gain - edit them THERE) held in front of the sensor, closer than
-     * POLLEN_SENSOR_MAX_DISTANCE_MM, for POLLEN_FULL_HOLD_S without a break means the robot is full:
-     * the intake and transfer switch off once. A turns them back on as usual; it re-arms once the
-     * sensor no longer sees a pollen (e.g. after a shot). Nectar is ignored for now.
+     * POLLEN counter on the PROXIMITY (distance) reading of the REV Color Sensor V3
+     * (BiobuzzRobotConstants.colorSensor) - colour is not used. While the intake runs forward from A,
+     * the sensor learns its usual (empty) reading; each time the reading dips POLLEN_DIP_MM or more
+     * below that, one POLLEN has entered the robot. When the count reaches POLLEN_FULL_COUNT the
+     * intake and transfer switch off once (then the FULL_EJECT_S eject, if set). A turns them back on
+     * as usual. A finished shot resets the count to 0.
      * false = the opmode behaves exactly as without it (the sensor is not even read).
      */
-    public static boolean COLOR_POLLEN_COUNTER_ENABLED = true;
-    /** How long a pollen must sit in front of the sensor before the robot counts as full, SECONDS. */
-    public static double POLLEN_FULL_HOLD_S = 1.7;
-    /** The pollen must read closer than this, MILLIMETRES (a pollen at the working spot read ~45 mm). */
-    public static double POLLEN_SENSOR_MAX_DISTANCE_MM = 55.0;
+    public static boolean POLLEN_COUNTER_ENABLED = true;
+    /** Pollen count at which the intake stops. */
+    public static int POLLEN_FULL_COUNT = 4;
+    /** A reading this far below the usual (empty) reading is a pollen at the sensor, MILLIMETRES. */
+    public static double POLLEN_DIP_MM = 10.0;
+    /** The dip has to come back above usual - POLLEN_DIP_MM * this before the next pollen can count. */
+    public static double POLLEN_RELEASE_FRACTION = 0.5;
+    /** How fast the usual (empty) reading follows the sensor while no pollen is there, SECONDS. */
+    public static double POLLEN_BASELINE_TAU_S = 0.5;
+    /**
+     * After FULL switches the intake and transfer off, run the INTAKE (not the transfer) in reverse
+     * this long, SECONDS, at intakeReversePower, to spit out pollen beyond what the robot can hold.
+     * A, B or a shot ends it early. 0 = no eject.
+     */
+    public static double FULL_EJECT_S = 1.5;
 
     /**
      * WHEEL LOCK while the right trigger is held: the robot actively holds the spot (and heading)
@@ -223,6 +230,9 @@ public class BiobuzzPollenTeleOp extends LinearOpMode {
     private boolean intakeOn = false;
     private final PollenCounter counter = new PollenCounter();
     private boolean wasTransferring = false;
+    /** Ejecting extra pollen after FULL (see FULL_EJECT_S). */
+    private boolean ejecting = false;
+    private final ElapsedTime ejectTimer = new ElapsedTime();
     private boolean flywheelOn = false;
     private double lastRollerPower = Double.NaN;
     /** Null when "flowerRamp" is not configured - the toggle then only switches the intake on. */
@@ -429,74 +439,63 @@ public class BiobuzzPollenTeleOp extends LinearOpMode {
     }
 
     // =============================================================================================
-    // POLLEN counter - colour sensor (classification and debounce from colorSensorTesting)
+    // POLLEN counter - proximity only: one dip below the usual reading = one POLLEN in
     // =============================================================================================
     private class PollenCounter {
-        /** Set when the robot is detected full; the opmode clears it once acted on. */
+        /** Set when the count reaches POLLEN_FULL_COUNT; the opmode clears it once acted on. */
         boolean justFilled = false;
-        /** Null when the sensor is not in the configuration - the detector then does nothing. */
-        NormalizedColorSensor sensor;
-        DistanceSensor distance;
+        /** Null when the sensor is not in the configuration - the counter then does nothing. */
+        DistanceSensor sensor;
         String fault = "";
-        final float[] hsv = new float[3];
-        double distanceMm = Double.MAX_VALUE;
+        double distanceMm = Double.NaN;
+        /** The usual (empty) reading, learned while no pollen is at the sensor. NaN until the first read. */
+        double baselineMm = Double.NaN;
         boolean seeing = false;
-        /** False after a FULL until the sensor stops seeing a pollen, so A can run the intake again. */
-        private boolean armed = true;
-        private final ElapsedTime holdTimer = new ElapsedTime();
+        int count = 0;
+        private final ElapsedTime loopTimer = new ElapsedTime();
 
         void init() {
             try {
-                sensor = hardwareMap.get(NormalizedColorSensor.class, BiobuzzRobotConstants.colorSensor);
-                sensor.setGain(colorSensorTesting.GAIN);
-                distance = sensor instanceof DistanceSensor ? (DistanceSensor) sensor : null;
+                sensor = hardwareMap.get(DistanceSensor.class, BiobuzzRobotConstants.colorSensor);
             } catch (Exception e) {
                 sensor = null;
                 fault = "'" + BiobuzzRobotConstants.colorSensor + "' not in the configuration";
             }
         }
 
-        /** colorSensorTesting.classify, pollen only, and closer than POLLEN_SENSOR_MAX_DISTANCE_MM. */
-        private boolean seesPollen() {
-            if (distance != null) {
-                double d = distance.getDistance(DistanceUnit.MM);
-                distanceMm = (Double.isNaN(d) || Double.isInfinite(d)) ? Double.MAX_VALUE : d;
-                if (distanceMm >= POLLEN_SENSOR_MAX_DISTANCE_MM) return false;
-            }
-            NormalizedRGBA c = sensor.getNormalizedColors();
-            Color.colorToHSV(c.toColor(), hsv);
-            if (hsv[1] < colorSensorTesting.S_MIN || hsv[2] < colorSensorTesting.V_MIN) return false;
-            return hsv[0] >= colorSensorTesting.YELLOW_H_MIN && hsv[0] <= colorSensorTesting.YELLOW_H_MAX;
-        }
-
-        /** Seconds the current pollen has been held in front of the sensor (0 if none). */
-        double heldS() {
-            return seeing ? holdTimer.seconds() : 0.0;
-        }
-
-        /** @param counting the intake is running forward from A (not shooting, not reversing) */
+        /**
+         * @param counting the intake is running forward from A (not shooting, not reversing). The
+         *                 sensor is only read then; the pollen-present state is kept across a pause,
+         *                 so a pollen left sitting at the sensor is not counted twice.
+         */
         void update(boolean counting) {
             if (sensor == null) return;
-            if (!counting) {   // two I2C reads; only while the intake runs. The hold restarts next time.
+            double dt = loopTimer.seconds();
+            loopTimer.reset();
+            if (!counting) return;
+            double d = sensor.getDistance(DistanceUnit.MM);
+            if (Double.isNaN(d) || Double.isInfinite(d)) return;
+            distanceMm = d;
+            if (Double.isNaN(baselineMm)) {
+                baselineMm = d;
+                return;
+            }
+            if (!seeing && d <= baselineMm - POLLEN_DIP_MM) {
+                seeing = true;
+                count++;
+                if (count == POLLEN_FULL_COUNT) justFilled = true;
+            } else if (seeing && d >= baselineMm - POLLEN_DIP_MM * POLLEN_RELEASE_FRACTION) {
                 seeing = false;
-                return;
             }
-            boolean now = seesPollen();
-            if (now && !seeing) holdTimer.reset();
-            seeing = now;
             if (!seeing) {
-                armed = true;
-                return;
-            }
-            if (armed && holdTimer.seconds() >= POLLEN_FULL_HOLD_S) {
-                justFilled = true;
-                armed = false;
+                double a = POLLEN_BASELINE_TAU_S <= 0 ? 1.0 : Math.min(1.0, dt / POLLEN_BASELINE_TAU_S);
+                baselineMm += a * (d - baselineMm);
             }
         }
 
         void reset() {
             justFilled = false;
-            armed = true;
+            count = 0;
         }
     }
 
@@ -625,7 +624,7 @@ public class BiobuzzPollenTeleOp extends LinearOpMode {
         } catch (Exception e) {
             nectarGate = null;
         }
-        counter.init();   // looks the sensor up only; it is read just while COLOR_POLLEN_COUNTER_ENABLED counts
+        counter.init();   // looks the sensor up only; it is read just while POLLEN_COUNTER_ENABLED counts
         try {
             flowerRamp = hardwareMap.get(Servo.class, BiobuzzRobotConstants.flowerRamp);
             flowerRamp.setPosition(BiobuzzRobotConstants.flowerRampStowedPos);
@@ -827,18 +826,21 @@ public class BiobuzzPollenTeleOp extends LinearOpMode {
             boolean transferring = pollen.ready
                     && (!moveWhileAiming || !PAUSE_FEED_WHEN_TOO_FAST || slowEnoughToFeed);
             pollen.drive(transferring);
-            if (COLOR_POLLEN_COUNTER_ENABLED) {
+            if (POLLEN_COUNTER_ENABLED) {
                 // A finished shot empties the robot: the feed ran and the trigger is released.
                 if (wasTransferring && !pollenFeed) counter.reset();
                 counter.update(intakeOn && !reverseHeld && !pollenFeed && !transferring);
                 if (counter.justFilled) {
                     intakeOn = false;
                     counter.justFilled = false;
+                    ejecting = FULL_EJECT_S > 0;
+                    ejectTimer.reset();
                 }
             } else if (counter.justFilled) {
                 counter.reset();
             }
             wasTransferring = transferring || (wasTransferring && pollenFeed);
+            if (ejecting && (ejectTimer.seconds() >= FULL_EJECT_S || intakeOn || reverseHeld || pollenFeed)) ejecting = false;
             boolean unjamming = TRANSFER_REVERSE_ON_RELEASE && !pollenFeed && pollen.closing();
             double transferPower = transferring ? BiobuzzRobotConstants.TRANSFER_FEED_POWER
                     : pollenFeed ? 0.0
@@ -847,6 +849,7 @@ public class BiobuzzPollenTeleOp extends LinearOpMode {
                     : intakeOn ? BiobuzzRobotConstants.TRANSFER_INTAKE_POWER : 0.0;
             double rollerPower = transferring && BiobuzzRobotConstants.transferAlsoRunsIntake ? BiobuzzRobotConstants.transferPower
                     : reverseHeld ? BiobuzzRobotConstants.intakeReversePower
+                    : ejecting ? BiobuzzRobotConstants.intakeReversePower
                     : intakeOn ? BiobuzzRobotConstants.intakePower : 0.0;
             if (rollerPower != lastRollerPower) {   // setPower is a hub round trip; skip repeats
                 rollers.setPower(rollerPower);
@@ -874,22 +877,23 @@ public class BiobuzzPollenTeleOp extends LinearOpMode {
                 telemetry.addData("Nectar gate", nectarGate == null ? "not configured" : "held closed");
                 telemetry.addData("Intake", "%.2f  %s", rollerPower,
                         transferring && BiobuzzRobotConstants.transferAlsoRunsIntake ? "pushing to transfer"
-                                : reverseHeld ? "REVERSE (B held)" : intakeOn ? "IN (A toggle)" : "off");
+                                : reverseHeld ? "REVERSE (B held)"
+                                : ejecting ? String.format("EJECTING extra pollen (%.1f / %.1f s)", ejectTimer.seconds(), FULL_EJECT_S)
+                                : intakeOn ? "IN (A toggle)" : "off");
                 telemetry.addData("Transfer", transfer == null ? "MISSING"
                         : String.format("%.2f  %s", transferPower, transferring ? "FEEDING"
                                 : pollenFeed ? "waiting for gate / wheel"
                                 : unjamming ? "REVERSE after release (unjam)"
                                 : reverseHeld ? "REVERSE (B held)" : intakeOn ? "with intake" : "off"));
-                if (COLOR_POLLEN_COUNTER_ENABLED) {
+                if (POLLEN_COUNTER_ENABLED) {
                     if (counter.sensor == null) {
-                        telemetry.addData("POLLEN full check", "COLOR SENSOR MISSING - %s", counter.fault);
+                        telemetry.addData("POLLEN count", "SENSOR MISSING - %s", counter.fault);
                     } else {
-                        telemetry.addData("POLLEN full check", counter.seeing
-                                ? String.format("pollen held %.1f / %.1f s", counter.heldS(), POLLEN_FULL_HOLD_S)
-                                : "no pollen at the sensor");
-                        telemetry.addData("   color sensor", "%s  H %.0f S %.2f V %.3f  %.0f mm",
-                                counter.seeing ? "POLLEN" : "-", counter.hsv[0], counter.hsv[1], counter.hsv[2],
-                                counter.distanceMm == Double.MAX_VALUE ? -1.0 : counter.distanceMm);
+                        telemetry.addData("POLLEN count", "%d / %d%s", counter.count, POLLEN_FULL_COUNT,
+                                counter.count >= POLLEN_FULL_COUNT ? "  FULL" : "");
+                        telemetry.addData("   proximity", "%s  %.0f mm (usual %.0f mm, pollen below %.0f mm)",
+                                counter.seeing ? "POLLEN" : "-", counter.distanceMm, counter.baselineMm,
+                                counter.baselineMm - POLLEN_DIP_MM);
                     }
                 }
                 telemetry.addData("Flower ramp", (flowerRampDown ? "DOWN (intake)" : "stowed")

@@ -92,12 +92,6 @@ public class HiveAutoKit {
     public static double TIP_WAIT_MAX_S = 3.5;
     /** No movement seen for this long counts as the HIVE being still, SECONDS. */
     public static double HIVE_STILL_S = 0.5;
-    /**
-     * After our own volley, how much longer to watch the CELL for the start of its tip before
-     * deciding it did not tip, SECONDS. A tip starts slowly, so this is spent only when the CELL
-     * is still sitting at rest.
-     */
-    public static double OWN_TIP_GRACE_S = 1.0;
     /** A leg's prebuilt path is used only if the robot is this close to where it starts, INCHES / DEG. */
     public static double NEAR_IN = 8.0;
     public static double NEAR_DEG = 25.0;
@@ -424,7 +418,7 @@ public class HiveAutoKit {
                 if (w == ShotWait.HIVE_MOVING) {
                     if (!told) log("HIVE moving - waiting for it to settle");
                     told = true;
-                    return elapsed < TIP_WAIT_MAX_S && fits(BiobuzzRobotConstants.cycleShootingTime, drive.pose);
+                    return elapsed < TIP_WAIT_MAX_S && fits(BiobuzzRobotConstants.volleyS(), drive.pose);
                 }
                 if (w == ShotWait.READY) return false;
                 return elapsed < GATE_MAX_WAIT_S;
@@ -446,12 +440,40 @@ public class HiveAutoKit {
     }
 
     /**
-     * After our own volley into {@code side}: ends as soon as that CELL is seen starting to tip, or
-     * is no longer settled up, or after maxS. Costs time only while the CELL sits still at rest.
+     * Positive camera evidence that our own volley into {@code side} has started that CELL's tip:
+     * seen leaving its rest, seen upside down, or the OTHER CELL (which starts down) seen up and at
+     * rest - all within the last {@link HiveWatcher#TIP_MAX_S}. Absence of the CELL does NOT count.
      */
-    public Action waitForTipStart(Side side, double maxS) {
-        return waitUntil(() -> !hive.cameraHealthy() || hive.tipping(side, HiveWatcher.TIP_MAX_S)
-                || !hive.settledUp(side, 0.4), maxS);
+    public boolean ownTipStarted(Side side) {
+        return hive.tipping(side, HiveWatcher.TIP_MAX_S) || hive.confirmedDown(side, HiveWatcher.TIP_MAX_S)
+                || hive.settledUp(side.other(), 0.6);
+    }
+
+    /**
+     * After our own volley into {@code side}: ends the moment {@link #ownTipStarted} sees the tip
+     * start, otherwise after maxS - at which point the auto assumes the CELL is NOT going to tip.
+     */
+    public Action waitForOwnTipStart(Side side, double maxS) {
+        return waitUntil(() -> ownTipStarted(side), maxS);
+    }
+
+    /**
+     * The wait before a {@link #committedShot}: only while the HIVE is swinging (launching into a
+     * tip in progress can stop it), at most {@link #TIP_WAIT_MAX_S} and never past the park budget.
+     */
+    public Action committedShotWait() {
+        return waitUntil(() -> !hive.cameraHealthy() || !hive.hiveMoving(HIVE_STILL_S)
+                || !fits(BiobuzzRobotConstants.volleyS(), drive.pose), TIP_WAIT_MAX_S);
+    }
+
+    /**
+     * A volley at {@code side} whatever the camera says about that CELL - no holding, no crossing.
+     * For a safety set that is allowed to go over a CELL that is already down.
+     */
+    public Action committedShot(Side side) {
+        return new SequentialAction(committedShotWait(),
+                note("committed volley at " + side + " - shooting whatever the CELL state"),
+                transfer());
     }
 
     public enum TipResult { TIPPED, NOT_TIPPED, UNKNOWN }
@@ -495,7 +517,7 @@ public class HiveAutoKit {
         if (up == side.other()) {
             if (!mayCross) return ShotChoice.HOLD_DOWN_AGAIN;
             Pose2d dest = shotPose(side.other());
-            double need = estimateRoute(from, dest) + GATE_MAX_WAIT_S + BiobuzzRobotConstants.cycleShootingTime;
+            double need = estimateRoute(from, dest) + GATE_MAX_WAIT_S + BiobuzzRobotConstants.volleyS();
             return fitsAt(matchTimeS, need, dest) ? ShotChoice.CROSS : ShotChoice.HOLD_NO_TIME;
         }
         return up == side ? ShotChoice.SHOOT_UP : ShotChoice.SHOOT_NO_VIEW;

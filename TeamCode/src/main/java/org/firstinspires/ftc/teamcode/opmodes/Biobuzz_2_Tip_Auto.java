@@ -1,7 +1,6 @@
 package org.firstinspires.ftc.teamcode.opmodes;
 
 import org.firstinspires.ftc.teamcode.Biobuzz_subsystems.HiveAutoKit;
-import com.acmerobotics.roadrunner.SleepAction;
 import com.acmerobotics.dashboard.config.Config;
 import androidx.annotation.NonNull;
 
@@ -89,9 +88,8 @@ public class Biobuzz_2_Tip_Auto extends NGAutoOpMode{
         initAuto(beginPose);
 
         Pose2d leftShot = new Pose2d(-52, -14, Math.toRadians(0));
-        Pose2d leftShotBack = new Pose2d(-52, -14, Math.toRadians(360));
         Pose2d wallSet = new Pose2d(62, -58, Math.toRadians(360));
-        Pose2d leftNear = new Pose2d(-53.48, -43.82, Math.toRadians(30));
+        Pose2d leftNear = new Pose2d(-55.46, -40.00, Math.toRadians(25.0));
         Pose2d flowerOne = new Pose2d(-55, -22, Math.toRadians(180));
         Pose2d parkPose = new Pose2d(-49.5, -58, Math.toRadians(90));
 
@@ -101,7 +99,7 @@ public class Biobuzz_2_Tip_Auto extends NGAutoOpMode{
         telemetry.addLine("Preparing fastest routes...");
         telemetry.update();
         kit.prepareFlower(leftNear, flowerOne);
-        kit.prepare(leftShotBack, parkPose);
+        kit.prepareFromFlower(flowerOne, leftNear);
         kit.prepare(leftNear, parkPose);
 
         Action shootPreLoad = kit.preloadShot();
@@ -112,26 +110,28 @@ public class Biobuzz_2_Tip_Auto extends NGAutoOpMode{
                         .splineToSplineHeading(wallSet, Math.toRadians(25), maxIntakeVel, maxAccel)
                         .waitSeconds(WALL_SET_DWELL_S)
                         .setReversed(true)
-                        .splineToLinearHeading(new Pose2d(20, -48, Math.toRadians(360)), Math.toRadians(-180), maxVel, maxAccel)
-                        .splineToLinearHeading(new Pose2d(-33, -44, Math.toRadians(360)), Math.toRadians(170), maxVel, maxAccel)
+                        .splineToLinearHeading(new Pose2d(20, -42, Math.toRadians(360)), Math.toRadians(-180), maxVel, maxAccel)
+                        .splineToLinearHeading(new Pose2d(-33, -40, Math.toRadians(360)), Math.toRadians(180), maxVel, maxAccel)
                         .splineToSplineHeading(leftNear, Math.toRadians(180), maxVel, maxAccel)
                         .build()),
                 kit.transfer());
 
         Action IntakeFromFlowerOne = new SequentialAction(
                 new ParallelAction(intake2_0.deployFlowerRamp(), kit.flowerRoute(leftNear, flowerOne)),
-                new SleepAction(0.4),
-                intake2_0.collectFromFlower(3));
+                intake2_0.collectFromFlower(BiobuzzRobotConstants.flowerCollectTime));
 
         Action shootFlowerOnePollen = new SequentialAction(
-                kit.leaveFlower(kit.departFlower(drive.actionBuilder(flowerOne), flowerOne)
-                        .splineToSplineHeading(new Pose2d(-52, -14, Math.toRadians(1)), Math.toRadians(155), maxVel, maxAccel)
-                        .build()),
+                kit.leaveFlower(kit.routeFromFlower(flowerOne, leftNear)),
                 kit.transfer());
+
+        Action parkFromNear = drive.actionBuilder(leftNear)
+                .setTangent(Math.toRadians(-60))
+                .splineToSplineHeading(parkPose, Math.toRadians(-90), maxVel, maxAccel)
+                .build();
 
         Action park = new SequentialAction(
                 kit.beginPark(),
-                kit.leg(leftShotBack, kit.route(leftShotBack, parkPose), parkPose, null));
+                kit.leg(leftNear, parkFromNear, parkPose, null));
 
         Action main = new SequentialAction(
                 shootPreLoad,

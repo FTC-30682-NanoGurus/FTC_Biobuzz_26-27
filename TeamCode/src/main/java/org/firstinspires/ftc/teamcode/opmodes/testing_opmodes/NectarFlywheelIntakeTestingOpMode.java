@@ -114,8 +114,10 @@ public class NectarFlywheelIntakeTestingOpMode extends LinearOpMode {
         kpStable = START_KP_STABLE;
         alpha = START_ALPHA;
         recoveryThreshold = START_RECOVERY_THRESHOLD;
-        kLoad = NGMotor.kLoad;
-        kRamp = NGMotor.kRamp;
+        kLoad = BiobuzzRobotConstants.flywheelKLoad;
+        kRamp = BiobuzzRobotConstants.flywheelKRamp;
+        NGMotor.kLoad = kLoad;
+        NGMotor.kRamp = kRamp;
         telemetry.addLine("NECTAR FLYWHEEL + INTAKE TESTING (no drive)");
         telemetry.addLine("gp2: Y = run/stop   dpad up/dn = target");
         telemetry.addLine("gp2: X/A = select constant   dpad L/R = adjust");
