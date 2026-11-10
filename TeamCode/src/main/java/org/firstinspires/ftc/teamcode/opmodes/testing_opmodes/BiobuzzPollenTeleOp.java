@@ -117,7 +117,7 @@ public class BiobuzzPollenTeleOp extends LinearOpMode {
      * other teleops keep the constants as they are). Read once at init.
      */
     public static boolean
-        REVERSE_INTAKE = false,
+        REVERSE_INTAKE = true,
         REVERSE_TRANSFER = false,
         REVERSE_FLYWHEEL = false;
 
@@ -169,7 +169,10 @@ public class BiobuzzPollenTeleOp extends LinearOpMode {
      */
     public static boolean AUTO_ALIGN_ENABLED = false;
 
-    /** Start from the pose the last auto stored (field coordinates: can aim before seeing a tag). */
+    /**
+     * Start from the pose the last auto stored (field coordinates: can aim before seeing a tag).
+     * false (or none stored) = BiobuzzRobotConstants.teleopDefaultStart*, corrected by the camera.
+     */
     public static boolean USE_AUTO_END_POSE = true;
     /** Translation while aligning without the wheel lock: full-stick in/s, accel in/s^2, turn rad/s. */
     public static double ALIGN_DRIVE_MAX_IN_S = 40.0;
@@ -664,10 +667,11 @@ public class BiobuzzPollenTeleOp extends LinearOpMode {
         boolean red = AllianceSelector.red();
         if (aligner != null) aligner.setAlliance(red);
         Pose2d stored = red ? PoseStorage.getLastRedPose() : PoseStorage.getLastBluePose();
-        if (USE_AUTO_END_POSE && stored != null) {
-            mecaTank.setPoseEstimate(stored);
-            if (aligner != null) aligner.setFieldReferenced();
-        }
+        boolean guessedPose = !(USE_AUTO_END_POSE && stored != null);
+        mecaTank.setPoseEstimate(guessedPose ? PoseStorage.allianceToField(red, new Pose2d(
+                BiobuzzRobotConstants.teleopDefaultStartX, BiobuzzRobotConstants.teleopDefaultStartY,
+                Math.toRadians(BiobuzzRobotConstants.teleopDefaultStartHeadingDeg))) : stored);
+        if (aligner != null) aligner.setFieldReferenced(guessedPose);
         mecaTank.updatePoseEstimate();
         mecaTank.resetDriveHeading();
         driverForwardRef = mecaTank.getPoseEstimate().heading.toDouble();
@@ -702,7 +706,21 @@ public class BiobuzzPollenTeleOp extends LinearOpMode {
             }
             Pose2d pose = mecaTank.getPoseEstimate();
             PoseVelocity2d velRobot = mecaTank.getMeasuredRobotVelocity();
-            if (aligner != null) aligner.update(nowNanos, pose, velRobot, dt);
+            if (aligner != null) {
+                aligner.update(nowNanos, pose, velRobot, dt);
+                // Camera fix of x/y: the aligner has already moved its CELL estimates, so apply it now.
+                double[] fix = aligner.takePoseCorrection();
+                if (fix != null) {
+                    pose = new Pose2d(pose.position.x + fix[0], pose.position.y + fix[1], pose.heading.toDouble());
+                    mecaTank.setPoseEstimate(pose);
+                    if (shotHoldActive && holdPose != null) {
+                        holdPose = new Pose2d(holdPose.position.x + fix[0], holdPose.position.y + fix[1],
+                                holdPose.heading.toDouble());
+                    } else {
+                        mecaTank.resetSmoothDriveState(velRobot);
+                    }
+                }
+            }
             if (gamepad1.y && !prevY) MecaTank.FIELD_CENTRIC = !MecaTank.FIELD_CENTRIC;
             if (gamepad1.x && !prevX) MecaTank.HEADING_HOLD = !MecaTank.HEADING_HOLD;
             if (gamepad1.dpad_left && !prevLeft1) MecaTank.TRANSLATION_HOLD = !MecaTank.TRANSLATION_HOLD;

@@ -23,6 +23,14 @@ public class BiobuzzRobotConstants {
      * the last choice is remembered until the Robot Controller app restarts.
      */
     public static boolean allianceRed = true;
+    /**
+     * TeleOp start pose when no auto has stored one, ALLIANCE FRAME (red view, our side y < 0),
+     * INCHES / DEGREES: in our LOADING ZONE (park), facing away from our drivers (90). Put the robot
+     * there when starting TeleOp without an auto; the camera corrects x/y on the first CELL it sees.
+     */
+    public static double teleopDefaultStartX = -36.0;
+    public static double teleopDefaultStartY = -62.0;
+    public static double teleopDefaultStartHeadingDeg = 90.0;
     public static String rollers = "rollers";
     public static String flicker = "flicker";
     public static String gate = "gate";
@@ -176,9 +184,9 @@ public class BiobuzzRobotConstants {
         nectarKI = 0,
         nectarKD = 0,
         nectarKpStable = 0.0006, //0.0007
-        nectarKpRecovery = 0, //0.0075
+        nectarKpRecovery = 0.0015, //0.0075
         nectarAlpha = 0.7,
-        nectarRecoveryThreshold = 0; //90
+        nectarRecoveryThreshold = 80.0; //90
 
     /**
      * Load boost while artifacts go through a flywheel: kLoad + kRamp * seconds feeding. STATIC on
@@ -205,7 +213,7 @@ public class BiobuzzRobotConstants {
      * (Intake2_0.collectToGate / collectFromFlower / feedPollen).
      */
     public static double
-        TRANSFER_INTAKE_POWER = 0.25, //0.35
+        TRANSFER_INTAKE_POWER = 0.4, //0.35
         TRANSFER_FEED_POWER = 1.0;
 
     /**

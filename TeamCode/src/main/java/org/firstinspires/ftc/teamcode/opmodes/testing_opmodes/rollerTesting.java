@@ -31,9 +31,9 @@ public class rollerTesting extends LinearOpMode{
         }*/
 
         if(gamepad1.dpad_up){
-            transferRollers.setPower(0.8);
+            transferRollers.setPower(1.0);
         }else if(gamepad1.dpad_down){
-            transferRollers.setPower(-0.8);
+            transferRollers.setPower(-1.0);
         }else if(gamepad1.dpad_right){
             transferRollers.setPower(0);
         }

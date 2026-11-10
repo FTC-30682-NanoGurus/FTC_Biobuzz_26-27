@@ -62,12 +62,42 @@ import java.util.concurrent.TimeUnit;
 public class HiveAligner {
 
     // ---- shooter geometry ------------------------------------------------------------------
-    /** Launcher exit point from robot centre, INCHES, + = LEFT. A miss that grows when close. */
+    // Both shooters point the same way (out of the robot's RIGHT side) and sit on the robot's
+    // front-back centre line, NECTAR in front of POLLEN. The aim lines up the exit of whichever
+    // shooter is being fired (setLauncher), or the point midway between them for both at once.
+    /** Shot direction relative to robot forward, DEGREES, + = left. -90 = out of the RIGHT side. */
+    public static double LAUNCHER_YAW_DEG = -90.0;
+    /** Both exits' sideways offset from robot centre, INCHES, + = LEFT (0 = on the centre line). */
     public static double LAUNCHER_OFFSET_Y_IN = 0.0;
-    /** Launcher exit point from robot centre, INCHES, + = forward. Only matters with a yaw. */
-    public static double LAUNCHER_OFFSET_X_IN = 0.0;
-    /** Shot direction relative to robot forward, DEGREES, + = left. */
-    public static double LAUNCHER_YAW_DEG = 0.0;
+    /**
+     * Each exit's offset from robot centre along the robot, INCHES, + = forward. With the shooters
+     * facing sideways this is what moves a shot left/right of the CELL. TODO: MEASURE on the robot.
+     */
+    public static double POLLEN_LAUNCHER_OFFSET_X_IN = -5.0;
+    public static double NECTAR_LAUNCHER_OFFSET_X_IN = -1.0;
+
+    /** Which shooter the aim lines up. */
+    public enum Launcher { POLLEN, NECTAR, BOTH }
+
+    // ---- target choice by field half and camera re-localization -----------------------------
+    /**
+     * With a FIELD pose (setFieldReferenced): aim at our CELL on the robot's own half of the field
+     * (same sign of x as the robot), whether it is up or down - shots across the HIVE are not
+     * possible, so the driver crosses over. Crossing the centre line re-picks (never mid-volley).
+     * false = the old choice: the CELL seen up, else the nearest one not seen down.
+     */
+    public static boolean SIDE_TARGETING = true;
+    /**
+     * Correct the robot's x/y from the camera: once a CELL's whole tag cluster has been tracked for
+     * RELOCALIZE_MIN_FRAMES frames and its estimate is within RELOCALIZE_MAX_SIGMA_IN, a difference
+     * from its surveyed position of more than RELOCALIZE_THRESHOLD_IN moves the robot pose by that
+     * difference (heading is left to odometry). After a default (guessed) start pose the first such
+     * fix is taken whatever its size. Never while aiming.
+     */
+    public static boolean RELOCALIZE_ENABLED = true;
+    public static double RELOCALIZE_THRESHOLD_IN = 4.0;
+    public static double RELOCALIZE_MAX_SIGMA_IN = 1.0;
+    public static int RELOCALIZE_MIN_FRAMES = 10;
     /** Aim point minus tag-cluster centre, INCHES, away from the HIVE centre / toward our wall. */
     public static double AIM_OFFSET_OUTWARD_IN = 0.0;
     public static double AIM_OFFSET_TOWARD_ALLIANCE_IN = 0.0;
@@ -155,6 +185,10 @@ public class HiveAligner {
         boolean hasEstimate = false;
         double ex, ey, pxx, pxy, pyy;
         int rejects = 0;
+        /** Consecutive full-cluster measurements accepted by the filter (re-localization). */
+        int goodFrames = 0;
+        /** The last measurement was accepted by the filter as tracking (not acquired, not gated). */
+        boolean accepted = false;
         String lastResult = "never seen";
 
         final double[] offX = new double[4], offY = new double[4];
@@ -225,6 +259,12 @@ public class HiveAligner {
     public static double ROTATION_WHEEL_SHARE = 0.7;
     private boolean onTarget = false;
     private String lastEvent = "";
+    private Launcher launcher = Launcher.POLLEN;
+    /** The field pose is only a guess (default start pose): the first camera fix is always taken. */
+    private boolean poseIsGuess = false;
+    /** A pose correction the caller has not applied yet, field INCHES, or null. */
+    private double[] pendingCorrection = null;
+    private String lastFix = "none";
 
     private static double cachedVoltage = 12.0;
     private static final ElapsedTime voltageTimer = new ElapsedTime();
@@ -283,8 +323,53 @@ public class HiveAligner {
      * their surveyed positions, so the robot can aim before the camera has seen them.
      */
     public void setFieldReferenced() {
+        setFieldReferenced(false);
+    }
+
+    /**
+     * @param guess the pose is a default start pose rather than one the auto ended at, so the
+     *              first camera fix is applied whatever its size (see RELOCALIZE_ENABLED)
+     */
+    public void setFieldReferenced(boolean guess) {
         fieldReferenced = true;
+        poseIsGuess = guess;
         seedSurveyedPrior();
+    }
+
+    /** Which shooter's exit the aim lines up from now on. */
+    public void setLauncher(Launcher l) {
+        launcher = l;
+    }
+
+    public Launcher launcher() {
+        return launcher;
+    }
+
+    private double launcherOffsetX() {
+        switch (launcher) {
+            case NECTAR:
+                return NECTAR_LAUNCHER_OFFSET_X_IN;
+            case BOTH:
+                return 0.5 * (POLLEN_LAUNCHER_OFFSET_X_IN + NECTAR_LAUNCHER_OFFSET_X_IN);
+            default:
+                return POLLEN_LAUNCHER_OFFSET_X_IN;
+        }
+    }
+
+    /**
+     * A camera fix to apply to the robot pose, {dx, dy} field INCHES, once; null if there is none.
+     * The aligner has already moved its own CELL estimates and pose history by it, so the caller
+     * must add it to the drive pose straight away.
+     */
+    public double[] takePoseCorrection() {
+        double[] c = pendingCorrection;
+        pendingCorrection = null;
+        return c;
+    }
+
+    /** Last re-localization, for telemetry. */
+    public String lastFix() {
+        return lastFix;
     }
 
     private void seedSurveyedPrior() {
@@ -368,7 +453,18 @@ public class HiveAligner {
             lastEvent = "LOCKED ON " + target.label;
             aimPointSet = false;
         }
-        if (allowRetarget) retargetIfTipped();
+        if (allowRetarget) {
+            Cell side = sideTargeting() ? sideCell(pose) : null;
+            if (side != null) {
+                if (side != target) {
+                    target = side;
+                    aimPointSet = false;
+                    lastEvent = "CROSSED OVER - NOW " + target.label;
+                }
+            } else {
+                retargetIfTipped();
+            }
+        }
 
         if (!aimPointSet) {
             aimX = target.ex;
@@ -393,7 +489,7 @@ public class HiveAligner {
         // A line leaving (lx, ly) at angle psi (robot frame) passes through a point at range r and
         // bearing phi iff r*sin(phi - psi) = ly*cos(psi) - lx*sin(psi).
         double psi = Math.toRadians(LAUNCHER_YAW_DEG);
-        double lateral = LAUNCHER_OFFSET_Y_IN * Math.cos(psi) - LAUNCHER_OFFSET_X_IN * Math.sin(psi);
+        double lateral = LAUNCHER_OFFSET_Y_IN * Math.cos(psi) - launcherOffsetX() * Math.sin(psi);
         double phi = psi + (Math.abs(lateral) < r ? Math.asin(lateral / r) : 0.0);
         double err = wrap(Math.atan2(dy, dx) - phi - h);
         headingErrDeg = Math.toDegrees(err);
@@ -425,8 +521,27 @@ public class HiveAligner {
 
     // ---- target choice ---------------------------------------------------------------------
 
-    /** Our CELL that is UP; if neither is known, the closest one not known to be down. */
+    /**
+     * With SIDE_TARGETING and a field pose: our CELL on the robot's half. Otherwise (or before that
+     * CELL has an estimate): our CELL that is UP; if neither is known, the closest one not known
+     * to be down.
+     */
+    private boolean sideTargeting() {
+        return SIDE_TARGETING && fieldReferenced;
+    }
+
+    /** Our CELL on the robot's half of the field (same sign of x), if it has an estimate. */
+    private Cell sideCell(Pose2d pose) {
+        double s = pose.position.x >= 0 ? 1.0 : -1.0;
+        for (Cell c : cells) if (c.hasEstimate && c.sideSign == s) return c;
+        return null;
+    }
+
     private Cell pickTarget(Pose2d pose) {
+        if (sideTargeting()) {
+            Cell side = sideCell(pose);
+            if (side != null) return side;
+        }
         Cell up = null, best = null, any = null;
         double bestD = Double.MAX_VALUE, anyD = Double.MAX_VALUE;
         for (int i = 0; i < 2; i++) {
@@ -519,10 +634,44 @@ public class HiveAligner {
                 continue;
             }
             measure(c, cap);
+            c.goodFrames = c.accepted && c.n == 4 ? c.goodFrames + 1 : 0;
+            relocalize(c);
         }
     }
 
+    /**
+     * Camera fix of the robot's x/y (see RELOCALIZE_ENABLED). The CELL estimates live in the
+     * odometry frame, so a CELL tracked away from where it really is means the odometry is off by
+     * that much: move the pose, both CELL estimates and the pose history together, so the aim
+     * does not see a jump.
+     */
+    private void relocalize(Cell c) {
+        if (!RELOCALIZE_ENABLED || !fieldReferenced || engaged || pendingCorrection != null) return;
+        if (c.goodFrames < RELOCALIZE_MIN_FRAMES || c.sigmaIn() > RELOCALIZE_MAX_SIGMA_IN) return;
+        double sx = c.surveyX + c.sideSign * AIM_OFFSET_OUTWARD_IN;
+        double sy = c.surveyY + allianceWallSign * AIM_OFFSET_TOWARD_ALLIANCE_IN;
+        double dx = sx - c.ex, dy = sy - c.ey, d = Math.hypot(dx, dy);
+        if (!poseIsGuess && d <= RELOCALIZE_THRESHOLD_IN) return;
+        for (Cell k : cells) {
+            if (k.hasEstimate) {
+                k.ex += dx;
+                k.ey += dy;
+            }
+            k.goodFrames = 0;
+        }
+        for (int i = 0; i < histCount; i++) {
+            int j = (histHead - i + HISTORY) % HISTORY;
+            histX[j] += dx;
+            histY[j] += dy;
+        }
+        pendingCorrection = new double[]{dx, dy};
+        poseIsGuess = false;
+        lastFix = String.format("moved %.1f in (%+.1f, %+.1f) from %s", d, dx, dy, c.label);
+        lastEvent = "POSE CORRECTED " + lastFix;
+    }
+
     private void measure(Cell c, double[] cap) {
+        c.accepted = false;
         double cx = cap[0], cy = cap[1], ch = Math.cos(cap[2]), sh = Math.sin(cap[2]);
         double[] fx = new double[4], fy = new double[4];
         for (int k = 0; k < c.n; k++) {
@@ -574,6 +723,7 @@ public class HiveAligner {
             c.lastResult = "acquired";
             return;
         }
+        c.accepted = false;
         double sxx = c.pxx + rxx, sxy = c.pxy + rxy, syy = c.pyy + ryy;
         double det = sxx * syy - sxy * sxy;
         if (det <= 1e-12) return;
@@ -590,6 +740,7 @@ public class HiveAligner {
             return;
         }
         c.rejects = 0;
+        c.accepted = true;
         c.lastResult = "tracking";
         double kxx = c.pxx * ixx + c.pxy * ixy, kxy = c.pxx * ixy + c.pxy * iyy;
         double kyx = c.pxy * ixx + c.pyy * ixy, kyy = c.pxy * ixy + c.pyy * iyy;
@@ -807,6 +958,10 @@ public class HiveAligner {
             t.addData("AIM", "SEARCHING - no %s CELL seen yet", red ? "RED" : "BLUE");
         }
         if (!lastEvent.isEmpty()) t.addData("   last", lastEvent);
+        t.addData("   aiming", "%s shooter, %s", launcher, sideTargeting() ? "CELL on the robot's half"
+                : fieldReferenced ? "up / nearest CELL" : "up / nearest CELL (no field pose)");
+        t.addData("   pose fix", RELOCALIZE_ENABLED ? (poseIsGuess ? "waiting for the first CELL sighting (start pose is a guess) - last: "
+                : "last: ") + lastFix : "off");
         t.addData("   aim loop", "%.0f ms  (gain %.1f, braking %.1f%s)", loopS * 1000.0, kpUsed, decelUsed,
                 kpUsed < HEADING_KP - 1e-6 ? " - LOWERED: loop is slow" : "");
         t.addData("   camera", "%s, last frame %s", cameraState(), lastFrameNanos == 0 ? "none"
