@@ -84,6 +84,13 @@ public class BiobuzzRobotConstants {
      * starts. Set it longer than the lowered ramp reaches past where it first touches the FLOWER.
      */
     public static double flowerApproachIn = 6.0;
+    /**
+     * Side-shooter robot: the POLLEN exit is this far BEHIND the robot centre, on its front-back
+     * centre line, firing out of the RIGHT side, INCHES. HiveAutoKit.sideShot builds every auto
+     * shot pose from it. The exit is very close to the back of the 18 in robot (back face 9 in behind
+     * centre). TODO: MEASURE - each inch wrong moves every shot 1 in sideways at the CELL.
+     */
+    public static double pollenExitBehindCentreIn = 8.0;
 
     /**
      * After a FLOWER intake the ramp stays down until the robot has moved this many INCHES from the
@@ -203,7 +210,7 @@ public class BiobuzzRobotConstants {
     // INTAKE / TRANSFER POWERS (teleops)
     // =============================================================================================
     public static double
-        intakePower = 0.9,
+        intakePower = 1.0,
         intakeReversePower = -0.7,
         transferPower = 0.7;
 
@@ -213,7 +220,7 @@ public class BiobuzzRobotConstants {
      * (Intake2_0.collectToGate / collectFromFlower / feedPollen).
      */
     public static double
-        TRANSFER_INTAKE_POWER = 0.4, //0.35
+        TRANSFER_INTAKE_POWER = 1.0, //0.35
         TRANSFER_FEED_POWER = 1.0;
 
     /**

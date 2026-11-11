@@ -72,7 +72,7 @@ import org.firstinspires.ftc.teamcode.roadrunner.PoseStorage;
  *   Left trigger (hold) . SHOOT NECTAR   } (both held = both gates, aim between the shooters)
  *   Dpad right .......... both flywheels on/off (keep them spinning between shots)
  *   Dpad up / down ...... selected flywheel's target +/- VELOCITY_STEP (a trim with the table)
- *   
+ *
  * GAMEPAD 2 (optional)
  *   A / B / RB / triggers / dpad right / dpad up+down ... same as gamepad 1
  *   X ................... switch the selected flywheel (the last one shot is selected anyway)
@@ -130,7 +130,7 @@ public class BiobuzzShooterTeleOp extends LinearOpMode {
     /** Flip each motor relative to BiobuzzRobotConstants, for this opmode only. Read once at init. */
     public static boolean
         REVERSE_INTAKE = true,
-        REVERSE_TRANSFER = false,
+        REVERSE_TRANSFER = true,
         REVERSE_POLLEN_FLYWHEEL = false,
         REVERSE_NECTAR_FLYWHEEL = false;
 

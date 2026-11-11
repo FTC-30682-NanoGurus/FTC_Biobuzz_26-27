@@ -21,6 +21,9 @@ import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
 import org.firstinspires.ftc.teamcode.BiobuzzRobotConstants;
 import org.firstinspires.ftc.teamcode.library.NGAutoOpMode;
 import org.firstinspires.ftc.teamcode.roadrunner.MecanumDrive;
+import org.firstinspires.ftc.teamcode.roadrunner.PoseStorage;
+import org.firstinspires.ftc.teamcode.Biobuzz_subsystems.AllianceSelector;
+import org.firstinspires.ftc.teamcode.Biobuzz_subsystems.HiveWatcher.Side;
 
 import java.util.Arrays;
 
@@ -62,11 +65,11 @@ public class Biobuzz_PreLoad_Auto extends NGAutoOpMode{
             return new MinMax(-accel, accel);
         };
 
-        Pose2d beginPose = new Pose2d(61, -14, Math.toRadians(180));
+        Pose2d beginPose = HiveAutoKit.sideShot(Side.RIGHT, 49.05, 0);
         initAuto(beginPose);
 
-        Pose2d leftShot = new Pose2d(-52, -14, Math.toRadians(0));
-        Pose2d parkPose = new Pose2d(-28.5, -60, Math.toRadians(90));
+        Pose2d leftShot = HiveAutoKit.sideShot(Side.LEFT, 41.3, 183);
+        Pose2d parkPose = new Pose2d(-28.5, -60, Math.toRadians(-90));
 
         HiveAutoKit kit = new HiveAutoKit(drive, intake2_0, null, telemetry, maxVel, maxAccel,
                 parkPose, leftShot, beginPose);
@@ -77,10 +80,14 @@ public class Biobuzz_PreLoad_Auto extends NGAutoOpMode{
 
         Action shootPreLoad = kit.preloadShot();
 
+        double toPark = Math.atan2(parkPose.position.y - beginPose.position.y, parkPose.position.x - beginPose.position.x);
         Action parkPath = drive.actionBuilder(beginPose)
-                .setTangent(Math.toRadians(-130))
-                .splineToSplineHeading(new Pose2d(-5, -48, Math.toRadians(180)), Math.toRadians(-180), maxVel, maxAccel)
-                .splineToSplineHeading(parkPose, Math.toRadians(-90), maxVel, maxAccel)
+                .setTangent(toPark)
+                .splineToSplineHeading(new Pose2d(beginPose.position.x + 14 * Math.cos(toPark),
+                        beginPose.position.y + 14 * Math.sin(toPark), toPark), toPark, maxVel, maxAccel)
+                .splineToSplineHeading(new Pose2d(parkPose.position.x - 12 * Math.cos(toPark),
+                        parkPose.position.y - 12 * Math.sin(toPark), toPark), toPark, maxVel, maxAccel)
+                .splineToSplineHeading(parkPose, toPark, maxVel, maxAccel)
                 .build();
 
         Action park = new SequentialAction(
@@ -93,7 +100,10 @@ public class Biobuzz_PreLoad_Auto extends NGAutoOpMode{
 
         double pollenShootingVel = BiobuzzRobotConstants.pollenFixedShootingVel;
         double nectarShootingVel = BiobuzzRobotConstants.nectarFixedShootingVel;
+        kit.checkPrebuilt("parkPath", parkPath);
         while (!isStarted() && !isStopRequested()) {
+            AllianceSelector.poll(gamepad1, gamepad2);
+            AllianceSelector.show(telemetry);
             telemetry.addLine("Paths Built - Ready To Start");
             telemetry.update();
         }
@@ -108,5 +118,6 @@ public class Biobuzz_PreLoad_Auto extends NGAutoOpMode{
                         kit.guardPark(main)
                 )
         );
+        PoseStorage.storeAutoEndPose(AllianceSelector.red(), drive.pose);
     }
 }

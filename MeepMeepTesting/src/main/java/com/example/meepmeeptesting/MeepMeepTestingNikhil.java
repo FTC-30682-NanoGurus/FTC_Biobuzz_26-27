@@ -45,13 +45,13 @@ public class MeepMeepTestingNikhil {
     // BiobuzzRobotConstants.preloadSpinUpMaxS: the preload waits up to this for the flywheel (worst case shown).
     static final double PRELOAD_SPINUP_S = 1.0;
     // Which autos to draw. PRELOAD = purple, 2 TIP AUTO (Biobuzz_2_Tip_Auto, no camera) = cyan.
-    static final boolean SHOW_PRELOAD_AUTO = false;
+    static final boolean SHOW_PRELOAD_AUTO = true;
     static final boolean SHOW_PARK_AUTO = false;
     static final boolean SHOW_LEFT_PRELOAD_AUTO = false;
-    static final boolean SHOW_2TIP_AUTO = false;
+    static final boolean SHOW_2TIP_AUTO = true;
     static final boolean SHOW_HIVE_AUTOS = false;
     // Biobuzz_2_Tip_HiveAuto, both branches at once: orange = preload TIPPED, blue = preload did NOT tip.
-    static final boolean SHOW_2TIP_HIVE_BRANCHES = true;
+    static final boolean SHOW_2TIP_HIVE_BRANCHES = false;
     // Biobuzz_2_Tip_HiveAuto.TIP_START_WAIT_S: no tip start seen in this long after the preload = not tipped.
     static final double TIP_START_WAIT_S = 3.5;
     // How long after the preload volley the tip start is seen in the TIPPED branch (the wait ends right then).
@@ -60,8 +60,19 @@ public class MeepMeepTestingNikhil {
     // (BiobuzzRobotConstants.flowerRampClearIn, HiveAutoKit.departFlower / leaveFlower).
     static final double FLOWER_RAMP_CLEAR_IN = 8.0;
     // Side-shooter robot: the POLLEN exit is this far BEHIND the robot centre, on its front-back centre line,
-    // firing out of the RIGHT side. TODO: measure it. Each inch wrong moves every shot 1 in sideways at the CELL.
-    static final double POLLEN_EXIT_BEHIND_CENTRE_IN = 6.0;
+    // firing out of the RIGHT side - very close to the back (back face 9 in). Same as
+    // BiobuzzRobotConstants.pollenExitBehindCentreIn. TODO: measure it. Each inch wrong = 1 in sideways at the CELL.
+    static final double POLLEN_EXIT_BEHIND_CENTRE_IN = 8.0;
+
+    /**
+     * Robot centred at (cx, cy), turned so the POLLEN exit fires straight at the CELL opening (ox, oy): the further
+     * back the exit, the further LEFT it turns. Same as HiveAutoKit.sideShotFrom.
+     */
+    static Pose2d sideShotFrom(double ox, double oy, double cx, double cy) {
+        double dx = ox - cx, dy = oy - cy, d = Math.hypot(dx, dy);
+        double b = Math.min(POLLEN_EXIT_BEHIND_CENTRE_IN, 0.99 * d);
+        return new Pose2d(cx, cy, Math.atan2(dy, dx) + Math.acos(-b / d));
+    }
 
     /**
      * Robot centre pose for a side-shooter volley: the POLLEN exit sits dist from the CELL opening (ox, oy), at
@@ -588,12 +599,13 @@ public class MeepMeepTestingNikhil {
         //   start / preload  exit 49.05 in straight right of the RIGHT opening, facing straight down (-90)
         //   LEFT shot        exit 41.3 in from the LEFT opening (as the old (-52, -14) shot), 3 deg angled
         //                    toward FLOWER 1 (heading 93): wall set + FLOWER 1 (tipped), FLOWER 2 (not tipped)
-        //   angled LEFT      exit 49.05 in at 205 deg (heading 115): last shot before PARK in both branches
+        //   angled LEFT      centre (-58.0, -34.6), turned LEFT so the rear exit aims at the opening centre
+        //                    (heading 117.3 with the exit 8 in back): last shot before PARK in both branches
         //   angled RIGHT     exit 49.05 in at -25 deg (heading -115): wall set (not tipped)
         Pose2d sideStart = sideShot(12.232, -19.277, 49.05, 0);
         Vector2d gardenEnd = new Vector2d(sideStart.position.x, -61);
         Pose2d leftShotSide = sideShot(-10.998, -19.297, 41.3, 183);
-        Pose2d leftAngled = sideShot(-10.998, -19.297, 49.05, 205);
+        Pose2d leftAngled = sideShotFrom(-10.998, -19.297, -58.0, -34.6);
         Pose2d rightAngled = sideShot(12.232, -19.277, 49.05, -25);
         Vector2d parkSide = new Vector2d(-49.5, -58);
 
@@ -813,17 +825,23 @@ public class MeepMeepTestingNikhil {
                 //.splineToSplineHeading()
                 .build());*/
 
-        // PRELOAD AUTO (purple) - exactly Biobuzz_PreLoad_Auto. Start (61, -14, 180) on the RIGHT wall; the
-        // preload is shot from there at the RIGHT CELL (kit.preloadShot: flywheel spin-up, up to PRELOAD_SPINUP_S, then one
-        // cycle). Park in the LOADING ZONE facing straight forward (90), turning from 180 after passing under the
-        // HIVE and backing the last stretch straight down: (-32, -61, 90) = fully inside left-to-right, 9 in deep,
-        // 2 in off the wall, 2.5 in clear of a 2-tip partner parked on the left. 3.31 s, 9.2 in clear of the HIVE.
-        preloadBot.runAction(preloadBot.getDrive().actionBuilder(new Pose2d(61, -14, Math.toRadians(180)))
+        // PRELOAD AUTO (purple) - exactly Biobuzz_PreLoad_Auto, SIDE-SHOOTER robot. Starts at the same spot as the
+        // 2-tip autos (sideShot: POLLEN exit 49.05 in straight right of the RIGHT opening, facing straight down) and
+        // shoots the preload there. Park in ONE continuous move along the straight line to the LOADING ZONE: turns to
+        // face along it over the first 14 in (pulling away from the wall), drives straight, turns back to -90 over the
+        // last 12 in. Parked at (-28.5, -60, -90) - same footprint as facing 90, 2.9 in clear of a 2-tip partner at
+        // (-49.5, -58, 115). 3.14 s of driving (was 4.08 s), 8.1 in clear of the HIVE.
+        Pose2d preloadStart = sideShot(12.232, -19.277, 49.05, 0);
+        Pose2d preloadPark = new Pose2d(-28.5, -60, Math.toRadians(-90));
+        double toPreloadPark = Math.atan2(preloadPark.position.y - preloadStart.position.y, preloadPark.position.x - preloadStart.position.x);
+        preloadBot.runAction(preloadBot.getDrive().actionBuilder(preloadStart)
                     .waitSeconds(PRELOAD_SPINUP_S + VOLLEY_S)   // preload: spin-up + one cycle, RIGHT CELL
-                    .setTangent(Math.toRadians(-130))
-                // leaves the start at ~40 deg so the robot never slides along the field wall, then turns 180 -> 90
-                .splineToSplineHeading(new Pose2d(-5, -48, Math.toRadians(180)), Math.toRadians(-180), maxVel, maxAccel)
-                .splineToSplineHeading(new Pose2d(-32, -61, Math.toRadians(90)), Math.toRadians(-90), maxVel, maxAccel)
+                    .setTangent(toPreloadPark)
+                .splineToSplineHeading(new Pose2d(preloadStart.position.x + 14 * Math.cos(toPreloadPark),
+                        preloadStart.position.y + 14 * Math.sin(toPreloadPark), toPreloadPark), toPreloadPark, maxVel, maxAccel)
+                .splineToSplineHeading(new Pose2d(preloadPark.position.x - 12 * Math.cos(toPreloadPark),
+                        preloadPark.position.y - 12 * Math.sin(toPreloadPark), toPreloadPark), toPreloadPark, maxVel, maxAccel)
+                .splineToSplineHeading(preloadPark, toPreloadPark, maxVel, maxAccel)
                 .build());
 
         // PARK AUTO (green) - exactly Biobuzz_Park_Auto. Starts facing forward (90) with its back touching the
@@ -852,32 +870,43 @@ public class MeepMeepTestingNikhil {
                 .splineToSplineHeading(new Pose2d(-49.5, -58, Math.toRadians(90)), Math.toRadians(-86.75), maxVel, maxAccel)
                 .build());
 
-        // 2 TIP AUTO (cyan) - exactly Biobuzz_2_Tip_Auto (no camera, fixed plan): preload at the RIGHT CELL, wall
-        // set to the angled LEFT shot, FLOWER 1 (runtime route M: to the staging pose, straight in, collect on
-        // arrival), back straight out and on to the angled LEFT shot again (route M: 1.97 s), shoot, then park
-        // (route M: 1.01 s) in the LEFT side of the LOADING ZONE: (-49.5, -58, 90).
-        Pose2d leftNear2t = new Pose2d(-55.46, -40.00, Math.toRadians(25.0));
+        // 2 TIP AUTO (cyan) - exactly Biobuzz_2_Tip_Auto, SIDE-SHOOTER robot, no camera, fixed plan (= the tipped
+        // branch of the 2-tip HIVE auto, every shot simply fired): preload at the RIGHT CELL, GARDEN straight down,
+        // wall set at the LEFT shot, FLOWER 1 -> LEFT shot, FLOWER 2 -> angled LEFT safety shot, park.
+        // Partner rule kept: centre never below y = -40 on the left half except PARK.
+        Pose2d start2t = sideShot(12.232, -19.277, 49.05, 0);
+        Vector2d garden2t = new Vector2d(start2t.position.x, -61);
+        Pose2d leftShot2t = sideShot(-10.998, -19.297, 41.3, 183);
+        Pose2d leftAngled2t = sideShotFrom(-10.998, -19.297, -58.0, -34.6);
         Pose2d flowerOne2t = new Pose2d(-55, -22, Math.toRadians(180));
-        TrajectoryActionBuilder twoTipAuto = twoTipAutoBot.getDrive().actionBuilder(new Pose2d(61, -14, Math.toRadians(180)))
+        Pose2d flowerTwo2t = new Pose2d(24, -55, Math.toRadians(-90));
+        TrajectoryActionBuilder twoTipAuto = twoTipAutoBot.getDrive().actionBuilder(start2t)
                     .waitSeconds(PRELOAD_SPINUP_S + VOLLEY_S)   // preload: spin-up + one cycle, RIGHT CELL
-                    .setTangent(Math.toRadians(-155))
-                .splineToSplineHeading(new Pose2d(62, -58, Math.toRadians(360)), Math.toRadians(25), maxIntakeVel, maxAccel)
+                    .setTangent(Math.toRadians(-90))    // GARDEN: straight forward down the wall (2.04 s)
+                .splineToConstantHeading(garden2t, Math.toRadians(-90), maxIntakeVel, maxAccel)
                     .waitSeconds(0.25)  // WALL_SET_DWELL_S
-                    .setReversed(true)
-                .splineToLinearHeading(new Pose2d(20, -42, Math.toRadians(360)), Math.toRadians(-180), maxVel, maxAccel)
-                .splineToLinearHeading(new Pose2d(-33, -40, Math.toRadians(360)), Math.toRadians(180), maxVel, maxAccel)
-                .splineToSplineHeading(leftNear2t, Math.toRadians(180), maxVel, maxAccel)
+                    .setTangent(Math.toRadians(90))    // forward along y = -40, up into the LEFT shot (3.70 s)
+                .splineToSplineHeading(new Pose2d(10, -40, Math.toRadians(180)), Math.toRadians(180), maxVel, maxAccel)
+                .splineToSplineHeading(leftShot2t, Math.toRadians(90), maxVel, maxAccel)
                     .waitSeconds(VOLLEY_S)   // wall-set volley, LEFT CELL
-                    .setTangent(tangentToStaging(leftNear2t, flowerOne2t));
-        twoTipAuto = approachFlower(twoTipAuto, flowerOne2t, maxVel, maxAccel)
-                    .waitSeconds(FLOWER_COLLECT_TIME);  // collectFromFlower, from arrival
-        Vector2d f1OutT = new Vector2d(flowerOne2t.position.x + FLOWER_RAMP_CLEAR_IN, flowerOne2t.position.y);
-        double f1ToLnT = Math.atan2(leftNear2t.position.y - f1OutT.y, leftNear2t.position.x - f1OutT.x);
+                    .setTangent(tangentToStaging(leftShot2t, flowerOne2t) + Math.toRadians(40));
+        twoTipAuto = approachFlower(twoTipAuto, flowerOne2t, maxVel, maxAccel)    // (1.29 s)
+                    .waitSeconds(FLOWER_COLLECT_TIME);
         twoTipAuto = departFlower(twoTipAuto, flowerOne2t, maxVel, maxAccel)
-                .splineToSplineHeading(leftNear2t, f1ToLnT, maxVel, maxAccel)
-                    .waitSeconds(VOLLEY_S)   // FLOWER 1 volley, LEFT CELL, from the angled pose
-                    .setTangent(Math.toRadians(-60))    // parkFromNear (1.10 s)
-                .splineToSplineHeading(new Pose2d(-49.50, -58.00, Math.toRadians(90.00)), Math.toRadians(-90), maxVel, maxAccel);
+                .splineToSplineHeading(leftShot2t, Math.toRadians(-170), maxVel, maxAccel)    // (1.38 s)
+                    .waitSeconds(VOLLEY_S)   // FLOWER 1 volley, LEFT CELL
+                    .setTangent(Math.toRadians(-90))    // down the left side, under the HIVE at y = -39 (3.44 s)
+                .splineToSplineHeading(new Pose2d(-24, -39, Math.toRadians(0)), Math.toRadians(5), maxVel, maxAccel)
+                .splineToSplineHeading(new Pose2d(10, -39.5, Math.toRadians(-15)), Math.toRadians(-15), maxVel, maxAccel);
+        twoTipAuto = approachFlower(twoTipAuto, flowerTwo2t, maxVel, maxAccel)
+                    .waitSeconds(FLOWER_COLLECT_TIME)
+                    .setTangent(Math.toRadians(90))    // straight back out of FLOWER 2, forward along y = -40/-38 (3.25 s)
+                .splineToConstantHeading(new Vector2d(24, -47), Math.toRadians(90), maxVel, maxAccel)
+                .splineToSplineHeading(new Pose2d(10, -40, Math.toRadians(180)), Math.toRadians(180), maxVel, maxAccel)
+                .splineToSplineHeading(new Pose2d(-42, -38, Math.toRadians(180)), Math.toRadians(180), maxVel, maxAccel)
+                .splineToSplineHeading(leftAngled2t, Math.toRadians(150), maxVel, maxAccel)
+                    .waitSeconds(VOLLEY_S)   // safety volley, angled LEFT
+                .strafeToConstantHeading(new Vector2d(-49.5, -58), maxVel, maxAccel);    // park: straight backward (1.00 s)
         twoTipAutoBot.runAction(twoTipAuto.build());
 
         // Load the 2026-27 BioBuzz field image from disk.

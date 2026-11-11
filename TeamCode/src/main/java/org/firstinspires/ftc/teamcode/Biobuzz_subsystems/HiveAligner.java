@@ -74,7 +74,7 @@ public class HiveAligner {
      * facing sideways this is what moves a shot left/right of the CELL. TODO: MEASURE on the robot.
      */
     public static double POLLEN_LAUNCHER_OFFSET_X_IN = -5.0;
-    public static double NECTAR_LAUNCHER_OFFSET_X_IN = -1.0;
+    public static double NECTAR_LAUNCHER_OFFSET_X_IN = 0.0;
 
     /** Which shooter the aim lines up. */
     public enum Launcher { POLLEN, NECTAR, BOTH }

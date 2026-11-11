@@ -191,6 +191,35 @@ public class HiveAutoKit {
         return drive.pose.position.x >= 0 ? Side.RIGHT : Side.LEFT;
     }
 
+    /**
+     * Side-shooter robot: the robot centre pose that puts the POLLEN exit
+     * ({@link BiobuzzRobotConstants#pollenExitBehindCentreIn} behind centre, firing out of the RIGHT
+     * side) {@code dist} INCHES from {@code side}'s CELL opening, at {@code phiDeg} around it
+     * (0 = straight +x of it), turned so the exit fires straight at the opening's centre
+     * (heading = shot direction + 90). Alliance frame: the openings are TurretConstants' red ones.
+     */
+    public static Pose2d sideShot(Side side, double dist, double phiDeg) {
+        double ox = side == Side.LEFT ? TurretConstants.RED_LEFT_X_IN : TurretConstants.RED_RIGHT_X_IN;
+        double oy = side == Side.LEFT ? TurretConstants.RED_LEFT_Y_IN : TurretConstants.RED_RIGHT_Y_IN;
+        double phi = Math.toRadians(phiDeg), h = phi - Math.PI / 2, b = BiobuzzRobotConstants.pollenExitBehindCentreIn;
+        double ex = ox + dist * Math.cos(phi), ey = oy + dist * Math.sin(phi);
+        return new Pose2d(ex + b * Math.cos(h), ey + b * Math.sin(h), h);
+    }
+
+    /**
+     * Side-shooter robot: the robot centred at {@code centre}, turned so the POLLEN exit
+     * ({@link BiobuzzRobotConstants#pollenExitBehindCentreIn} behind centre, firing out of the RIGHT
+     * side) fires straight at the centre of {@code side}'s CELL opening. The further back the exit,
+     * the further LEFT the robot turns.
+     */
+    public static Pose2d sideShotFrom(Side side, Vector2d centre) {
+        double ox = side == Side.LEFT ? TurretConstants.RED_LEFT_X_IN : TurretConstants.RED_RIGHT_X_IN;
+        double oy = side == Side.LEFT ? TurretConstants.RED_LEFT_Y_IN : TurretConstants.RED_RIGHT_Y_IN;
+        double dx = ox - centre.x, dy = oy - centre.y, d = Math.hypot(dx, dy);
+        double b = Math.min(BiobuzzRobotConstants.pollenExitBehindCentreIn, 0.99 * d);
+        return new Pose2d(centre, Math.atan2(dy, dx) + Math.acos(-b / d));
+    }
+
     public Pose2d shotPose(Side side) {
         return side == Side.LEFT ? leftShot : rightShot;
     }
@@ -1006,9 +1035,20 @@ public class HiveAutoKit {
      * arrived, and the rollers get every second the drive gives them.
      */
     public Action withWallCollect(Action drive) {
-        double run = Math.max(WALL_COLLECT_MIN_S, motionTime(drive) - WALL_COLLECT_START_S);
+        return withWallCollect(drive, WALL_COLLECT_START_S);
+    }
+
+    /**
+     * Side-shooter robot: the wall-set leg drives straight forward down the wall from the start,
+     * reaching the first GARDEN pollen about 0.6 s in, so the rollers start this early, SECONDS.
+     */
+    public static double SIDE_WALL_COLLECT_START_S = 0.2;
+
+    /** {@link #withWallCollect(Action)} with the rollers starting {@code startS} into the leg. */
+    public Action withWallCollect(Action drive, double startS) {
+        double run = Math.max(WALL_COLLECT_MIN_S, motionTime(drive) - startS);
         return new ParallelAction(drive,
-                new SequentialAction(new SleepAction(WALL_COLLECT_START_S), intake.collectToGate(run)));
+                new SequentialAction(new SleepAction(startS), intake.collectToGate(run)));
     }
 
     /**
