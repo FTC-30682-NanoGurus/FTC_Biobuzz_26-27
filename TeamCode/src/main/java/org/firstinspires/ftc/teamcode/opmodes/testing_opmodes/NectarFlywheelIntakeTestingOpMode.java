@@ -20,15 +20,15 @@ import org.firstinspires.ftc.teamcode.library.NGMotorFlywheelTuner;
 @TeleOp(name = "Nectar Flywheel + Intake Testing (no drive)", group = "tuning")
 public class NectarFlywheelIntakeTestingOpMode extends LinearOpMode {
 
-    public static double START_TARGET_VELOCITY = 1600;
+    public static double START_TARGET_VELOCITY = 1200;
 
     public static double START_KI = 0;
     public static double START_KD = 0;
-    public static double START_KF = 0.000426; //0.000445
-    public static double START_KP_RECOVERY = 0.0075;
-    public static double START_KP_STABLE = 0.0007;
+    public static double START_KF = 0.000400; //0.000445
+    public static double START_KP_RECOVERY = 0.0015;
+    public static double START_KP_STABLE = 0.00065;
     public static double START_ALPHA = 0.7;
-    public static double START_RECOVERY_THRESHOLD = 90.0;
+    public static double START_RECOVERY_THRESHOLD = 80.0;
 
     public static boolean REVERSED = BiobuzzRobotConstants.nectarFlywheelReversed;
 

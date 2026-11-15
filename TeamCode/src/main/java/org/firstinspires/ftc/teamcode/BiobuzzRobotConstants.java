@@ -42,8 +42,8 @@ public class BiobuzzRobotConstants {
     //public static String interTransfer = "interTransfer";
     public static String flywheels = "flywheels";
     public static double
-        pollenFixedShootingVel = 1135, 
-            nectarFixedShootingVel = 1400;
+        pollenFixedShootingVel = 1350,
+            nectarFixedShootingVel = 1850;
 
     /**
      * Motor directions - the single source for the autos (Intake2_0) and every teleop. Set to what
@@ -53,7 +53,7 @@ public class BiobuzzRobotConstants {
      */
     public static boolean
         pollenFlywheelReversed = false,
-        nectarFlywheelReversed = false,
+        nectarFlywheelReversed = true,
         intakeReversed = true;
 
     /**
@@ -164,8 +164,8 @@ public class BiobuzzRobotConstants {
     public static double
         pollenGateClosedPos = 0.90,
         pollenGateOpenPos = 0.59,
-        nectarGateClosedPos = 0,
-        nectarGateOpenPos = 0.45;
+        nectarGateClosedPos = 0.4,
+        nectarGateOpenPos = 0.07;
 
     // =============================================================================================
     // FLYWHEEL PIDF - the single source for the autos (Intake2_0) and both teleops.
@@ -187,10 +187,10 @@ public class BiobuzzRobotConstants {
 
     /** Nectar: tuned in NectarFlywheelIntakeTestingOpMode. */
     public static double
-        nectarKF = 0.000498, //0.000426
+        nectarKF = 0.000400, //0.000426
         nectarKI = 0,
         nectarKD = 0,
-        nectarKpStable = 0.0006, //0.0007
+        nectarKpStable = 0.00065, //0.0007
         nectarKpRecovery = 0.0015, //0.0075
         nectarAlpha = 0.7,
         nectarRecoveryThreshold = 80.0; //90
@@ -220,7 +220,7 @@ public class BiobuzzRobotConstants {
      * (Intake2_0.collectToGate / collectFromFlower / feedPollen).
      */
     public static double
-        TRANSFER_INTAKE_POWER = 1.0, //0.35
+        TRANSFER_INTAKE_POWER = 0.6, //0.35
         TRANSFER_FEED_POWER = 1.0;
 
     /**

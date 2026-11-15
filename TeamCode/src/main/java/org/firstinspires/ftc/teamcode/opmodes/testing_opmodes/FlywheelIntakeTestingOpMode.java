@@ -116,10 +116,10 @@ public class FlywheelIntakeTestingOpMode extends LinearOpMode {
         }
 
         try {
-            gate = hardwareMap.get(Servo.class, BiobuzzRobotConstants.pollenGate);
+            gate = hardwareMap.get(Servo.class, BiobuzzRobotConstants.nectarGate);
         } catch (Exception e) {
             gate = null;
-            gateFault = "'" + BiobuzzRobotConstants.pollenGate + "' not in the configuration";
+            gateFault = "'" + BiobuzzRobotConstants.nectarGate + "' not in the configuration";
         }
         setGate(false);
 
@@ -280,7 +280,7 @@ public class FlywheelIntakeTestingOpMode extends LinearOpMode {
         if (gate == null) open = false;
         gateOpen = open;
         if (gate == null) return;
-        double pos = open ? BiobuzzRobotConstants.pollenGateOpenPos : BiobuzzRobotConstants.pollenGateClosedPos;
+        double pos = open ? BiobuzzRobotConstants.nectarGateOpenPos : BiobuzzRobotConstants.nectarGateClosedPos;
         if (pos != lastGatePos) {
             gate.setPosition(pos);
             lastGatePos = pos;
