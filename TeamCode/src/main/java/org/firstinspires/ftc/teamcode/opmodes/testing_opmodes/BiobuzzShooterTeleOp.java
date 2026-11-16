@@ -98,8 +98,9 @@ public class BiobuzzShooterTeleOp extends LinearOpMode {
     /** One dpad press, TICKS/SECOND. */
     public static double VELOCITY_STEP = 25.0;
     /**
-     * Each flywheel's velocity from its distance table by the HIVE distance (HiveAligner, so it
-     * needs AUTO_ALIGN_ENABLED), interpolated between rows and clamped to the end rows. A target
+     * Each flywheel's velocity from its distance table by the distance from THAT shooter's exit to
+     * the CELL (HiveAligner, so it needs AUTO_ALIGN_ENABLED; measure the rows with the per-shooter
+     * distances telemetry shows), interpolated between rows and clamped to the end rows. A target
      * only changes while its gate is closed, so a volley is shot at one speed. Dpad up/down trims
      * the selected wheel on top of its table. With no distance it falls back to the fixed velocity.
      * Pollen rows: LaunchVelocityTable's constructor. Nectar rows: NECTAR_TABLE_* below.
@@ -108,7 +109,7 @@ public class BiobuzzShooterTeleOp extends LinearOpMode {
     public static boolean USE_VELOCITY_TABLE = false;
     /** NECTAR distance table, INCHES -> TICKS/SECOND. PLACEHOLDERS (flat) - measure on the robot. */
     public static double[] NECTAR_TABLE_DISTANCES_IN = {24.0, 48.0, 72.0, 96.0};
-    public static double[] NECTAR_TABLE_VELOCITIES_TPS = {1400.0, 1400.0, 1400.0, 1400.0};
+    public static double[] NECTAR_TABLE_VELOCITIES_TPS = {1600.0, 1830, 1900.0, 1980.0};
     public static double TRIGGER_THRESHOLD = 0.5;
     /**
      * The gate servos have no position feedback, so "open" is timed from their speed: REV Smart
@@ -124,13 +125,13 @@ public class BiobuzzShooterTeleOp extends LinearOpMode {
      * under the closing gate. false = the transfer just stops on release.
      */
     public static boolean TRANSFER_REVERSE_ON_RELEASE = true;
-    public static double TRANSFER_RELEASE_REVERSE_MS = 1400.0;
+    public static double TRANSFER_RELEASE_REVERSE_MS = 500.0;
     public static double TRANSFER_RELEASE_REVERSE_POWER = 1.0;
 
     /** Flip each motor relative to BiobuzzRobotConstants, for this opmode only. Read once at init. */
     public static boolean
         REVERSE_INTAKE = true,
-        REVERSE_TRANSFER = true,
+        REVERSE_TRANSFER = false,
         REVERSE_POLLEN_FLYWHEEL = false,
         REVERSE_NECTAR_FLYWHEEL = false;
 
@@ -139,7 +140,7 @@ public class BiobuzzShooterTeleOp extends LinearOpMode {
      * where the trigger was pressed on odometry, pushing back against defense. Sticks are ignored
      * while it is locked. false = the triggers only shoot.
      */
-    public static boolean WHEEL_LOCK_ENABLED = true;
+    public static boolean WHEEL_LOCK_ENABLED = false;
     /** in/s of push-back per inch the robot is moved off its spot, and the cap. */
     public static double LOCK_KP = 6.5;
     public static double LOCK_MAX_IN_S = 30.0;
@@ -223,6 +224,7 @@ public class BiobuzzShooterTeleOp extends LinearOpMode {
         String fault = "";
         final boolean pollenGains;
         final LaunchVelocityTable table;
+        final HiveAligner.Launcher launcherId;
         final double fixedVel;
         double trim = 0.0;
         String velocityNote = "fixed";
@@ -254,6 +256,7 @@ public class BiobuzzShooterTeleOp extends LinearOpMode {
             this.fixedVel = target;
             this.pollenGains = pollenGains;
             this.table = table;
+            this.launcherId = pollenGains ? HiveAligner.Launcher.POLLEN : HiveAligner.Launcher.NECTAR;
             NGMotor m = null;
             try {
                 m = new NGMotor(hardwareMap, telemetry, motorName);
@@ -746,9 +749,8 @@ public class BiobuzzShooterTeleOp extends LinearOpMode {
             if (USE_VELOCITY_TABLE) {
                 if (up) selected.trim += VELOCITY_STEP;
                 if (down) selected.trim -= VELOCITY_STEP;
-                double hiveIn = aligner == null ? Double.NaN : aligner.distanceToHive(pose);
-                pollen.updateTarget(hiveIn);
-                nectar.updateTarget(hiveIn);
+                pollen.updateTarget(aligner == null ? Double.NaN : aligner.distanceToHive(pose, pollen.launcherId));
+                nectar.updateTarget(aligner == null ? Double.NaN : aligner.distanceToHive(pose, nectar.launcherId));
             } else {
                 if (up) selected.target += VELOCITY_STEP;
                 if (down) selected.target = Math.max(0.0, selected.target - VELOCITY_STEP);
@@ -824,9 +826,11 @@ public class BiobuzzShooterTeleOp extends LinearOpMode {
                 if (aligner != null) {
                     telemetry.addData("Auto-align", alignOffByDriver ? "OFF (gamepad2 BACK) - triggers shoot without aiming"
                             : "on (gamepad2 BACK turns it off)");
-                    double hiveIn = aligner.distanceToHive(pose);
-                    telemetry.addData("HIVE distance", Double.isNaN(hiveIn) ? "unknown - no CELL known yet"
-                            : String.format("%.1f in (%.2f ft) to %s", hiveIn, hiveIn / 12.0, aligner.distanceCellLabel(pose)));
+                    double pollenIn = aligner.distanceToHive(pose, HiveAligner.Launcher.POLLEN);
+                    double nectarIn = aligner.distanceToHive(pose, HiveAligner.Launcher.NECTAR);
+                    telemetry.addData("HIVE distance (exit to CELL)", Double.isNaN(pollenIn) ? "unknown - no CELL known yet"
+                            : String.format("pollen %.1f in, nectar %.1f in, to %s", pollenIn, nectarIn,
+                            aligner.distanceCellLabel(pose)));
                     aligner.telemetry(telemetry);
                 } else {
                     telemetry.addData("HIVE distance", "unknown - auto-align is off (no camera)");

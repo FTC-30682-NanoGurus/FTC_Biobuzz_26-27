@@ -179,9 +179,9 @@ public class BiobuzzHiveAutoAlignTest extends LinearOpMode {
     /** Launcher exit point from robot centre, INCHES, + = LEFT. A miss that grows when close. */
     public static double LAUNCHER_OFFSET_Y_IN = 0.0;
     /** Launcher exit point from robot centre, INCHES, + = forward. Only matters with a yaw. */
-    public static double LAUNCHER_OFFSET_X_IN = 0.0;
+    public static double LAUNCHER_OFFSET_X_IN = -org.firstinspires.ftc.teamcode.BiobuzzRobotConstants.pollenExitBehindCentreIn;
     /** Shot direction relative to robot forward, DEGREES, + = left. 180 for a rear shooter. */
-    public static double LAUNCHER_YAW_DEG = 0.0;
+    public static double LAUNCHER_YAW_DEG = -90.0;   // side-shooter robot: out of the RIGHT side
 
     // ============================================================================================
     // TARGET - the aim point relative to the tag cluster

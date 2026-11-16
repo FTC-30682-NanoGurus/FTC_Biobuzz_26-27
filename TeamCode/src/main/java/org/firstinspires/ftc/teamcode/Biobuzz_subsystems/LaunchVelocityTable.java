@@ -44,16 +44,19 @@ public class LaunchVelocityTable {
      * telemetry that nothing has been tuned yet, whereas a plausible-looking made-up curve would
      * hide that fact until the robot missed every shot at competition.
      *
+     * Distances are from the SHOOTER EXIT to the CELL (HiveAligner.distanceToHive, shown per
+     * shooter in BiobuzzShooterTeleOp telemetry), not from robot centre.
+     *
      * How to fill them in: park the robot at each distance, sweep the flywheel velocity until the
      * ball consistently lands in the CELL, and record the velocity that works. Add more rows
      * wherever the curve bends - near-range rows matter more than far ones because the velocity
      * changes fastest there.
      */
     public LaunchVelocityTable() {
-        add(24.0, 1000.0);  // TODO: TUNE close range
-        add(48.0, 1300.0);  // TODO: TUNE mid range
-        add(72.0, 1400.0);  // TODO: TUNE long range
-        add(96.0, 1400.0);  // TODO: TUNE max range
+        add(24.0, 1150.0);  // TODO: TUNE close range
+        add(48.0, 1350.0);  // TODO: TUNE mid range
+        add(72.0, 1450.0);  // TODO: TUNE long range
+        add(96.0, 1500.0);  // TODO: TUNE max range
     }
     /**
      * Adds or replaces one measured point.

@@ -17,6 +17,7 @@ import com.qualcomm.robotcore.util.ElapsedTime;
 import com.qualcomm.robotcore.util.Range;
 
 import org.firstinspires.ftc.robotcore.external.Telemetry;
+import org.firstinspires.ftc.teamcode.BiobuzzRobotConstants;
 import org.firstinspires.ftc.robotcore.external.hardware.camera.WebcamName;
 import org.firstinspires.ftc.robotcore.external.hardware.camera.controls.ExposureControl;
 import org.firstinspires.ftc.robotcore.external.hardware.camera.controls.GainControl;
@@ -71,9 +72,12 @@ public class HiveAligner {
     public static double LAUNCHER_OFFSET_Y_IN = 0.0;
     /**
      * Each exit's offset from robot centre along the robot, INCHES, + = forward. With the shooters
-     * facing sideways this is what moves a shot left/right of the CELL. TODO: MEASURE on the robot.
+     * facing sideways this is what moves a shot left/right of the CELL. POLLEN starts from
+     * BiobuzzRobotConstants.pollenExitBehindCentreIn, the number the autos build their shot poses
+     * from, so teleop and auto aim the same exit. TODO: MEASURE both on the robot (NECTAR is a
+     * placeholder: in front of POLLEN, close to it).
      */
-    public static double POLLEN_LAUNCHER_OFFSET_X_IN = -5.0;
+    public static double POLLEN_LAUNCHER_OFFSET_X_IN = -BiobuzzRobotConstants.pollenExitBehindCentreIn;
     public static double NECTAR_LAUNCHER_OFFSET_X_IN = 0.0;
 
     /** Which shooter the aim lines up. */
@@ -151,7 +155,7 @@ public class HiveAligner {
     public static boolean MANUAL_EXPOSURE = false;
     public static int DASHBOARD_FPS = 10;
     public static double RANGE_SIGMA_FRAC = 0.03;
-    public static double RANGE_SIGMA_MIN_IN = 0.5;
+    public static double RANGE_SIGMA_MIN_IN = 0.5; 
     public static double BEARING_SIGMA_DEG = 0.4;
     public static double LATERAL_SIGMA_MIN_IN = 0.25;
     public static double PARTIAL_CLUSTER_SIGMA_IN = 1.5;
@@ -346,7 +350,11 @@ public class HiveAligner {
     }
 
     private double launcherOffsetX() {
-        switch (launcher) {
+        return launcherOffsetX(launcher);
+    }
+
+    private static double launcherOffsetX(Launcher l) {
+        switch (l) {
             case NECTAR:
                 return NECTAR_LAUNCHER_OFFSET_X_IN;
             case BOTH:
@@ -934,14 +942,24 @@ public class HiveAligner {
 
     // ---- telemetry ---------------------------------------------------------------------------
 
-    /**
-     * Distance from the robot centre to the CELL it aims at (the locked target, otherwise the one
-     * it would pick: the up CELL, else the closest), INCHES. NaN until the CELL has been seen (or
-     * seeded from the surveyed positions). Measured on odometry, so it updates every loop.
-     */
+    /** distanceToHive(pose, l) for the shooter currently set with setLauncher. */
     public double distanceToHive(Pose2d pose) {
+        return distanceToHive(pose, launcher);
+    }
+
+    /**
+     * Distance from shooter l's EXIT to the CELL it aims at (the locked target, otherwise the one
+     * it would pick), INCHES - the distance the ball actually flies, so velocity tables measured
+     * with it do not depend on where the shooter sits on the robot. NaN until the CELL has been
+     * seen (or seeded from the surveyed positions). Measured on odometry, so it updates every loop.
+     */
+    public double distanceToHive(Pose2d pose, Launcher l) {
         Cell c = hasTarget() ? target : pickTarget(pose);
-        return c == null ? Double.NaN : Math.hypot(c.ex - pose.position.x, c.ey - pose.position.y);
+        if (c == null) return Double.NaN;
+        double h = pose.heading.toDouble(), lx = launcherOffsetX(l), ly = LAUNCHER_OFFSET_Y_IN;
+        double exitX = pose.position.x + Math.cos(h) * lx - Math.sin(h) * ly;
+        double exitY = pose.position.y + Math.sin(h) * lx + Math.cos(h) * ly;
+        return Math.hypot(c.ex - exitX, c.ey - exitY);
     }
 
     /** Label of the CELL {@link #distanceToHive} measures to, or null. */

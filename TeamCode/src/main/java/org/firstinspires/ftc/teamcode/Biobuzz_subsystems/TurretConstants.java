@@ -303,7 +303,9 @@ public class TurretConstants {
      * target error and the shot misses. Pitch matters because it tilts the forward axis into the
      * vertical one, shortening the computed ground range.
      */
-    public static double CAMERA_MOUNT_YAW_DEG = 0.0;
+    // Side-shooter robot: the camera faces out of the RIGHT side with the shooters, so -90.
+    // Trim by a degree or two once measured; the -90 itself is not a guess.
+    public static double CAMERA_MOUNT_YAW_DEG = -90.0;
     public static double CAMERA_MOUNT_PITCH_DEG = 40.0;
     public static double CAMERA_MOUNT_ROLL_DEG = 0.0;
 
