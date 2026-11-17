@@ -226,7 +226,7 @@ public class BiobuzzRobotConstants {
     /**
      * Standard time to shoot one complete cycle (4 pollen) in every auto, SECONDS: how long each
      * volley runs the transfer (HiveAutoKit.transfer / Intake2_0.feedPollen) and what every auto's
-     * time budget allows per shot.
+     * time budget allows per shot. 
      */
     public static double cycleShootingTime = 1.5;
 
