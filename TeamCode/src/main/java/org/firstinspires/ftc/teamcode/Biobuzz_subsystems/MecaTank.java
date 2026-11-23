@@ -115,13 +115,13 @@ public class MecaTank extends Subsystem {
         //distance = new Distance(hardwareMap, telemetry, RobotConstants.distance);
 //        rear_distance = new Distance(hardwareMap, telemetry, RobotConstants.rear_distance);
         imu = new LazyImu(hardwareMap, "imu", new RevHubOrientationOnRobot(
-                RevHubOrientationOnRobot.LogoFacingDirection.RIGHT, RevHubOrientationOnRobot.UsbFacingDirection.FORWARD));
+                RevHubOrientationOnRobot.LogoFacingDirection.RIGHT, RevHubOrientationOnRobot.UsbFacingDirection.UP));
         //trafficLight = new TrafficLight("Traffic Light", hardwareMap, telemetry, RobotConstants.red_led, RobotConstants.green_led);
+        // Right side REVERSE, left side FORWARD. Must match MecanumDrive, which runs after this and
+        // overwrites it - see the note there.
         backRight.setDirection(DcMotor.Direction.REVERSE);
         frontRight.setDirection(DcMotor.Direction.REVERSE);
         backLeft.setDirection(DcMotor.Direction.FORWARD);
-        // FORWARD, unlike the other left wheel. Must match MecanumDrive, which runs after this and
-        // overwrites it - see the note there.
         frontLeft.setDirection(DcMotor.Direction.FORWARD);
 
         backRight.setZeroPowerBehaviour(DcMotor.ZeroPowerBehavior.BRAKE);
@@ -951,13 +951,11 @@ public class MecaTank extends Subsystem {
     public static double ARCADE_TURN_SIGN = 1.0;
 
     /**
-     * Forward-axis flip at the wheel mix, +1 or -1. Set to -1 because on this chassis a forward
-     * command drove the robot backward while strafing was correct. No combination of motor
-     * direction flips can produce that (flipping motors moves forward and strafe together), so it is
-     * corrected in the mix, after field-centric rotation and the holds, which therefore still work in
-     * the robot's true frame. Applies to every opmode using setDrivePowersSmooth / ...SmoothArcade.
+     * Forward-axis flip at the wheel mix, +1 or -1. +1 on the turret robot (motor directions: right
+     * REVERSE, left FORWARD; MecanumDrive.DRIVE_SIDES_SWAPPED = false). It was -1 only to undo the old
+     * robot's swapped left/right motor ports. Applies to setDrivePowersSmooth / ...SmoothArcade.
      */
-    public static double DRIVE_FORWARD_SIGN = -1.0;
+    public static double DRIVE_FORWARD_SIGN = 1.0;
 
     /**
      * TEMPORARY full-speed mode for drive testing. Per instance on purpose, not a static: a static

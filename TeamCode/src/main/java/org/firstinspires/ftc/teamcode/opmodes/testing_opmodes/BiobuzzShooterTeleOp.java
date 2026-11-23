@@ -18,6 +18,7 @@ import org.firstinspires.ftc.teamcode.Biobuzz_subsystems.AllianceSelector;
 import org.firstinspires.ftc.teamcode.Biobuzz_subsystems.HiveAligner;
 import org.firstinspires.ftc.teamcode.Biobuzz_subsystems.LaunchVelocityTable;
 import org.firstinspires.ftc.teamcode.Biobuzz_subsystems.MecaTank;
+import org.firstinspires.ftc.teamcode.Biobuzz_subsystems.TurretConstants;
 import org.firstinspires.ftc.teamcode.library.BulkRead;
 import org.firstinspires.ftc.teamcode.library.NGMotor;
 import org.firstinspires.ftc.teamcode.library.NGMotorFlywheelTuner;
@@ -125,12 +126,12 @@ public class BiobuzzShooterTeleOp extends LinearOpMode {
      * under the closing gate. false = the transfer just stops on release.
      */
     public static boolean TRANSFER_REVERSE_ON_RELEASE = true;
-    public static double TRANSFER_RELEASE_REVERSE_MS = 500.0;
+    public static double TRANSFER_RELEASE_REVERSE_MS = 300.0;
     public static double TRANSFER_RELEASE_REVERSE_POWER = 1.0;
 
     /** Flip each motor relative to BiobuzzRobotConstants, for this opmode only. Read once at init. */
     public static boolean
-        REVERSE_INTAKE = true,
+        REVERSE_INTAKE = false,
         REVERSE_TRANSFER = false,
         REVERSE_POLLEN_FLYWHEEL = false,
         REVERSE_NECTAR_FLYWHEEL = false;
@@ -196,6 +197,8 @@ public class BiobuzzShooterTeleOp extends LinearOpMode {
     private String holdNote = "";
 
     private MecaTank mecaTank;
+    /** Turret robot: power 0 with BRAKE, so the motor's braking resistance stops it swinging while driving. Null if not configured. */
+    private DcMotorEx turret;
     private BulkRead bulkRead;
     private DcMotorEx rollers;
     /** Null when "transferRollers" is not configured - the wheels still spin, nothing feeds. */
@@ -561,6 +564,13 @@ public class BiobuzzShooterTeleOp extends LinearOpMode {
                 BiobuzzRobotConstants.nectarFlywheelReversed != REVERSE_NECTAR_FLYWHEEL,
                 BiobuzzRobotConstants.nectarFixedShootingVel, false, nectarTable);
         selected = pollen;
+        try {
+            turret = hardwareMap.get(DcMotorEx.class, TurretConstants.TURRET_MOTOR_NAME);
+            turret.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
+            turret.setPower(0.0);
+        } catch (Exception e) {
+            turret = null;
+        }
         try {
             flowerRamp = hardwareMap.get(Servo.class, BiobuzzRobotConstants.flowerRamp);
             flowerRamp.setPosition(BiobuzzRobotConstants.flowerRampStowedPos);

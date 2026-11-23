@@ -17,7 +17,6 @@ import com.qualcomm.robotcore.util.ElapsedTime;
 import com.qualcomm.robotcore.util.Range;
 
 import org.firstinspires.ftc.robotcore.external.Telemetry;
-import org.firstinspires.ftc.teamcode.BiobuzzRobotConstants;
 import org.firstinspires.ftc.robotcore.external.hardware.camera.WebcamName;
 import org.firstinspires.ftc.robotcore.external.hardware.camera.controls.ExposureControl;
 import org.firstinspires.ftc.robotcore.external.hardware.camera.controls.GainControl;
@@ -62,22 +61,16 @@ import java.util.concurrent.TimeUnit;
 @Config
 public class HiveAligner {
 
-    // ---- shooter geometry ------------------------------------------------------------------
-    // Both shooters point the same way (out of the robot's RIGHT side) and sit on the robot's
-    // front-back centre line, NECTAR in front of POLLEN. The aim lines up the exit of whichever
-    // shooter is being fired (setLauncher), or the point midway between them for both at once.
-    /** Shot direction relative to robot forward, DEGREES, + = left. -90 = out of the RIGHT side. */
-    public static double LAUNCHER_YAW_DEG = -90.0;
-    /** Both exits' sideways offset from robot centre, INCHES, + = LEFT (0 = on the centre line). */
+    // ---- shooter geometry (chassis aim, BiobuzzPollenTeleOp / BiobuzzShooterTeleOp) ------------
+    // Turret robot: the shooter faces FORWARD when the turret is centred (the turret teleop aims the
+    // TURRET instead, with Turret's geometry and turretAimPoint below). The camera is on the chassis
+    // facing forward (TurretConstants.CAMERA_MOUNT_YAW_DEG = 0).
+    /** Shot direction relative to robot forward, DEGREES, + = left. 0 = straight out of the front. */
+    public static double LAUNCHER_YAW_DEG = 0.0;
+    /** Exit's sideways offset from robot centre, INCHES, + = LEFT (0 = on the centre line). */
     public static double LAUNCHER_OFFSET_Y_IN = 0.0;
-    /**
-     * Each exit's offset from robot centre along the robot, INCHES, + = forward. With the shooters
-     * facing sideways this is what moves a shot left/right of the CELL. POLLEN starts from
-     * BiobuzzRobotConstants.pollenExitBehindCentreIn, the number the autos build their shot poses
-     * from, so teleop and auto aim the same exit. TODO: MEASURE both on the robot (NECTAR is a
-     * placeholder: in front of POLLEN, close to it).
-     */
-    public static double POLLEN_LAUNCHER_OFFSET_X_IN = -BiobuzzRobotConstants.pollenExitBehindCentreIn;
+    /** Exit's offset from robot centre along the robot, INCHES, + = forward (no effect on a front shot's aim). */
+    public static double POLLEN_LAUNCHER_OFFSET_X_IN = 0.0;
     public static double NECTAR_LAUNCHER_OFFSET_X_IN = 0.0;
 
     /** Which shooter the aim lines up. */
@@ -237,6 +230,12 @@ public class HiveAligner {
     private int histHead = -1, histCount = 0;
 
     private boolean engaged = false;
+    /** The caller is shooting (turret teleop): no camera pose fixes until it clears this. */
+    private boolean holdPose = false;
+    /** Turret tracking: the CELL and the slewed aim point (see turretAimPoint). */
+    private Cell turretCell = null;
+    private boolean turretAimSet = false;
+    private double turretAimX, turretAimY;
     private Cell target = null;
     private boolean aimPointSet = false;
     private double aimX, aimY;
@@ -278,8 +277,14 @@ public class HiveAligner {
      * in INIT without reopening it); only the selected alliance's IDs are ever used.
      */
     public HiveAligner(HardwareMap hardwareMap, MecaTank mecaTank, boolean red) {
+        this(hardwareMap, mecaTank, red, true);
+    }
+
+    /** @param openCamera false = no camera at all: CELLS stay at their surveyed positions (odometry only). */
+    public HiveAligner(HardwareMap hardwareMap, MecaTank mecaTank, boolean red, boolean openCamera) {
         this.mecaTank = mecaTank;
         setAlliance(red);
+        if (!openCamera) return;
         AprilTagLibrary.Builder library = new AprilTagLibrary.Builder();
         for (int id = 30; id <= 45; id++) library.addTag(id, "HIVE tag " + id, TAG_SIZE_IN, DistanceUnit.INCH);
         try {
@@ -319,6 +324,7 @@ public class HiveAligner {
                         new Cell("BLUE AUDIENCE-SIDE CELL", 38, TurretConstants.BLUE_RIGHT_X_IN, TurretConstants.BLUE_RIGHT_Y_IN),
                         new Cell("BLUE SCORING-SIDE CELL", 42, TurretConstants.BLUE_LEFT_X_IN, TurretConstants.BLUE_LEFT_Y_IN)};
         if (fieldReferenced) seedSurveyedPrior();
+        turretCell = null;
         release();
     }
 
@@ -527,6 +533,65 @@ public class HiveAligner {
         return turnCmd;
     }
 
+    // ---- turret tracking -------------------------------------------------------------------
+
+    /**
+     * Turret robot: the field point the turret should aim at this loop, {x, y} INCHES, or null while
+     * no CELL is known. Picks the CELL like the chassis aim does (our CELL on the robot's half with a
+     * field pose, else the up / nearest one, switching on a confirmed tip) and slews the aim point at
+     * AIM_POINT_SLEW_IN_S so a camera correction never steps the turret. Call every loop, after update().
+     * @param allowRetarget false while a shot is feeding: the CELL is held
+     */
+    public double[] turretAimPoint(Pose2d pose, boolean allowRetarget) {
+        if (turretCell == null || allowRetarget) {
+            Cell want = sideTargeting() ? sideCell(pose) : null;
+            if (want == null && turretCell != null) {
+                want = turretCell;
+                Cell other = turretCell == cells[0] ? cells[1] : cells[0];
+                if (AUTO_RETARGET_ON_TIP && other.hasEstimate && effectiveState(turretCell, other) == CellState.DOWN) {
+                    want = other;
+                }
+            }
+            if (want == null) want = pickTarget(pose);
+            if (want != turretCell) {
+                turretCell = want;
+                turretAimSet = false;
+                if (want != null) lastEvent = "TURRET ON " + want.label;
+            }
+        }
+        if (turretCell == null) return null;
+        if (!turretAimSet) {
+            turretAimX = turretCell.ex;
+            turretAimY = turretCell.ey;
+            turretAimSet = true;
+        } else {
+            double ddx = turretCell.ex - turretAimX, ddy = turretCell.ey - turretAimY;
+            double d = Math.hypot(ddx, ddy), step = AIM_POINT_SLEW_IN_S * stepS;
+            if (d > step) {
+                ddx *= step / d;
+                ddy *= step / d;
+            }
+            turretAimX += ddx;
+            turretAimY += ddy;
+        }
+        return new double[]{turretAimX, turretAimY};
+    }
+
+    /** Label of the CELL the turret is on, or null. */
+    public String turretCellLabel() {
+        return turretCell == null ? null : turretCell.label;
+    }
+
+    /** true while shooting: camera pose fixes wait until it is false again (they would move the aim mid-volley). */
+    public void setHoldPose(boolean hold) {
+        holdPose = hold;
+    }
+
+    /** Robot turn rate measured from the odometry heading, rad/s CCW (smoothed). */
+    public double yawRate() {
+        return measuredYawRate;
+    }
+
     // ---- target choice ---------------------------------------------------------------------
 
     /**
@@ -654,7 +719,7 @@ public class HiveAligner {
      * does not see a jump.
      */
     private void relocalize(Cell c) {
-        if (!RELOCALIZE_ENABLED || !fieldReferenced || engaged || pendingCorrection != null) return;
+        if (!RELOCALIZE_ENABLED || !fieldReferenced || engaged || holdPose || pendingCorrection != null) return;
         if (c.goodFrames < RELOCALIZE_MIN_FRAMES || c.sigmaIn() > RELOCALIZE_MAX_SIGMA_IN) return;
         double sx = c.surveyX + c.sideSign * AIM_OFFSET_OUTWARD_IN;
         double sy = c.surveyY + allianceWallSign * AIM_OFFSET_TOWARD_ALLIANCE_IN;

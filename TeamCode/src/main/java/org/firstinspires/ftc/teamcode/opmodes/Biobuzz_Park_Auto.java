@@ -6,6 +6,8 @@ import com.acmerobotics.roadrunner.ParallelAction;
 import com.acmerobotics.roadrunner.Pose2d;
 import com.acmerobotics.roadrunner.Vector2d;
 import com.acmerobotics.roadrunner.ftc.Actions;
+import org.firstinspires.ftc.teamcode.Biobuzz_subsystems.AllianceSelector;
+import org.firstinspires.ftc.teamcode.roadrunner.PoseStorage;
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
 
 import org.firstinspires.ftc.teamcode.library.NGAutoOpMode;
@@ -40,8 +42,13 @@ public class Biobuzz_Park_Auto extends NGAutoOpMode {
         Actions.runBlocking(
                 new ParallelAction(
                         bulkRead.update(),
+                        p -> {
+                            intake2_0.turret.hold(0.0);
+                            return true;
+                        },
                         parkPath
                 )
         );
+        PoseStorage.storeAutoEndPose(AllianceSelector.red(), drive.pose);
     }
 }

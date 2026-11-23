@@ -58,6 +58,15 @@ public class Intake2_0 {
      * single "gate", and left null if neither is configured, so a missing gate never stops an auto.
      */
     public double gateOpenPos = BiobuzzRobotConstants.pollenGateOpenPos;
+
+    /**
+     * The POLLEN turret. Every auto zeroes it at INIT (turret facing FORWARD) and updateFlywheelPID()
+     * holds it at {@link #turretHoldDeg} (0 = forward: the shooter faces the front, as the forward
+     * autos assume) every loop after START, unless an auto aims it itself ({@link #turretAimedByAuto}).
+     */
+    public Turret turret;
+    public double turretHoldDeg = 0.0;
+    public boolean turretAimedByAuto = false;
     public double gateClosedPos = BiobuzzRobotConstants.pollenGateClosedPos;
 
     public Intake2_0(HardwareMap hardwareMap, Telemetry telemetry){
@@ -68,6 +77,7 @@ public class Intake2_0 {
         rollers.setDirection(BiobuzzRobotConstants.intakeReversed ? DcMotor.Direction.REVERSE : DcMotor.Direction.FORWARD);
         flywheels = new NGMotor(hardwareMap, telemetry, BiobuzzRobotConstants.pollenFlywheel);
         gate = findGate(hardwareMap, telemetry);
+        turret = new Turret(hardwareMap, telemetry, true);
         closeGate();   // hold the preload until the first shot opens it
         //flicker = new NGCRServo(hardwareMap, telemetry, BiobuzzRobotConstants.flicker);
         transferRollers = new NGMotor(hardwareMap, telemetry, BiobuzzRobotConstants.transferRollers);
@@ -211,6 +221,7 @@ public class Intake2_0 {
             flywheels.updateFlywheels(feedingPollen
                     || (!intakingToGate && transferRollers.getPower() > 0.1));
             if (nectarFlywheel != null) nectarFlywheel.updateFlywheels(feedingNectar);
+            if (!turretAimedByAuto) turret.hold(turretHoldDeg);
 
             telemetry.addData("FW Current Vel", "%.1f", flywheels.getVelocity());
             if (nectarFlywheel != null) {
@@ -308,6 +319,12 @@ public class Intake2_0 {
      * {@code maxS} seconds, whichever comes first. For the first shot of an auto, which would
      * otherwise feed a wheel still spinning up from rest.
      */
+    /** The POLLEN flywheel is spinning and within flywheelAtSpeedTolerance of its target. */
+    public boolean pollenAtSpeed() {
+        double target = flywheels.targetVelocity;
+        return target > 0 && Math.abs(target - flywheels.getVelocity()) <= BiobuzzRobotConstants.flywheelAtSpeedTolerance;
+    }
+
     public Action waitForPollenSpeed(double maxS) {
         return new Action() {
             private long start = -1;

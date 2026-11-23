@@ -85,14 +85,6 @@ public class BiobuzzRobotConstants {
      */
     public static double flowerApproachIn = 6.0;
     /**
-     * Side-shooter robot: the POLLEN exit is this far BEHIND the robot centre, on its front-back
-     * centre line, firing out of the RIGHT side, INCHES. HiveAutoKit.sideShot builds every auto
-     * shot pose from it. The exit is very close to the back of the 18 in robot (back face 9 in behind
-     * centre). TODO: MEASURE - each inch wrong moves every shot 1 in sideways at the CELL.
-     */
-    public static double pollenExitBehindCentreIn = 8.0;
-
-    /**
      * After a FLOWER intake the ramp stays down until the robot has moved this many INCHES from the
      * FLOWER intake pose, so it never swings up into the FLOWER (HiveAutoKit.leaveFlower). Keep it
      * above flowerApproachIn: the ramp reaches up to flowerApproachIn into the FLOWER.
@@ -162,10 +154,10 @@ public class BiobuzzRobotConstants {
      * TODO: edit after testing gate positions on the real shooter.
      */
     public static double
-        pollenGateClosedPos = 0.90,
-        pollenGateOpenPos = 0.59,
-        nectarGateClosedPos = 0.4,
-        nectarGateOpenPos = 0.07;
+        pollenGateClosedPos = 1.0,
+        pollenGateOpenPos = 0.62,
+        nectarGateClosedPos = 1.0,
+        nectarGateOpenPos = 0.62;
 
     // =============================================================================================
     // FLYWHEEL PIDF - the single source for the autos (Intake2_0) and both teleops.
@@ -177,10 +169,10 @@ public class BiobuzzRobotConstants {
 
     /** Pollen: tuned in FlywheelIntakeTestingOpMode. */
     public static double
-        pollenKF = 0.000477, //0.000498
+        pollenKF = 0.000422, //0.000498
         pollenKI = 0,
         pollenKD = 0,
-        pollenKpStable = 0.00076, //0.0006
+        pollenKpStable = 0.00065, //0.0006
         pollenKpRecovery = 0.0021, //O.002
         pollenAlpha = 0.7,
         pollenRecoveryThreshold = 80.0; //80
@@ -220,13 +212,13 @@ public class BiobuzzRobotConstants {
      * (Intake2_0.collectToGate / collectFromFlower / feedPollen).
      */
     public static double
-        TRANSFER_INTAKE_POWER = 0.6, //0.35
+        TRANSFER_INTAKE_POWER = 0.3, //0.35
         TRANSFER_FEED_POWER = 1.0;
 
     /**
      * Standard time to shoot one complete cycle (4 pollen) in every auto, SECONDS: how long each
      * volley runs the transfer (HiveAutoKit.transfer / Intake2_0.feedPollen) and what every auto's
-     * time budget allows per shot. 
+     * time budget allows per shot.
      */
     public static double cycleShootingTime = 1.5;
 

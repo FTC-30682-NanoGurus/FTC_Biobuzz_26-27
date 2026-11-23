@@ -21,13 +21,15 @@ import org.firstinspires.ftc.teamcode.Biobuzz_subsystems.AllianceSelector;
 import org.firstinspires.ftc.teamcode.Biobuzz_subsystems.HiveAligner;
 import org.firstinspires.ftc.teamcode.Biobuzz_subsystems.LaunchVelocityTable;
 import org.firstinspires.ftc.teamcode.Biobuzz_subsystems.MecaTank;
+import org.firstinspires.ftc.teamcode.Biobuzz_subsystems.Turret;
 import org.firstinspires.ftc.teamcode.library.BulkRead;
 import org.firstinspires.ftc.teamcode.library.NGMotor;
 import org.firstinspires.ftc.teamcode.library.NGMotorFlywheelTuner;
 import org.firstinspires.ftc.teamcode.roadrunner.PoseStorage;
 
 /**
- * BiobuzzShooterTeleOp with POLLEN shooting only: same drive, intake, flower ramp and pollen
+ * Turret robot: aims with the CHASSIS while the turret is held facing forward (use
+ * BiobuzzTurretTeleOp to aim with the turret). BiobuzzShooterTeleOp with POLLEN shooting only: same drive, intake, flower ramp and pollen
  * shooter controls, no nectar wheel. The left trigger and gamepad 2's X do nothing here.
  *
  * <h2>Shared transfer</h2>
@@ -227,6 +229,8 @@ public class BiobuzzPollenTeleOp extends LinearOpMode {
     private DcMotorEx transfer;
     private double lastTransferPower = Double.NaN;
     private Shooter pollen;
+    /** Turret robot: this opmode aims with the CHASSIS, so the turret is held facing forward (0). */
+    private Turret turret;
     /** Held closed all opmode; null when not configured. */
     private Servo nectarGate;
 
@@ -627,6 +631,7 @@ public class BiobuzzPollenTeleOp extends LinearOpMode {
         } catch (Exception e) {
             nectarGate = null;
         }
+        turret = new Turret(hardwareMap, telemetry, false);
         counter.init();   // looks the sensor up only; it is read just while POLLEN_COUNTER_ENABLED counts
         try {
             flowerRamp = hardwareMap.get(Servo.class, BiobuzzRobotConstants.flowerRamp);
@@ -683,6 +688,7 @@ public class BiobuzzPollenTeleOp extends LinearOpMode {
 
         while (!isStopRequested() && opModeIsActive()) {
             bulkRead.clearCache();
+            turret.hold(0.0);
             boolean sendTelemetry = telemetryTimer.milliseconds() >= TELEMETRY_INTERVAL_MS;
 
             // =====================================================================================
@@ -947,6 +953,7 @@ public class BiobuzzPollenTeleOp extends LinearOpMode {
         }
 
         pollen.stop();
+        turret.stop();
         if (aligner != null) aligner.close();
         rollers.setPower(0.0);
         if (transfer != null) transfer.setPower(0.0);

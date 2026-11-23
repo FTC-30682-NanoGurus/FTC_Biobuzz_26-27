@@ -9,234 +9,139 @@ import com.qualcomm.robotcore.util.ElapsedTime;
 
 import org.firstinspires.ftc.teamcode.Biobuzz_subsystems.Turret;
 import org.firstinspires.ftc.teamcode.Biobuzz_subsystems.TurretConstants;
-import org.firstinspires.ftc.teamcode.Biobuzz_subsystems.TurretConstants.Alliance;
-import org.firstinspires.ftc.teamcode.Biobuzz_subsystems.TurretTarget;
-import org.firstinspires.ftc.teamcode.Biobuzz_subsystems.TurretVision;
-// ===== BEGIN SDK 12 CLUSTER CODE - DISABLED =====
-// import org.firstinspires.ftc.vision.apriltag.AprilTagClusterDetection;
-// ===== END SDK 12 CLUSTER CODE - DISABLED =====
-import org.firstinspires.ftc.vision.apriltag.AprilTagDetection;
-
-import java.util.List;
+import org.firstinspires.ftc.teamcode.library.BulkRead;
 
 /**
- * Bench opmode for calibrating the turret. It does THREE jobs, and you will want all three before
- * the drive-and-shoot teleop is worth running.
+ * Bench opmode for the MOTOR turret. Put the robot on the floor (or a box), turret facing straight
+ * FORWARD before INIT - the encoder is zeroed at INIT. Graph "angle", "target" and "power" on FTC
+ * Dashboard while tuning.
  *
- * <h2>1. Find the shortest reliable exposure</h2>
- * Tags are decoded from where their corners land on the sensor, and motion blur moves those
- * corners. Blur is governed by EXPOSURE TIME, not by brightness, so the goal is the SHORTEST
- * exposure that still decodes, with the lost light bought back by sensor gain. Start at 3 ms and
- * walk it down with dpad up/down while watching the detection count from a realistic distance,
- * ideally while someone pushes the robot. Keep the shortest setting that still holds the cluster,
- * then write it into {@link TurretConstants#EXPOSURE_MS}.
+ * <h2>1. Direction and gearing</h2>
+ * Hold the left stick right/left (open-loop power). Turning the turret to the robot's LEFT must make
+ * the angle go UP - if it goes down, flip TurretConstants.TURRET_MOTOR_REVERSED. Turn it exactly
+ * 90 degrees by eye: the angle should read ~90. If not, TURRET_GEAR_RATIO / TURRET_MOTOR_TICKS_PER_REV
+ * are wrong.
  *
- * <h2>2. Capture the servo range calibration</h2>
- * Jog the turret with the left stick in RAW SERVO UNITS - deliberately not in degrees, because the
- * degree mapping is the thing being calibrated. Creep up on each physical limit, stop as soon as
- * the turret touches it, and press A at one end and B at the other to record the positions. Copy
- * the two recorded numbers into the SERVO_A / SERVO_B scale constants.
+ * <h2>2. Friction (kS)</h2>
+ * Hold RIGHT TRIGGER: the power ramps up slowly from 0 until the turret starts moving; the power at
+ * that moment is printed as "kS found". Put a little less than that in TURRET_KS.
  *
- * WATCH THE CURRENT DRAW. Jogging past a hard stop stalls both servos against each other and will
- * cook them in seconds. If the turret refuses to move smoothly in one direction, suspect
- * {@link TurretConstants#SERVO_B_REVERSED} first - two ganged servos fighting behave exactly like
- * a jammed mechanism.
+ * <h2>3. Position steps</h2>
+ * A = 0, dpad right/left = +/-STEP_DEG from the current target, B / X = the left / right limit
+ * minus 5 degrees, Y = sweep back and forth between +/-SWEEP_DEG (tracking test). Watch the settle
+ * time and overshoot; raise TURRET_KVEL / TURRET_POS_KP for snappier, lower TURRET_DECEL_DEG_S2 if it
+ * overshoots.
  *
- * <h2>3. Zero the mount offsets</h2>
- * The cluster listing prints name, roll, coverage, bearing and range for everything in frame.
- * Park the robot squarely facing a HIVE, at a known distance, and compare what it prints against
- * what you measured with a tape. A constant bearing offset means
- * {@link TurretConstants#CAMERA_MOUNT_YAW_DEG} is wrong. A range that is consistently short means
- * the camera is pitched and {@link TurretConstants#CAMERA_MOUNT_PITCH_DEG} is wrong.
- *
- * <h2>Controls (gamepad1 - this is a bench opmode, so the strict gamepad split does not apply)</h2>
- * <pre>
- *   dpad up / down ..... exposure +/- 1 ms  (swept between the min and max in constants)
- *   dpad right / left .. gain +/- 8 raw units
- *   left stick X ....... jog the turret in RAW SERVO POSITION
- *   A .................. record the current raw position as the LOW limit
- *   B .................. record the current raw position as the HIGH limit
- *   Y .................. send the turret to its commanded centre
- *   X .................. toggle which alliance getBestTarget() is asked for
- * </pre>
+ * <h2>4. Travel limit</h2>
+ * TurretConstants.TURRET_LIMIT_DEG is the travel each way for EVERY opmode. Check B / X stop short
+ * of the hard stops and cables. BACK re-zeroes (turret must face forward).
  */
 @Config
 @TeleOp(name = "Turret Tuning", group = "turret")
 public class TurretTuningOpMode extends LinearOpMode {
 
-    /** Raw servo units per second while jogging. Low on purpose - see the hard-stop warning. */
-    public static double JOG_RATE_PER_SEC = 0.15;
-
-    private Turret turret;
-    private TurretVision vision;
-
-    private double rawServoPos = TurretConstants.SERVO_CENTER_POSITION;
-    private double recordedLow = Double.NaN;
-    private double recordedHigh = Double.NaN;
-
-    private int exposureMs = TurretConstants.EXPOSURE_MS;
-    private int gain = -1; // -1 = camera maximum
-    private Alliance alliance = Alliance.RED;
-
-    private boolean prevUp, prevDown, prevLeft, prevRight, prevA, prevB, prevX, prevY;
+    public static double STEP_DEG = 45.0;
+    public static double SWEEP_DEG = 90.0;
+    /** Sweep speed for the tracking test, DEGREES/SECOND. */
+    public static double SWEEP_RATE_DEG_S = 120.0;
+    /** Open-loop power at full left stick. */
+    public static double MANUAL_POWER = 0.4;
+    /** kS search: power ramp, per second. */
+    public static double KS_RAMP_PER_S = 0.08;
 
     @Override
     public void runOpMode() {
         telemetry = new MultipleTelemetry(telemetry, FtcDashboard.getInstance().getTelemetry());
+        BulkRead bulkRead = new BulkRead(hardwareMap);
+        bulkRead.setManual();
+        Turret turret = new Turret(hardwareMap, telemetry, true);
 
-        turret = new Turret(hardwareMap, telemetry);
-        vision = new TurretVision(hardwareMap, telemetry);
-
-        // Mirror the live stream to the dashboard so the crosshair overlay can be seen from a
-        // laptop, not just on the Driver Station preview.
-        // Null-guarded: a camera that failed to open must not take the opmode down.
-        if (vision.getCameraStreamSource() != null) {
-            // Capped: 0 means UNLIMITED, which pushes every frame over the hub's WiFi and starves the
-            // Driver Station link until it drops.
-            FtcDashboard.getInstance().startCameraStream(vision.getCameraStreamSource(), 10);
-        }
-
-        telemetry.addLine("TURRET TUNING");
-        telemetry.addLine("dpad up/dn = exposure   dpad L/R = gain");
-        telemetry.addLine("left stick X = jog RAW servo   A = record low   B = record high");
-        telemetry.addLine("Y = centre   X = swap alliance");
-        telemetry.addLine("");
-        telemetry.addLine("WARNING: jogging into a hard stop stalls both servos. Creep up on it.");
+        telemetry.addLine("TURRET TUNING - turret must face FORWARD now (zeroed at INIT)");
+        telemetry.addData("Ticks per degree", "%.3f", Turret.ticksPerDeg());
+        telemetry.addData("Travel", "+-%.0f deg (TurretConstants.TURRET_LIMIT_DEG)", Turret.maxAngleDeg());
         telemetry.update();
-
         waitForStart();
-        if (isStopRequested()) return;
 
-        ElapsedTime loopTimer = new ElapsedTime();
-        double lastSeconds = loopTimer.seconds();
+        double target = 0.0, ksPower = 0.0, ksFound = Double.NaN;
+        boolean sweeping = false, prevA = false, prevB = false, prevX = false, prevY = false;
+        boolean prevL = false, prevR = false, prevBack = false;
+        double sweepPhase = 0.0, sweepDir = 1.0;
+        ElapsedTime loop = new ElapsedTime(), stepTimer = new ElapsedTime();
+        double settleS = Double.NaN, peakOver = 0.0, stepFrom = 0.0;
+        boolean settled = true;
 
-        while (opModeIsActive() && !isStopRequested()) {
-            double nowSeconds = loopTimer.seconds();
-            double dt = nowSeconds - lastSeconds;
-            lastSeconds = nowSeconds;
+        while (opModeIsActive()) {
+            bulkRead.clearCache();
+            double dt = Math.min(0.1, loop.seconds());
+            loop.reset();
 
-            // Applies manual exposure/gain once the portal reaches STREAMING. Non-blocking.
-            vision.update();
-
-            // ---- Exposure and gain sweep -------------------------------------------------------
-            boolean changed = false;
-            if (gamepad1.dpad_up && !prevUp) {
-                exposureMs = Math.min(TurretConstants.EXPOSURE_SWEEP_MAX_MS, exposureMs + 1);
-                changed = true;
-            }
-            if (gamepad1.dpad_down && !prevDown) {
-                exposureMs = Math.max(TurretConstants.EXPOSURE_SWEEP_MIN_MS, exposureMs - 1);
-                changed = true;
-            }
-            if (gamepad1.dpad_right && !prevRight) {
-                int max = vision.getMaxGain();
-                gain = (gain < 0) ? max : Math.min(max, gain + 8);
-                changed = true;
-            }
-            if (gamepad1.dpad_left && !prevLeft) {
-                int max = vision.getMaxGain();
-                gain = (gain < 0) ? max : Math.max(0, gain - 8);
-                changed = true;
-            }
-            if (changed) vision.setExposureAndGain(exposureMs, gain);
-
-            // ---- Servo jog, in raw units --------------------------------------------------------
-            double jog = -gamepad1.left_stick_x; // stick right = positive turret direction
-            if (Math.abs(jog) > 0.05) {
-                rawServoPos += jog * JOG_RATE_PER_SEC * dt;
-                rawServoPos = Math.max(0.0, Math.min(1.0, rawServoPos));
-            }
-            if (gamepad1.y && !prevY) rawServoPos = TurretConstants.SERVO_CENTER_POSITION;
-            turret.setRawServoPosition(rawServoPos);
-
-            if (gamepad1.a && !prevA) recordedLow = rawServoPos;
-            if (gamepad1.b && !prevB) recordedHigh = rawServoPos;
-            if (gamepad1.x && !prevX) {
-                alliance = (alliance == Alliance.RED) ? Alliance.BLUE : Alliance.RED;
+            double oldTarget = target;
+            if (gamepad1.a && !prevA) { target = 0.0; sweeping = false; }
+            if (gamepad1.b && !prevB) { target = Turret.maxAngleDeg() - 5.0; sweeping = false; }
+            if (gamepad1.x && !prevX) { target = Turret.minAngleDeg() + 5.0; sweeping = false; }
+            if (gamepad1.dpad_right && !prevR) { target = Turret.clampAngle(target + STEP_DEG); sweeping = false; }
+            if (gamepad1.dpad_left && !prevL) { target = Turret.clampAngle(target - STEP_DEG); sweeping = false; }
+            if (gamepad1.y && !prevY) { sweeping = !sweeping; sweepPhase = turret.getAngleDeg(); }
+            if (gamepad1.back && !prevBack) { turret.rezero(); target = 0.0; sweeping = false; }
+            prevA = gamepad1.a; prevB = gamepad1.b; prevX = gamepad1.x; prevY = gamepad1.y;
+            prevL = gamepad1.dpad_left; prevR = gamepad1.dpad_right; prevBack = gamepad1.back;
+            if (target != oldTarget) {
+                stepTimer.reset();
+                stepFrom = turret.getAngleDeg();
+                settled = false;
+                peakOver = 0.0;
+                settleS = Double.NaN;
             }
 
-            prevUp = gamepad1.dpad_up;
-            prevDown = gamepad1.dpad_down;
-            prevLeft = gamepad1.dpad_left;
-            prevRight = gamepad1.dpad_right;
-            prevA = gamepad1.a;
-            prevB = gamepad1.b;
-            prevX = gamepad1.x;
-            prevY = gamepad1.y;
+            String mode;
+            if (Math.abs(gamepad1.left_stick_x) > 0.05) {
+                turret.setManualPower(-gamepad1.left_stick_x * MANUAL_POWER);
+                target = turret.getAngleDeg();
+                sweeping = false;
+                mode = "MANUAL (left stick)";
+            } else if (gamepad1.right_trigger > 0.5) {
+                ksPower += KS_RAMP_PER_S * dt;
+                turret.setManualPower(ksPower);
+                if (Double.isNaN(ksFound) && Math.abs(turret.getVelocityDegS()) > 5.0) ksFound = ksPower;
+                target = turret.getAngleDeg();
+                mode = "kS SEARCH (right trigger)";
+            } else {
+                ksPower = 0.0;
+                double ff = 0.0;
+                if (sweeping) {
+                    sweepPhase += sweepDir * SWEEP_RATE_DEG_S * dt;
+                    if (sweepPhase > SWEEP_DEG) { sweepPhase = SWEEP_DEG; sweepDir = -1.0; }
+                    if (sweepPhase < -SWEEP_DEG) { sweepPhase = -SWEEP_DEG; sweepDir = 1.0; }
+                    target = sweepPhase;
+                    ff = sweepDir * SWEEP_RATE_DEG_S;
+                }
+                turret.setTarget(target, ff);
+                mode = sweeping ? "SWEEP (Y)" : "HOLD TARGET";
+            }
+            if (gamepad1.right_trigger <= 0.5) ksPower = 0.0;
+            turret.update();
 
-            // ---- Telemetry ----------------------------------------------------------------------
-            telemetry.addLine("--- CAMERA ---");
-            telemetry.addData("State", vision.getCameraStateString());
-            telemetry.addData("Settings applied", vision.areCameraSettingsApplied());
-            telemetry.addData("Exposure requested (ms)", exposureMs);
-            telemetry.addData("Gain requested", gain < 0 ? ("MAX (" + vision.getMaxGain() + ")") : gain);
-            // What the CAMERA actually accepted, which is not always what was asked for - a value
-            // outside the device's supported range is coerced, and that is worth seeing while
-            // sweeping rather than discovering later.
-            telemetry.addData("Exposure ACCEPTED (ms)", vision.getAppliedExposureMs());
-            telemetry.addData("Gain ACCEPTED", vision.getAppliedGain());
-            telemetry.addData("White balance ACCEPTED (K)", vision.getAppliedWhiteBalanceK());
-            telemetry.addData("Focus mode", vision.getAppliedFocusMode());
-            telemetry.addData("Setup report", vision.getCameraSetupReport());
-            telemetry.addData("Detections / clusters",
-                    "%d / %d", vision.getLastDetectionCount(), vision.getLastClusterCount());
-
-            telemetry.addLine("--- SERVO CALIBRATION ---");
-            telemetry.addData("Raw servo position", "%.4f", rawServoPos);
-            telemetry.addData("Recorded LOW  (A)", Double.isNaN(recordedLow) ? "--"
-                    : String.format("%.4f", recordedLow));
-            telemetry.addData("Recorded HIGH (B)", Double.isNaN(recordedHigh) ? "--"
-                    : String.format("%.4f", recordedHigh));
-            telemetry.addData("Servo B reversed", TurretConstants.SERVO_B_REVERSED);
-            double measured = turret.getMeasuredAngleDeg();
-            telemetry.addData("Encoder angle (deg)", Double.isNaN(measured) ? "no encoder"
-                    : String.format("%.2f", measured));
-
-            // ---- Every cluster in frame, unfiltered ---------------------------------------------
-            //
-            // Printed raw, before any alliance/roll/coverage gate, because the point of this
-            // listing is to see what the camera ACTUALLY reports - including the clusters the
-            // selector is throwing away and why.
-            telemetry.addLine("--- CLUSTERS IN FRAME ---");
-            List<AprilTagDetection> detections = vision.getRawDetections();
-            int shown = 0;
-            // ===== BEGIN SDK 12 CLUSTER CODE - DISABLED =====
-            // Full copy at TeamCode/sdk12-cluster-backup/TurretTuningOpMode.java.bak
-            //
-            // for (AprilTagDetection d : detections) {
-            //     if (!(d instanceof AprilTagClusterDetection)) continue;
-            //     AprilTagClusterDetection c = (AprilTagClusterDetection) d;
-            //     if (c.ftcPose == null) {
-            //         telemetry.addData(c.metadata.name, "no pose solution");
-            //         continue;
-            //     }
-            //     telemetry.addData(c.metadata.name,
-            //             "roll %.1f  cov %d%%  bearing %.1f  range %.1fin  (x %.1f y %.1f z %.1f)",
-            //             c.ftcPose.roll, c.percentClusterFound, c.ftcPose.bearing, c.ftcPose.range,
-            //             c.ftcPose.x, c.ftcPose.y, c.ftcPose.z);
-            //     shown++;
-            // }
-            // ===== END SDK 12 CLUSTER CODE - DISABLED =====
-
-            // Raw detection count still works on SDK 10.1.0, so the camera, the exposure sweep and
-            // the servo calibration in this opmode are all still usable - only the per-cluster
-            // breakdown is gone.
-            telemetry.addData("  raw detections", detections.size());
-            if (shown == 0) {
-                telemetry.addLine("  CLUSTER DECODE DISABLED - needs SDK 12.0.0");
+            if (!settled && !sweeping) {
+                double dir = Math.signum(target - stepFrom);
+                peakOver = Math.max(peakOver, dir * (turret.getAngleDeg() - target));
+                if (turret.onTarget()) {
+                    settled = true;
+                    settleS = stepTimer.seconds();
+                }
             }
 
-            telemetry.addLine("--- SELECTOR ---");
-            telemetry.addData("Asking for", alliance);
-            TurretTarget best = vision.getBestTarget(alliance);
-            telemetry.addData("Best target", best == null
-                    ? ("none: " + vision.getLastRejectReason()) : best.toString());
-
+            telemetry.addData("Mode", mode);
+            telemetry.addData("angle", "%.2f", turret.getAngleDeg());
+            telemetry.addData("target", "%.2f", turret.getTargetDeg());
+            telemetry.addData("velocity (deg/s)", "%.1f", turret.getVelocityDegS());
+            telemetry.addData("error", "%.2f", turret.getTargetDeg() - turret.getAngleDeg());
+            telemetry.addData("Last step", Double.isNaN(settleS) ? "settling..." : String.format("settled in %.2f s, overshoot %.1f deg", settleS, peakOver));
+            telemetry.addData("kS found", Double.isNaN(ksFound) ? "hold RT" : String.format("%.3f (set TURRET_KS a bit below)", ksFound));
+            telemetry.addData("Travel", "+-%.0f deg   at limit: %s", Turret.maxAngleDeg(), turret.isAtHardStop());
+            turret.telemetry();
+            telemetry.addLine("A=0  dpad L/R=step  B/X=limits  Y=sweep  LS=manual  RT=kS  BACK=rezero");
             telemetry.update();
         }
-
-        // Stop the dashboard pulling frames BEFORE the portal closes underneath it.
-        FtcDashboard.getInstance().stopCameraStream();
-        vision.close();
+        turret.stop();
     }
 }

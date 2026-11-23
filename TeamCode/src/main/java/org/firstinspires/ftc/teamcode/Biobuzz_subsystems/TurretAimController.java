@@ -513,8 +513,8 @@ public class TurretAimController {
         // Outside the turret's travel the chassis has to help. Report the heading the robot would
         // need so that the turret's mechanical zero points at the target - the driver or an auto
         // routine can then rotate to it.
-        needsRobotRotation = unclampedCommandDeg > TurretConstants.TURRET_MAX_ANGLE_DEG
-                || unclampedCommandDeg < TurretConstants.TURRET_MIN_ANGLE_DEG;
+        needsRobotRotation = unclampedCommandDeg > Turret.maxAngleDeg()
+                || unclampedCommandDeg < Turret.minAngleDeg();
         desiredRobotHeadingRad = normalizeRad(
                 fieldBearingRad - Math.toRadians(TurretConstants.TURRET_MOUNT_OFFSET_DEG));
 

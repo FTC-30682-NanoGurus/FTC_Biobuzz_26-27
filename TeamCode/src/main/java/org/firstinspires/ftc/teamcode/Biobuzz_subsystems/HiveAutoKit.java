@@ -191,33 +191,76 @@ public class HiveAutoKit {
         return drive.pose.position.x >= 0 ? Side.RIGHT : Side.LEFT;
     }
 
-    /**
-     * Side-shooter robot: the robot centre pose that puts the POLLEN exit
-     * ({@link BiobuzzRobotConstants#pollenExitBehindCentreIn} behind centre, firing out of the RIGHT
-     * side) {@code dist} INCHES from {@code side}'s CELL opening, at {@code phiDeg} around it
-     * (0 = straight +x of it), turned so the exit fires straight at the opening's centre
-     * (heading = shot direction + 90). Alliance frame: the openings are TurretConstants' red ones.
-     */
-    public static Pose2d sideShot(Side side, double dist, double phiDeg) {
-        double ox = side == Side.LEFT ? TurretConstants.RED_LEFT_X_IN : TurretConstants.RED_RIGHT_X_IN;
-        double oy = side == Side.LEFT ? TurretConstants.RED_LEFT_Y_IN : TurretConstants.RED_RIGHT_Y_IN;
-        double phi = Math.toRadians(phiDeg), h = phi - Math.PI / 2, b = BiobuzzRobotConstants.pollenExitBehindCentreIn;
-        double ex = ox + dist * Math.cos(phi), ey = oy + dist * Math.sin(phi);
-        return new Pose2d(ex + b * Math.cos(h), ey + b * Math.sin(h), h);
+    // =============================================================================================
+    // Turret autos
+    // =============================================================================================
+
+    /** Most a turret auto waits at a shooting pose for the turret to settle and the flywheel, SECONDS. */
+    public static double AIM_WAIT_MAX_S = 0.5;
+    /** How hard the measured robot velocity is smoothed for the turret's feedforward, 0..1 per loop (1 = raw). */
+    public static double TURRET_VEL_FILTER = 0.5;
+
+    /** Field (alliance frame) position of {@code side}'s CELL opening: TurretConstants' surveyed red ones. */
+    public static Vector2d opening(Side side) {
+        return side == Side.LEFT ? new Vector2d(TurretConstants.RED_LEFT_X_IN, TurretConstants.RED_LEFT_Y_IN)
+                : new Vector2d(TurretConstants.RED_RIGHT_X_IN, TurretConstants.RED_RIGHT_Y_IN);
+    }
+
+    /** Turret angle (Turret's geometry, not yet clamped) that aims the shot at {@code side} from {@code pose}, DEGREES. */
+    public static double turretAngleFor(Pose2d pose, Side side) {
+        Vector2d o = opening(side);
+        return Turret.aimAngleDeg(pose, o.x, o.y);
     }
 
     /**
-     * Side-shooter robot: the robot centred at {@code centre}, turned so the POLLEN exit
-     * ({@link BiobuzzRobotConstants#pollenExitBehindCentreIn} behind centre, firing out of the RIGHT
-     * side) fires straight at the centre of {@code side}'s CELL opening. The further back the exit,
-     * the further LEFT the robot turns.
+     * Runs for the whole auto: points the turret at the CELL {@code side} names every loop, from the
+     * odometry pose and the surveyed opening, with a feedforward for the robot's own motion, so it is
+     * already on target when the robot stops at a shooting pose. Put it AFTER the drive actions in the
+     * ParallelAction so it sees this loop's pose.
      */
-    public static Pose2d sideShotFrom(Side side, Vector2d centre) {
-        double ox = side == Side.LEFT ? TurretConstants.RED_LEFT_X_IN : TurretConstants.RED_RIGHT_X_IN;
-        double oy = side == Side.LEFT ? TurretConstants.RED_LEFT_Y_IN : TurretConstants.RED_RIGHT_Y_IN;
-        double dx = ox - centre.x, dy = oy - centre.y, d = Math.hypot(dx, dy);
-        double b = Math.min(BiobuzzRobotConstants.pollenExitBehindCentreIn, 0.99 * d);
-        return new Pose2d(centre, Math.atan2(dy, dx) + Math.acos(-b / d));
+    public Action turretTracker(Turret turret, Supplier<Side> side) {
+        intake.turretAimedByAuto = true;
+        return new Action() {
+            private Pose2d last;
+            private long lastNanos;
+            private double vx, vy, w;
+
+            @Override
+            public boolean run(@NonNull TelemetryPacket p) {
+                Pose2d pose = drive.pose;
+                long now = System.nanoTime();
+                if (last != null) {
+                    double dt = (now - lastNanos) / 1e9;
+                    if (dt > 1e-3) {
+                        double a = TURRET_VEL_FILTER;
+                        vx += a * ((pose.position.x - last.position.x) / dt - vx);
+                        vy += a * ((pose.position.y - last.position.y) / dt - vy);
+                        w += a * (wrap(pose.heading.toDouble() - last.heading.toDouble()) / dt - w);
+                    }
+                }
+                last = pose;
+                lastNanos = now;
+                Vector2d o = opening(side.get());
+                double want = Turret.chooseTargetDeg(Turret.aimAngleDeg(pose, o.x, o.y), turret.getTargetDeg());
+                turret.setTarget(want, Turret.aimRateDegS(pose, o.x, o.y, vx, vy, w));
+                turret.update();
+                return true;
+            }
+        };
+    }
+
+    /**
+     * A turret volley: waits (at most {@link #AIM_WAIT_MAX_S}, or {@code maxWaitS}) for the turret to
+     * be ON TARGET inside its travel and the flywheel at speed, then one volley ({@link #transfer}).
+     */
+    public Action aimedShot(Turret turret, double maxWaitS) {
+        return new SequentialAction(
+                waitUntil(() -> turret.onTarget() && !turret.wasLastCommandClamped() && intake.pollenAtSpeed(), maxWaitS),
+                transfer());
+    }
+
+    public Action aimedShot(Turret turret) {
+        return aimedShot(turret, AIM_WAIT_MAX_S);
     }
 
     public Pose2d shotPose(Side side) {
@@ -1037,12 +1080,6 @@ public class HiveAutoKit {
     public Action withWallCollect(Action drive) {
         return withWallCollect(drive, WALL_COLLECT_START_S);
     }
-
-    /**
-     * Side-shooter robot: the wall-set leg drives straight forward down the wall from the start,
-     * reaching the first GARDEN pollen about 0.6 s in, so the rollers start this early, SECONDS.
-     */
-    public static double SIDE_WALL_COLLECT_START_S = 0.2;
 
     /** {@link #withWallCollect(Action)} with the rollers starting {@code startS} into the leg. */
     public Action withWallCollect(Action drive, double startS) {

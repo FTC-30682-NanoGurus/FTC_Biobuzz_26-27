@@ -58,121 +58,96 @@ public class TurretConstants {
     }
 
     // =============================================================================================
-    // TURRET GEOMETRY AND SERVO MAPPING
+    // TURRET - MOTOR, TRAVEL, GEOMETRY (used by Turret, the turret teleop and every auto)
     // =============================================================================================
 
+    /** Robot-configuration name of the turret motor. */
+    public static String TURRET_MOTOR_NAME = "turret";
+
     /**
-     * Servo gearing reduction, unitless. Two REV 270-degree servos ganged through a 1.5:1
-     * reduction give 270 / 1.5 = 180 degrees at the turret output.
-     * CHANGE THIS and every angle-to-servo-position mapping rescales.
-     * TODO-CONFIRM: verify the physical reduction on the real turret before trusting any aim.
+     * Encoder ticks per turn of the MOTOR OUTPUT SHAFT. AndyMark NeverRest 19.2:1 (Orbital 20):
+     * 7 pulses x 4 edges = 28 counts per motor revolution x 19.2 = 537.6.
      */
-    public static double SERVO_REDUCTION = 1.5;
+    public static double TURRET_MOTOR_TICKS_PER_REV = 537.6;
 
-    /** Raw travel of a REV smart servo, degrees. Only used to derive {@link #OUTPUT_RANGE_DEG}. */
-    public static double SERVO_RAW_RANGE_DEG = 270.0;
+    /** Motor turns per turret turn: 55-tooth motor gear driving the 220-tooth turret gear = 4.0. */
+    public static double TURRET_GEAR_RATIO = 220.0 / 55.0;
 
     /**
-     * Total turret output travel, degrees: 270 / 1.5 = 180.
-     * CHANGE THIS and the degrees-per-servo-unit scale changes, so every commanded angle moves the
-     * turret by a different physical amount.
+     * Flip if a POSITIVE power turns the turret CLOCKWISE seen from above (it must turn it to the
+     * robot's LEFT, CCW). Check with TurretTuningOpMode: the angle must go UP when the turret turns left.
      */
-    public static double OUTPUT_RANGE_DEG = SERVO_RAW_RANGE_DEG / SERVO_REDUCTION;
+    public static boolean TURRET_MOTOR_REVERSED = false;
 
     /**
-     * Soft travel limit, degrees from turret centre. +-90 for a 180-degree output range.
-     * CHANGE THIS to shrink travel if the turret fouls the robot before reaching the hard stop.
-     * Commands beyond this are clamped and raise {@link TurretAimController#needsRobotRotation()}.
+     * TRAVEL LIMIT, DEGREES each way from forward: the turret runs from -TURRET_LIMIT_DEG (right) to
+     * +TURRET_LIMIT_DEG (left). THE ONE PLACE to change the travel - Turret, the turret teleop, the
+     * turret auto and the tuning opmode all read it live. Keep it a few degrees short of the hard
+     * stops / cable limit.
      */
-    public static double TURRET_MAX_ANGLE_DEG = 90.0;
-    public static double TURRET_MIN_ANGLE_DEG = -90.0;
+    public static double TURRET_LIMIT_DEG = 160.0;
+
+    /** Past a limit by more than this, DEGREES, the motor is never pushed further out. */
+    public static double TURRET_LIMIT_OVERSHOOT_DEG = 3.0;
+
+    /** Within this of a travel limit counts as "at the hard stop", DEGREES (blocks shots). */
+    public static double TURRET_HARD_STOP_MARGIN_DEG = 1.0;
 
     /**
-     * Robot-configuration names of the two ganged turret servos.
-     * TODO-FILL: real config names from the Driver Station configuration.
-     * CHANGE THESE and the turret grabs different (or no) hardware - a typo here shows up as
-     * "turret servos not found" on telemetry and a turret that never moves.
+     * A target that has crossed behind the robot keeps the turret waiting at the limit until it is
+     * this far past it, DEGREES, instead of swinging the long way round (Turret.chooseTargetDeg).
      */
-    public static String TURRET_SERVO_A_NAME = "turret_servo_a";
-    public static String TURRET_SERVO_B_NAME = "turret_servo_b";
+    public static double TURRET_UNWRAP_HYST_DEG = 30.0;
 
     /**
-     * Servo position commanded when the turret is at its centre (0 degrees output), unitless 0..1.
-     * CHANGE THIS to shift the mechanical centre without re-cutting parts.
-     */
-    public static double SERVO_CENTER_POSITION = 0.5;
-
-    /**
-     * Per-servo {@code scaleRange} calibration, unitless 0..1. These clip the usable band of each
-     * servo so that the two ganged servos travel together instead of fighting.
-     * TODO-MEASURE: jog each servo to both physical limits with {@link org.firstinspires.ftc.teamcode.opmodes.testing_opmodes.TurretTuningOpMode}
-     * and record the positions here. Leaving them at 0..1 is safe but wastes resolution and lets
-     * the servos drive into the hard stops.
-     * CHANGE THIS and the effective degrees-per-unit changes - re-check the centre afterwards.
-     */
-    public static double SERVO_A_SCALE_MIN = 0.0;
-    public static double SERVO_A_SCALE_MAX = 1.0;
-    public static double SERVO_B_SCALE_MIN = 0.0;
-    public static double SERVO_B_SCALE_MAX = 1.0;
-
-    /**
-     * Whether servo B is mounted mirrored relative to servo A and must be reversed.
-     * TODO-CONFIRM: if the two servos fight each other on the first power-up, flip this.
-     * CHANGE THIS and servo B rotates the other way - getting it wrong stalls both servos.
-     */
-    public static boolean SERVO_B_REVERSED = true;
-
-    /**
-     * Angle from ROBOT FORWARD to the turret's mechanical zero, degrees, CCW-positive.
-     * 0.0 means the turret points straight forward when commanded to 0.
-     * TODO-MEASURE: sight down the turret barrel at mechanical zero and measure the angle to robot
-     * forward. This is a pure bias on every aim command - a 5-degree error here is a 5-degree miss
-     * at every range.
+     * Angle from ROBOT FORWARD to the turret's zero, degrees, CCW-positive. The encoder is reset with
+     * the turret facing straight forward, so 0. Trim if a centred turret shoots slightly sideways.
      */
     public static double TURRET_MOUNT_OFFSET_DEG = 0.0;
 
     /**
-     * How close to a soft limit counts as "at the hard stop", degrees.
-     * CHANGE THIS and {@link Turret#isAtHardStop()} trips earlier or later, which gates
-     * {@link TurretAimController#readyToFire()}.
+     * Turret pivot (rotation axis) position from ROBOT CENTRE, INCHES, robot frame (+x forward,
+     * +y LEFT). TODO-MEASURE.
      */
-    public static double TURRET_HARD_STOP_MARGIN_DEG = 1.0;
-
-    // ---- Optional absolute output encoder -------------------------------------------------------
+    public static double TURRET_PIVOT_X_IN = 0.0;
+    public static double TURRET_PIVOT_Y_IN = 0.0;
 
     /**
-     * Whether a turret output encoder is physically installed.
-     * false = open-loop aiming (servo commands trusted blindly, camera bearing trims them).
-     * true  = closed-loop aiming (true output angle measured, PID drives the error to zero).
-     * TODO-CONFIRM: set true only once the encoder is wired AND its config name below is right.
-     * CHANGE THIS to true with no encoder present and {@link Turret} falls back to open-loop
-     * automatically, logging the failure rather than crashing.
+     * Sideways offset of the shot line from the pivot, INCHES, + = LEFT of the barrel direction
+     * (0 = the ball leaves straight over the pivot). TODO-MEASURE. A miss that grows when close.
      */
-    public static boolean TURRET_ENCODER_PRESENT = false;
+    public static double TURRET_SHOT_LATERAL_IN = 0.0;
 
-    /**
-     * Robot-configuration name of the turret output encoder, read through a motor port.
-     * TODO-FILL: real config name from the Driver Station configuration.
-     */
-    public static String TURRET_ENCODER_NAME = "turret_encoder";
+    /** Shooter exit distance from the pivot along the shot, INCHES (only the HIVE distance uses it). */
+    public static double TURRET_EXIT_FORWARD_IN = 0.0;
 
-    /**
-     * Encoder counts per full revolution OF THE TURRET OUTPUT, ticks/rev.
-     * TODO-MEASURE: rotate the turret output exactly one full turn by hand and record the delta.
-     * CHANGE THIS and the measured angle scales - wrong value means the closed loop chases a
-     * moving target and can oscillate.
-     */
-    public static double TURRET_ENCODER_TICKS_PER_REV = 8192.0;
+    // ---- position controller (Turret.update) ----------------------------------------------------
 
-    /**
-     * Encoder reading, ticks, when the turret is at its mechanical zero.
-     * TODO-MEASURE: park the turret at centre and record the raw count.
-     * CHANGE THIS and the measured angle shifts by a constant bias.
-     */
-    public static double TURRET_ENCODER_ZERO_OFFSET_TICKS = 0.0;
+    /** Fastest the turret is asked to turn, DEGREES/SECOND (free speed is ~510: 340 rpm / 4). */
+    public static double TURRET_MAX_VEL_DEG_S = 400.0;
+    /** Braking it plans with near the target, DEGREES/SECOND^2. Lower = gentler, no overshoot. */
+    public static double TURRET_DECEL_DEG_S2 = 1500.0;
+    /** Requested speed per degree of error near the target, 1/SECOND. Higher = snappier settle. */
+    public static double TURRET_POS_KP = 12.0;
+    /** Feedforward power per DEGREE/SECOND (~1 / free speed). TODO-TUNE. */
+    public static double TURRET_KV = 0.0019;
+    /** Power per DEGREE/SECOND of speed error. TODO-TUNE: raise until it tracks, lower if it buzzes. */
+    public static double TURRET_KVEL = 0.003;
+    /** Power to overcome friction whenever it is asked to move. TODO-TUNE: just below what starts it moving. */
+    public static double TURRET_KS = 0.05;
+    public static double TURRET_MAX_POWER = 1.0;
+    /** Errors below this are left alone, DEGREES (no buzzing). */
+    public static double TURRET_DEADBAND_DEG = 0.4;
+    /** On target also needs the turret moving within this of the target's own rate, DEGREES/SECOND. */
+    public static double TURRET_ON_TARGET_MAX_RATE_DEG_S = 30.0;
 
-    /** Set true if the encoder counts the opposite way from the turret's CCW-positive convention. */
-    public static boolean TURRET_ENCODER_REVERSED = false;
+    // ---- chassis assist (target outside the turret's travel) ------------------------------------
+
+    /** The chassis starts turning once the aim needs more than the travel minus this, DEGREES. */
+    public static double TURRET_CHASSIS_ASSIST_MARGIN_DEG = 5.0;
+    /** Chassis turn rate per radian of excess, rad/s per rad, and its cap, rad/s. */
+    public static double TURRET_CHASSIS_ASSIST_KP = 4.0;
+    public static double TURRET_CHASSIS_ASSIST_MAX = 3.0;
 
     // =============================================================================================
     // CAMERA - HARDWARE AND STREAM
@@ -303,9 +278,8 @@ public class TurretConstants {
      * target error and the shot misses. Pitch matters because it tilts the forward axis into the
      * vertical one, shortening the computed ground range.
      */
-    // Side-shooter robot: the camera faces out of the RIGHT side with the shooters, so -90.
-    // Trim by a degree or two once measured; the -90 itself is not a guess.
-    public static double CAMERA_MOUNT_YAW_DEG = -90.0;
+    // Turret robot: the camera is fixed to the CHASSIS facing straight forward, so 0.
+    public static double CAMERA_MOUNT_YAW_DEG = 0.0;
     public static double CAMERA_MOUNT_PITCH_DEG = 40.0;
     public static double CAMERA_MOUNT_ROLL_DEG = 0.0;
 

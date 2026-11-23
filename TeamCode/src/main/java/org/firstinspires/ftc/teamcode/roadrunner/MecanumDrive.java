@@ -179,7 +179,7 @@ public final class MecanumDrive {
      * share frontLeft/frontRight's ports and RawEncoder's sign follows the motor direction, so
      * odometry is untouched. MecaTank.DRIVE_FORWARD_SIGN = -1 is the same correction for TeleOp.
      */
-    public static boolean DRIVE_SIDES_SWAPPED = true;
+    public static boolean DRIVE_SIDES_SWAPPED = false;
 
     /** Wheel powers by WHEEL (robot's front-left etc.), routed to the right motor ports. */
     public void setWheelPowers(double lf, double lb, double rb, double rf) {
@@ -359,12 +359,13 @@ public final class MecanumDrive {
         backRight.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
         frontRight.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
 
+        // Right side REVERSE, left side FORWARD (with DRIVE_SIDES_SWAPPED = false and
+        // MecaTank.DRIVE_FORWARD_SIGN = +1). These win over MecaTank's, because this constructor runs
+        // after it and sets the same motors. The dead wheels share the frontRight (par) and frontLeft
+        // (perp) ports and RawEncoder negates the count for a REVERSE motor, so changing either of
+        // those two directions also flips that pod's sign in TwoDeadWheelLocalizer.
         frontRight.setDirection(DcMotorSimple.Direction.REVERSE);
         backRight.setDirection(DcMotorSimple.Direction.REVERSE);
-        // FORWARD, unlike backLeft: this is the direction that actually takes effect, because this
-        // constructor runs after MecaTank's and sets the same motor. The parallel dead wheel shares
-        // this port and RawEncoder negates its count when the motor is REVERSE, so changing this
-        // also requires flipping par in TwoDeadWheelLocalizer to keep odometry unchanged.
         frontLeft.setDirection(DcMotorSimple.Direction.FORWARD);
         backLeft.setDirection(DcMotorSimple.Direction.FORWARD);
 
