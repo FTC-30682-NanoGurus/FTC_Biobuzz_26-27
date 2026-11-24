@@ -42,7 +42,7 @@ public class BiobuzzRobotConstants {
     //public static String interTransfer = "interTransfer";
     public static String flywheels = "flywheels";
     public static double
-        pollenFixedShootingVel = 1350,
+        pollenFixedShootingVel = 1425,
             nectarFixedShootingVel = 1850;
 
     /**
@@ -169,11 +169,11 @@ public class BiobuzzRobotConstants {
 
     /** Pollen: tuned in FlywheelIntakeTestingOpMode. */
     public static double
-        pollenKF = 0.000422, //0.000498
+        pollenKF = 0.000422, //0.000422
         pollenKI = 0,
         pollenKD = 0,
-        pollenKpStable = 0.00065, //0.0006
-        pollenKpRecovery = 0.0021, //O.002
+        pollenKpStable = 0.00065, //0.00065
+        pollenKpRecovery = 0.0085, //O.0021 
         pollenAlpha = 0.7,
         pollenRecoveryThreshold = 80.0; //80
 
@@ -212,7 +212,7 @@ public class BiobuzzRobotConstants {
      * (Intake2_0.collectToGate / collectFromFlower / feedPollen).
      */
     public static double
-        TRANSFER_INTAKE_POWER = 0.3, //0.35
+        TRANSFER_INTAKE_POWER = 0.2, //0.35
         TRANSFER_FEED_POWER = 1.0;
 
     /**
