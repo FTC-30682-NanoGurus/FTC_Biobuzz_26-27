@@ -21,6 +21,8 @@ import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
 import org.firstinspires.ftc.teamcode.BiobuzzRobotConstants;
 import org.firstinspires.ftc.teamcode.library.NGAutoOpMode;
 import org.firstinspires.ftc.teamcode.roadrunner.MecanumDrive;
+import org.firstinspires.ftc.teamcode.roadrunner.PoseStorage;
+import org.firstinspires.ftc.teamcode.Biobuzz_subsystems.AllianceSelector;
 
 import java.util.Arrays;
 
@@ -103,6 +105,8 @@ public class Biobuzz_Left_PreLoad_Auto extends NGAutoOpMode{
         double pollenShootingVel = BiobuzzRobotConstants.pollenFixedShootingVel;
         double nectarShootingVel = BiobuzzRobotConstants.nectarFixedShootingVel;
         while (!isStarted() && !isStopRequested()) {
+            AllianceSelector.poll(gamepad1, gamepad2);
+            AllianceSelector.show(telemetry);
             telemetry.addLine("Paths Built - Ready To Start");
             telemetry.addData("Preload shot at", "%.1f s", SHOOT_AT_S);
             telemetry.update();
@@ -118,5 +122,6 @@ public class Biobuzz_Left_PreLoad_Auto extends NGAutoOpMode{
                         kit.guardPark(main)
                 )
         );
+        PoseStorage.storeAutoEndPose(AllianceSelector.red(), drive.pose);
     }
 }

@@ -18,6 +18,7 @@ import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit;
 import org.firstinspires.ftc.teamcode.BiobuzzRobotConstants;
 import org.firstinspires.ftc.teamcode.Biobuzz_subsystems.AllianceSelector;
 import org.firstinspires.ftc.teamcode.Biobuzz_subsystems.HiveAligner;
+import org.firstinspires.ftc.teamcode.Biobuzz_subsystems.IntakeCurrentLimiter;
 import org.firstinspires.ftc.teamcode.Biobuzz_subsystems.LaunchVelocityTable;
 import org.firstinspires.ftc.teamcode.Biobuzz_subsystems.MecaTank;
 import org.firstinspires.ftc.teamcode.Biobuzz_subsystems.Turret;
@@ -41,7 +42,7 @@ import org.firstinspires.ftc.teamcode.roadrunner.PoseStorage;
  * corrected by the camera whenever it sees their tags), compensating for the robot driving and
  * turning. A target outside the turret's travel (+-TurretConstants.TURRET_LIMIT_DEG) parks the
  * turret at the limit; while RT is held the chassis then turns just enough to bring it in range.
- * gamepad2 BACK switches tracking off (turret holds forward, gamepad2 right stick X jogs it).
+ * gamepad2 BACK switches tracking off (the turret motor then just brakes at power 0).
  *
  * <h2>Shooting</h2>
  * RT spins up (if not already spinning), and the gate opens once the wheel is at speed AND the
@@ -57,6 +58,7 @@ import org.firstinspires.ftc.teamcode.roadrunner.PoseStorage;
  *   LB (hold) precision                               Y field centric   X heading hold
  *   Dpad left ........... translation hold            Back / Options .. re-zero "forward"
  *   A ................... intake + transfer on/off     B (hold) ........ both reverse
+ *                         (after the current limiter cut it: A turns it back on and re-checks)
  *   RB .................. flower ramp down/up (down also turns the intake on)
  *   Right trigger (hold)  SHOOT (wheel lock holds the spot while held)
  *   Dpad right .......... flywheel on/off (keep it spinning between shots)
@@ -64,8 +66,7 @@ import org.firstinspires.ftc.teamcode.roadrunner.PoseStorage;
  *
  * GAMEPAD 2 (optional)
  *   A / B / RB / RT / dpad right / dpad up+down ... same as gamepad 1
- *   BACK ................ turret tracking off / back on
- *   Right stick X ....... jog the turret while tracking is off
+ *   BACK ................ turret tracking off (motor braked at power 0) / back on
  *
  * INIT: B = RED alliance, X = BLUE (either pad).  gamepad2 Y = re-zero the turret (face it FORWARD).
  * </pre>
@@ -98,14 +99,24 @@ public class BiobuzzTurretTeleOp extends LinearOpMode {
     public static double TRANSFER_RELEASE_REVERSE_MS = 300;
     public static double TRANSFER_RELEASE_REVERSE_POWER = 1.0;
 
+    /**
+     * INTAKE CURRENT LIMITER: turn the intake off when its current spikes to
+     * IntakeCurrentLimiter.FULL_CURRENT_AMPS (4 POLLEN in the robot, rollers stalled). It turns back
+     * on by itself after a volley, or with A - and if the current still spikes after A it is cut
+     * again as soon as possible. Thresholds/timings live in IntakeCurrentLimiter (shared with
+     * BiobuzzShooterTeleOp). Independent of the POLLEN counter. false = the intake runs until A
+     * (or the counter) turns it off.
+     */
+    public static boolean INTAKE_CURRENT_LIMIT_ENABLED = true;
+
     /** Flip each motor relative to BiobuzzRobotConstants, for this opmode only. Read at INIT. */
     public static boolean
-        REVERSE_INTAKE = true,
+        REVERSE_INTAKE = false,
         REVERSE_TRANSFER = false,
         REVERSE_FLYWHEEL = false;
 
     // ---- POLLEN counter (proximity of BiobuzzRobotConstants.colorSensor) -------------------------
-    public static boolean POLLEN_COUNTER_ENABLED = true;
+    public static boolean POLLEN_COUNTER_ENABLED = false;
     public static int POLLEN_FULL_COUNT = 4;
     public static double POLLEN_DIP_MM = 10.0;
     public static double POLLEN_RELEASE_FRACTION = 0.5;
@@ -114,14 +125,12 @@ public class BiobuzzTurretTeleOp extends LinearOpMode {
     public static double FULL_EJECT_S = 1.5;
 
     // ---- turret ---------------------------------------------------------------------------------
-    /** Turret tracks our CELL. false = it holds forward (gamepad2 right stick jogs it). Read live. */
+    /** Turret tracks our CELL. false = the turret motor just brakes at power 0, like BiobuzzShooterTeleOp. Read live. */
     public static boolean TURRET_TRACKING_ENABLED = false;
     /** Camera on: corrects the CELL positions and the robot pose. false = odometry + surveyed CELLS only. Read at INIT. */
     public static boolean CAMERA_ENABLED = false;
     /** The gate waits for the turret to be ON TARGET (TurretConstants.AIM_READY_TOLERANCE_DEG). */
     public static boolean GATE_WAITS_FOR_TURRET = false;
-    /** Turret jog speed at full gamepad2 right stick (tracking off), DEGREES/SECOND. */
-    public static double TURRET_JOG_DEG_S = 120.0;
 
     // ---- wheel lock / drive while aiming ---------------------------------------------------------
     /** While RT is held the robot holds the spot where RT was pressed against pushes. */
@@ -161,6 +170,7 @@ public class BiobuzzTurretTeleOp extends LinearOpMode {
     private Shooter pollen;
     private Servo flowerRamp;
     private final PollenCounter counter = new PollenCounter();
+    private IntakeCurrentLimiter intakeLimiter;
 
     private double lastTransferPower = Double.NaN, lastRollerPower = Double.NaN;
     private double velocityTrim = 0.0;
@@ -170,7 +180,6 @@ public class BiobuzzTurretTeleOp extends LinearOpMode {
     private final ElapsedTime ejectTimer = new ElapsedTime();
 
     private boolean trackingOffByDriver = false;
-    private double manualTurretDeg = 0.0;
     /** This loop's turret aim: unclamped wanted angle (NaN = no target) and the chassis excess. */
     private double aimWantDeg = Double.NaN, aimExcessDeg = 0.0, hiveDistanceIn = Double.NaN;
     private String aimNote = "";
@@ -391,10 +400,10 @@ public class BiobuzzTurretTeleOp extends LinearOpMode {
         aimExcessDeg = 0.0;
         hiveDistanceIn = Double.NaN;
         if (!tracking) {
-            manualTurretDeg = Turret.clampAngle(manualTurretDeg - gamepad2.right_stick_x * TURRET_JOG_DEG_S * dt);
-            turret.setTarget(manualTurretDeg, 0.0);
+            turret.setManualPower(0.0);
             turret.update();
-            aimNote = trackingOffByDriver ? "tracking OFF (gamepad2 BACK) - right stick jogs" : "tracking disabled";
+            aimNote = (trackingOffByDriver ? "tracking OFF (gamepad2 BACK)" : "tracking disabled")
+                    + " - turret motor braked at power 0";
             return;
         }
         double[] aim = aligner.turretAimPoint(pose, !feeding);
@@ -524,6 +533,7 @@ public class BiobuzzTurretTeleOp extends LinearOpMode {
         rollers.setDirection(BiobuzzRobotConstants.intakeReversed != REVERSE_INTAKE
                 ? DcMotor.Direction.REVERSE : DcMotor.Direction.FORWARD);
         rollers.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
+        intakeLimiter = new IntakeCurrentLimiter(rollers);
         try {
             transfer = hardwareMap.get(DcMotorEx.class, BiobuzzRobotConstants.transferRollers);
             transfer.setDirection(BiobuzzRobotConstants.transferReversed != REVERSE_TRANSFER
@@ -557,6 +567,8 @@ public class BiobuzzTurretTeleOp extends LinearOpMode {
             boolean red = AllianceSelector.red();
             Pose2d stored = red ? PoseStorage.getLastRedPose() : PoseStorage.getLastBluePose();
             telemetry.addLine("BIOBUZZ TURRET TELEOP");
+            telemetry.addLine("RT = shoot   dpad right = flywheel on/off");
+            telemetry.addLine("A = intake   B = reverse   RB = flower ramp   dpad up/down = velocity");
             AllianceSelector.show(telemetry);
             telemetry.addData("Start pose", USE_AUTO_END_POSE && stored != null
                     ? String.format("from the last auto: (%.1f, %.1f) %.0f deg", stored.position.x, stored.position.y,
@@ -569,7 +581,11 @@ public class BiobuzzTurretTeleOp extends LinearOpMode {
             telemetry.addData("Camera", CAMERA_ENABLED ? aligner.cameraState() : "off (odometry + surveyed CELLS)");
             if (!turret.isHardwareOk()) telemetry.addLine("TURRET MISSING: " + turret.getHardwareFault());
             if (pollen.motor == null) telemetry.addLine("POLLEN FLYWHEEL MISSING: " + pollen.fault);
-            if (transfer == null) telemetry.addLine("TRANSFER MOTOR MISSING");
+            if (transfer == null) telemetry.addLine("TRANSFER MOTOR MISSING: '"
+                    + BiobuzzRobotConstants.transferRollers + "' - nothing can feed the flywheel");
+            if (flowerRamp == null) telemetry.addLine("FLOWER RAMP MISSING: '" + BiobuzzRobotConstants.flowerRamp + "'");
+            telemetry.addData("Intake current limiter", INTAKE_CURRENT_LIMIT_ENABLED
+                    ? String.format("ON (%.2f A)", IntakeCurrentLimiter.FULL_CURRENT_AMPS) : "off");
             telemetry.update();
             idle();
         }
@@ -588,8 +604,10 @@ public class BiobuzzTurretTeleOp extends LinearOpMode {
         aligner.setFieldReferenced(guessedPose);
         mecaTank.updatePoseEstimate();
         mecaTank.resetDriveHeading();
-        driverForwardRef = mecaTank.getPoseEstimate().heading.toDouble();
-        manualTurretDeg = 0.0;
+        // Field-centric forward = away from our drivers in FIELD coordinates, so it is right from
+        // the first loop whatever way the auto left the robot facing (Back/Options still re-zeroes).
+        driverForwardRef = MecaTank.driverForwardHeading(red);
+        mecaTank.setFieldCentricForward(driverForwardRef);
 
         telemetryTimer.reset();
         long lastNanos = System.nanoTime();
@@ -625,7 +643,6 @@ public class BiobuzzTurretTeleOp extends LinearOpMode {
             // ---- turret --------------------------------------------------------------------------
             if (gamepad2.back && !prevBack2) {
                 trackingOffByDriver = !trackingOffByDriver;
-                manualTurretDeg = Turret.clampAngle(turret.getAngleDeg());
             }
             prevBack2 = gamepad2.back;
             updateTurret(pose, velRobot, shootHeld, pollen.feeding, dt);
@@ -725,6 +742,7 @@ public class BiobuzzTurretTeleOp extends LinearOpMode {
             // ---- intake + transfer ---------------------------------------------------------------
             boolean transferring = pollen.ready && (!moveWhileAiming || !PAUSE_FEED_WHEN_TOO_FAST || slowEnoughToFeed);
             pollen.drive(transferring);
+            boolean volleyEnded = wasTransferring && !shootHeld;
             if (POLLEN_COUNTER_ENABLED) {
                 if (wasTransferring && !shootHeld) counter.reset();
                 counter.update(intakeOn && !reverseHeld && !shootHeld && !transferring);
@@ -738,6 +756,16 @@ public class BiobuzzTurretTeleOp extends LinearOpMode {
                 counter.reset();
             }
             wasTransferring = transferring || (wasTransferring && shootHeld);
+            // INTAKE CURRENT LIMITER - before the powers below, so a trip cuts the intake this loop.
+            if (INTAKE_CURRENT_LIMIT_ENABLED) {
+                if (volleyEnded && intakeLimiter.isFull()) {   // POLLEN shot: intake back on
+                    intakeLimiter.clearFull();
+                    intakeOn = true;
+                }
+                if (intakeLimiter.update(intakeOn && !reverseHeld && !shootHeld && !transferring)) intakeOn = false;
+            } else {
+                intakeLimiter.reset();
+            }
             if (ejecting && (ejectTimer.seconds() >= FULL_EJECT_S || intakeOn || reverseHeld || shootHeld)) ejecting = false;
             boolean unjamming = TRANSFER_REVERSE_ON_RELEASE && !shootHeld && pollen.closing();
             double transferPower = transferring ? BiobuzzRobotConstants.TRANSFER_FEED_POWER
@@ -774,7 +802,9 @@ public class BiobuzzTurretTeleOp extends LinearOpMode {
                         transferring && BiobuzzRobotConstants.transferAlsoRunsIntake ? "pushing to transfer"
                                 : reverseHeld ? "REVERSE (B held)"
                                 : ejecting ? String.format("EJECTING extra pollen (%.1f / %.1f s)", ejectTimer.seconds(), FULL_EJECT_S)
-                                : intakeOn ? "IN (A toggle)" : "off");
+                                : intakeOn ? "IN (A toggle)"
+                                : INTAKE_CURRENT_LIMIT_ENABLED && intakeLimiter.isFull() ? "OFF - FULL (current limiter), A re-checks" : "off");
+                telemetry.addData("Intake current", INTAKE_CURRENT_LIMIT_ENABLED ? intakeLimiter.status() : "limiter off");
                 telemetry.addData("Transfer", transfer == null ? "MISSING"
                         : String.format("%.2f  %s", transferPower, transferring ? "FEEDING"
                         : shootHeld ? "waiting for gate / wheel / turret"
@@ -791,9 +821,12 @@ public class BiobuzzTurretTeleOp extends LinearOpMode {
                 telemetry.addLine("--- DRIVE ---");
                 telemetry.addData("Pose", "(%.1f, %.1f) %.0f deg%s", pose.position.x, pose.position.y,
                         Math.toDegrees(pose.heading.toDouble()), guessedPose ? "  (started from the DEFAULT pose)" : "");
+                telemetry.addData("FULL SPEED (temporary)", FULL_SPEED);
+                telemetry.addData("Precision", gamepad1.left_bumper);
                 telemetry.addData("Field centric", MecaTank.FIELD_CENTRIC);
                 telemetry.addData("Heading hold", MecaTank.HEADING_HOLD);
                 telemetry.addData("Translation hold", MecaTank.TRANSLATION_HOLD);
+                mecaTank.smoothDriveTelemetry();
                 telemetry.addData("Loop Time Max (ms)", "%.1f", loopMsMax);
                 telemetry.update();
                 loopMsMax = 0;

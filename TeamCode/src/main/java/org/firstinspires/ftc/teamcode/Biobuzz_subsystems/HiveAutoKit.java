@@ -1081,6 +1081,13 @@ public class HiveAutoKit {
         return withWallCollect(drive, WALL_COLLECT_START_S);
     }
 
+    /**
+     * Wall set from the TOP (start facing the HIVE, turn to face down, straight down x = 61 into the
+     * GARDEN with the side funnels): the front reaches the first GARDEN pollen ~1.75 s in, so the
+     * rollers start this far into the leg, SECONDS.
+     */
+    public static double TOP_WALL_COLLECT_START_S = 1.3;
+
     /** {@link #withWallCollect(Action)} with the rollers starting {@code startS} into the leg. */
     public Action withWallCollect(Action drive, double startS) {
         double run = Math.max(WALL_COLLECT_MIN_S, motionTime(drive) - startS);

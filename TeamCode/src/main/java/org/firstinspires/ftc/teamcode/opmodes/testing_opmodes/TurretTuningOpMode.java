@@ -41,7 +41,7 @@ import org.firstinspires.ftc.teamcode.library.BulkRead;
 public class TurretTuningOpMode extends LinearOpMode {
 
     public static double STEP_DEG = 45.0;
-    public static double SWEEP_DEG = 90.0;
+    public static double SWEEP_DEG = 70.0;   // stays inside the +-TURRET_LIMIT_DEG travel (90)
     /** Sweep speed for the tracking test, DEGREES/SECOND. */
     public static double SWEEP_RATE_DEG_S = 120.0;
     /** Open-loop power at full left stick. */

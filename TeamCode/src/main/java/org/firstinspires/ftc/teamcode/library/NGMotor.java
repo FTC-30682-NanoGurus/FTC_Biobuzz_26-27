@@ -83,8 +83,8 @@ public class NGMotor extends Subsystem {
     Telemetry telemetry;
 
     //Flywheel PIDF Controller Constants
-    double kP_Recovery = 0.002;//0.008
-    double kP_Stable  = 0.00051;//0.0008 
+    double kP_Recovery = 0.0076;//0.008
+    double kP_Stable  = 0.00071;//0.0008
     public static double kLoad = 0.8;
 //0.000408
     //0.0007

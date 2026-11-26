@@ -85,7 +85,7 @@ public class TurretConstants {
      * turret auto and the tuning opmode all read it live. Keep it a few degrees short of the hard
      * stops / cable limit.
      */
-    public static double TURRET_LIMIT_DEG = 160.0;
+    public static double TURRET_LIMIT_DEG = 90.0;
 
     /** Past a limit by more than this, DEGREES, the motor is never pushed further out. */
     public static double TURRET_LIMIT_OVERSHOOT_DEG = 3.0;
@@ -109,7 +109,7 @@ public class TurretConstants {
      * Turret pivot (rotation axis) position from ROBOT CENTRE, INCHES, robot frame (+x forward,
      * +y LEFT). TODO-MEASURE.
      */
-    public static double TURRET_PIVOT_X_IN = 0.0;
+    public static double TURRET_PIVOT_X_IN = 1.5;
     public static double TURRET_PIVOT_Y_IN = 0.0;
 
     /**
@@ -263,9 +263,9 @@ public class TurretConstants {
      * a tape measure and a square. An inch of error here is an inch of error in the target
      * estimate at every range.
      */
-    public static double CAMERA_OFFSET_X_IN = 3.6;
-    public static double CAMERA_OFFSET_Y_IN = 3.0;
-    public static double CAMERA_OFFSET_Z_IN = 7.5;
+    public static double CAMERA_OFFSET_X_IN = -7.0;
+    public static double CAMERA_OFFSET_Y_IN = 0.0;
+    public static double CAMERA_OFFSET_Z_IN = 8.5;
 
     /**
      * Camera mount orientation relative to robot forward, DEGREES.
@@ -280,7 +280,7 @@ public class TurretConstants {
      */
     // Turret robot: the camera is fixed to the CHASSIS facing straight forward, so 0.
     public static double CAMERA_MOUNT_YAW_DEG = 0.0;
-    public static double CAMERA_MOUNT_PITCH_DEG = 40.0;
+    public static double CAMERA_MOUNT_PITCH_DEG = 54.65;
     public static double CAMERA_MOUNT_ROLL_DEG = 0.0;
 
     // =============================================================================================
@@ -556,7 +556,7 @@ public class TurretConstants {
      * CHANGE THIS non-zero and the turret aims where the target will be relative to the moving
      * robot - only helpful once it is measured, actively harmful if guessed.
      */
-    public static double PROJECTILE_FLIGHT_TIME_S = 0.0;
+    public static double PROJECTILE_FLIGHT_TIME_S = 0.0; // Required for moving while shooting
 
     // =============================================================================================
     // INTAKE

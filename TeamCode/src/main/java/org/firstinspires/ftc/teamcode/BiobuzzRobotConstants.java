@@ -154,9 +154,9 @@ public class BiobuzzRobotConstants {
      * TODO: edit after testing gate positions on the real shooter.
      */
     public static double
-        pollenGateClosedPos = 1.0,
+        pollenGateClosedPos = 0.88,
         pollenGateOpenPos = 0.62,
-        nectarGateClosedPos = 1.0,
+        nectarGateClosedPos = 0.88,
         nectarGateOpenPos = 0.62;
 
     // =============================================================================================
@@ -220,7 +220,7 @@ public class BiobuzzRobotConstants {
      * volley runs the transfer (HiveAutoKit.transfer / Intake2_0.feedPollen) and what every auto's
      * time budget allows per shot.
      */
-    public static double cycleShootingTime = 1.5;
+    public static double cycleShootingTime = 1.0;
 
     /** How long each FLOWER intake runs the rollers (Intake2_0.collectFromFlower), SECONDS. */
     public static double flowerCollectTime = 2.5;

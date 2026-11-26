@@ -679,7 +679,10 @@ public class BiobuzzPollenTeleOp extends LinearOpMode {
         if (aligner != null) aligner.setFieldReferenced(guessedPose);
         mecaTank.updatePoseEstimate();
         mecaTank.resetDriveHeading();
-        driverForwardRef = mecaTank.getPoseEstimate().heading.toDouble();
+        // Field-centric forward = away from our drivers in FIELD coordinates, so it is right from
+        // the first loop whatever way the auto left the robot facing (Back/Options still re-zeroes).
+        driverForwardRef = MecaTank.driverForwardHeading(red);
+        mecaTank.setFieldCentricForward(driverForwardRef);
 
         telemetryTimer.reset();
         double lastLoopTime = System.nanoTime();

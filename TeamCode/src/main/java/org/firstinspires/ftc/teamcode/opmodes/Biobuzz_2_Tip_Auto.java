@@ -57,7 +57,7 @@ public class Biobuzz_2_Tip_Auto extends NGAutoOpMode {
                 cornerVel,
                 turnRateVel
         ));
-        double INTAKE_ZONE_Y = -42;
+        double INTAKE_ZONE_Y = -48;
         double INTAKE_VEL = 15;
         VelConstraint cornerIntakeVel = (robotPose, _path, _disp) -> {
             boolean inIntakeZone = robotPose.position.x.value() > 50.0 && robotPose.position.y.value() < INTAKE_ZONE_Y;
@@ -76,9 +76,10 @@ public class Biobuzz_2_Tip_Auto extends NGAutoOpMode {
         Pose2d beginPose = new Pose2d(61, -14, Math.toRadians(180));
         initAuto(beginPose);
 
+        Vector2d gardenEnd = new Vector2d(61, -61);
+
         Pose2d leftShot = new Pose2d(-52, -14, Math.toRadians(0));
         Pose2d leftShotBack = new Pose2d(-52, -14, Math.toRadians(360));
-        Pose2d wallSet = new Pose2d(62, -58, Math.toRadians(360));
         Pose2d leftNear = new Pose2d(-55.46, -40.00, Math.toRadians(25.0));
         Pose2d flowerOne = new Pose2d(-55, -22, Math.toRadians(180));
         Pose2d flowerTwo = new Pose2d(24, -55, Math.toRadians(-90));
@@ -98,14 +99,16 @@ public class Biobuzz_2_Tip_Auto extends NGAutoOpMode {
         double F2_FROM_LEFT_S = 2.90 + BiobuzzRobotConstants.flowerCollectTime + 2.92 + BiobuzzRobotConstants.volleyS() + 0.3;
 
         Action wallSetToLeftNear = kit.withWallCollect(drive.actionBuilder(beginPose)
-                .setTangent(Math.toRadians(-155))
-                .splineToSplineHeading(wallSet, Math.toRadians(25), maxIntakeVel, maxAccel)
+                .setTangent(Math.toRadians(-135))
+                .splineToSplineHeading(new Pose2d(60, -36, Math.toRadians(270)), Math.toRadians(-90), maxVel, maxAccel)
+                .splineToConstantHeading(new Vector2d(61, -48), Math.toRadians(-90), maxVel, maxAccel)
+                .splineToConstantHeading(gardenEnd, Math.toRadians(-90), maxIntakeVel, maxAccel)
                 .waitSeconds(WALL_SET_DWELL_S)
-                .setReversed(true)
-                .splineToLinearHeading(new Pose2d(20, -42, Math.toRadians(360)), Math.toRadians(-180), maxVel, maxAccel)
+                .setTangent(Math.toRadians(135))
+                .splineToSplineHeading(new Pose2d(30, -40, Math.toRadians(360)), Math.toRadians(180), maxVel, maxAccel)
                 .splineToLinearHeading(new Pose2d(-33, -40, Math.toRadians(360)), Math.toRadians(180), maxVel, maxAccel)
                 .splineToSplineHeading(leftNear, Math.toRadians(180), maxVel, maxAccel)
-                .build());
+                .build(), HiveAutoKit.TOP_WALL_COLLECT_START_S);
 
         Action leftNearToFlowerOne = new SequentialAction(
                 new ParallelAction(intake2_0.deployFlowerRamp(), kit.flowerRoute(leftNear, flowerOne)),

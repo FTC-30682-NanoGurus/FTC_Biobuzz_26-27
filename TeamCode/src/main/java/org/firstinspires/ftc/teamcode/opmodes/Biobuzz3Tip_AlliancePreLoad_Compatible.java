@@ -31,6 +31,7 @@ import org.firstinspires.ftc.teamcode.Biobuzz_subsystems.HiveWatcher;
 import org.firstinspires.ftc.teamcode.Biobuzz_subsystems.HiveWatcher.Side;
 import org.firstinspires.ftc.teamcode.library.NGAutoOpMode;
 import org.firstinspires.ftc.teamcode.roadrunner.MecanumDrive;
+import org.firstinspires.ftc.teamcode.roadrunner.PoseStorage;
 
 import java.util.Arrays;
 
@@ -293,6 +294,7 @@ public class Biobuzz3Tip_AlliancePreLoad_Compatible extends NGAutoOpMode{
                         kit.guardPark(main)
                 )
         );
+        PoseStorage.storeAutoEndPose(AllianceSelector.red(), drive.pose);
         hive.close();
     }
 }

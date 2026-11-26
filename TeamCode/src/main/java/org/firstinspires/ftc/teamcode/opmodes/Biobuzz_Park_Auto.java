@@ -32,6 +32,8 @@ public class Biobuzz_Park_Auto extends NGAutoOpMode {
                 .build();
 
         while (!isStarted() && !isStopRequested()) {
+            AllianceSelector.poll(gamepad1, gamepad2);
+            AllianceSelector.show(telemetry);
             telemetry.addLine("Park Auto - Path Built - Ready To Start");
             telemetry.addData("Start", "(%.1f, %.1f) facing forward, back touching the wall", beginPose.position.x, beginPose.position.y);
             telemetry.addData("Park", "(%.1f, %.1f)", PARK_X, parkY);

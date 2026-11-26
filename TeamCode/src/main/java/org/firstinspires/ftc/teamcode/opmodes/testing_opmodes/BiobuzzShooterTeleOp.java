@@ -16,6 +16,7 @@ import com.qualcomm.robotcore.util.Range;
 import org.firstinspires.ftc.teamcode.BiobuzzRobotConstants;
 import org.firstinspires.ftc.teamcode.Biobuzz_subsystems.AllianceSelector;
 import org.firstinspires.ftc.teamcode.Biobuzz_subsystems.HiveAligner;
+import org.firstinspires.ftc.teamcode.Biobuzz_subsystems.IntakeCurrentLimiter;
 import org.firstinspires.ftc.teamcode.Biobuzz_subsystems.LaunchVelocityTable;
 import org.firstinspires.ftc.teamcode.Biobuzz_subsystems.MecaTank;
 import org.firstinspires.ftc.teamcode.Biobuzz_subsystems.TurretConstants;
@@ -68,6 +69,7 @@ import org.firstinspires.ftc.teamcode.roadrunner.PoseStorage;
  *   LB (hold) precision                               Y field centric   X heading hold
  *   Dpad left ........... translation hold            Back / Options .. re-zero "forward"
  *   A ................... intake + transfer on/off     B (hold) ........ both reverse
+ *                         (after the current limiter cut it: A turns it back on and re-checks)
  *   RB .................. flower ramp down/up (down also turns the intake on)
  *   Right trigger (hold)  SHOOT POLLEN   } wheel lock / auto-align while either is held
  *   Left trigger (hold) . SHOOT NECTAR   } (both held = both gates, aim between the shooters)
@@ -128,6 +130,15 @@ public class BiobuzzShooterTeleOp extends LinearOpMode {
     public static boolean TRANSFER_REVERSE_ON_RELEASE = true;
     public static double TRANSFER_RELEASE_REVERSE_MS = 300.0;
     public static double TRANSFER_RELEASE_REVERSE_POWER = 1.0;
+
+    /**
+     * INTAKE CURRENT LIMITER: turn the intake off when its current spikes to
+     * IntakeCurrentLimiter.FULL_CURRENT_AMPS (4 POLLEN in the robot, rollers stalled). It turns back
+     * on by itself after a volley, or with A - and if the current still spikes after A it is cut
+     * again as soon as possible. Thresholds/timings live in IntakeCurrentLimiter (shared with
+     * BiobuzzTurretTeleOp). false = the intake runs until A turns it off.
+     */
+    public static boolean INTAKE_CURRENT_LIMIT_ENABLED = true;
 
     /** Flip each motor relative to BiobuzzRobotConstants, for this opmode only. Read once at init. */
     public static boolean
@@ -209,6 +220,9 @@ public class BiobuzzShooterTeleOp extends LinearOpMode {
     private boolean intakeOn = false;
     private boolean flywheelsOn = false;
     private double lastRollerPower = Double.NaN;
+    private IntakeCurrentLimiter intakeLimiter;
+    /** A shot fed during this trigger press (true until every trigger is released). */
+    private boolean wasTransferring = false;
     /** Null when "flowerRamp" is not configured - the toggle then only switches the intake on. */
     private Servo flowerRamp;
     private boolean flowerRampDown = false;
@@ -542,6 +556,7 @@ public class BiobuzzShooterTeleOp extends LinearOpMode {
         rollers.setDirection(BiobuzzRobotConstants.intakeReversed != REVERSE_INTAKE
                 ? DcMotor.Direction.REVERSE : DcMotor.Direction.FORWARD);
         rollers.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
+        intakeLimiter = new IntakeCurrentLimiter(rollers);
         try {
             transfer = hardwareMap.get(DcMotorEx.class, BiobuzzRobotConstants.transferRollers);
             transfer.setDirection(BiobuzzRobotConstants.transferReversed != REVERSE_TRANSFER
@@ -601,6 +616,8 @@ public class BiobuzzShooterTeleOp extends LinearOpMode {
             if (transfer == null) telemetry.addLine("TRANSFER MOTOR MISSING: '"
                     + BiobuzzRobotConstants.transferRollers + "' - nothing can feed the flywheels");
             if (flowerRamp == null) telemetry.addLine("FLOWER RAMP MISSING: '" + BiobuzzRobotConstants.flowerRamp + "'");
+            telemetry.addData("Intake current limiter", INTAKE_CURRENT_LIMIT_ENABLED
+                    ? String.format("ON (%.2f A)", IntakeCurrentLimiter.FULL_CURRENT_AMPS) : "off");
             telemetry.update();
             idle();
         }
@@ -619,7 +636,10 @@ public class BiobuzzShooterTeleOp extends LinearOpMode {
         if (aligner != null) aligner.setFieldReferenced(guessedPose);
         mecaTank.updatePoseEstimate();
         mecaTank.resetDriveHeading();
-        driverForwardRef = mecaTank.getPoseEstimate().heading.toDouble();
+        // Field-centric forward = away from our drivers in FIELD coordinates, so it is right from
+        // the first loop whatever way the auto left the robot facing (Back/Options still re-zeroes).
+        driverForwardRef = MecaTank.driverForwardHeading(red);
+        mecaTank.setFieldCentricForward(driverForwardRef);
 
         telemetryTimer.reset();
         double lastLoopTime = System.nanoTime();
@@ -790,6 +810,19 @@ public class BiobuzzShooterTeleOp extends LinearOpMode {
                     && (!moveWhileAiming || !PAUSE_FEED_WHEN_TOO_FAST || slowEnoughToFeed);
             pollen.drive(transferring && pollen.gateOpen);
             nectar.drive(transferring && nectar.gateOpen);
+
+            // INTAKE CURRENT LIMITER - before the powers below, so a trip cuts the intake this loop.
+            boolean volleyEnded = wasTransferring && !shootHeld;
+            wasTransferring = transferring || (wasTransferring && shootHeld);
+            if (INTAKE_CURRENT_LIMIT_ENABLED) {
+                if (volleyEnded && intakeLimiter.isFull()) {   // POLLEN shot: intake back on
+                    intakeLimiter.clearFull();
+                    intakeOn = true;
+                }
+                if (intakeLimiter.update(intakeOn && !reverseHeld && !shootHeld && !transferring)) intakeOn = false;
+            } else {
+                intakeLimiter.reset();
+            }
             boolean unjamming = TRANSFER_REVERSE_ON_RELEASE && !shootHeld && (pollen.closing() || nectar.closing());
             double transferPower = transferring ? BiobuzzRobotConstants.TRANSFER_FEED_POWER
                     : shootHeld ? 0.0
@@ -823,7 +856,9 @@ public class BiobuzzShooterTeleOp extends LinearOpMode {
                 telemetry.addData("Flywheels held on", flywheelsOn);
                 telemetry.addData("Intake", "%.2f  %s", rollerPower,
                         transferring && BiobuzzRobotConstants.transferAlsoRunsIntake ? "pushing to transfer"
-                                : reverseHeld ? "REVERSE (B held)" : intakeOn ? "IN (A toggle)" : "off");
+                                : reverseHeld ? "REVERSE (B held)" : intakeOn ? "IN (A toggle)"
+                                : INTAKE_CURRENT_LIMIT_ENABLED && intakeLimiter.isFull() ? "OFF - FULL (current limiter), A re-checks" : "off");
+                telemetry.addData("Intake current", INTAKE_CURRENT_LIMIT_ENABLED ? intakeLimiter.status() : "limiter off");
                 telemetry.addData("Transfer", transfer == null ? "MISSING"
                         : String.format("%.2f  %s", transferPower, transferring ? "FEEDING"
                                 : shootHeld ? "waiting for gate / wheel"

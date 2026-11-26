@@ -1453,6 +1453,24 @@ public class MecaTank extends Subsystem {
         return cachedDriveVoltage;
     }
 
+    /**
+     * Sets the field-centric "forward" to an absolute FIELD heading, radians (the direction the
+     * left stick's forward should drive), instead of whatever way the robot faces right now. TeleOp
+     * calls it right after setting the pose from the last auto, so field-centric is correct from
+     * the first loop with no re-zero. Heading hold / translation hold keep the current heading.
+     */
+    public void setFieldCentricForward(double fieldHeading) {
+        fieldCentricRef = fieldHeading;
+    }
+
+    /**
+     * Field heading, radians, that is "away from our drivers" (the red view's +y, 90 deg, turned
+     * 180 for blue): the field-centric forward for an alliance.
+     */
+    public static double driverForwardHeading(boolean red) {
+        return red ? Math.PI / 2 : -Math.PI / 2;
+    }
+
     /** Re-zeroes every drive heading reference to the robot's current heading. */
     public void resetDriveHeading() {
         double h = drive.pose.heading.toDouble();

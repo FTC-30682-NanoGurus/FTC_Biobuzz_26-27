@@ -123,7 +123,7 @@ public class BiobuzzHiveDecisionPreview extends LinearOpMode {
     private MecanumDrive drive;
     private HiveWatcher hive;
     private HiveAutoKit kit2, kit3;
-    private VelConstraint maxVel, maxIntakeVel;
+    private VelConstraint maxVel, maxIntakeVel, gardenVel;
     private AccelConstraint maxAccel;
 
     private Leg parkFromNear2;
@@ -848,6 +848,8 @@ public class BiobuzzHiveDecisionPreview extends LinearOpMode {
             return inIntakeZone ? INTAKE_VEL : 60;
         };
         maxIntakeVel = new MinVelConstraint(Arrays.asList(cornerIntakeVel, maxVel));
+        gardenVel = new MinVelConstraint(Arrays.asList((robotPose, _path, _disp) ->
+                robotPose.position.x.value() > 50.0 && robotPose.position.y.value() < -48 ? INTAKE_VEL : 60, maxVel));
 
         maxAccel = (robotPose, posePath, disp) -> {
             Vector2d travel = robotPose.heading.value().inverse().times(robotPose.position.drop(1).value());
@@ -863,28 +865,28 @@ public class BiobuzzHiveDecisionPreview extends LinearOpMode {
         double dwell3 = Biobuzz3Tip_HiveAuto.WALL_SET_DWELL_S;
 
         wallSetToLeftNear = new Leg("wallSetToLeftNear", wallCollect(drive.actionBuilder(begin2)
-                .setTangent(Math.toRadians(-155))
-                .splineToSplineHeading(wallSet, Math.toRadians(25), maxIntakeVel, maxAccel)
+                .setTangent(Math.toRadians(-135))
+                .splineToSplineHeading(new Pose2d(60, -36, Math.toRadians(270)), Math.toRadians(-90), maxVel, maxAccel)
+                .splineToConstantHeading(new Vector2d(61, -48), Math.toRadians(-90), maxVel, maxAccel)
+                .splineToConstantHeading(new Vector2d(61, -61), Math.toRadians(-90), gardenVel, maxAccel)
                 .waitSeconds(dwell2)
-                .setReversed(true)
-                .splineToLinearHeading(new Pose2d(20, -42, Math.toRadians(360)), Math.toRadians(-180), maxVel, maxAccel)
+                .setTangent(Math.toRadians(135))
+                .splineToSplineHeading(new Pose2d(30, -40, Math.toRadians(360)), Math.toRadians(180), maxVel, maxAccel)
                 .splineToLinearHeading(new Pose2d(-33, -40, Math.toRadians(360)), Math.toRadians(180), maxVel, maxAccel)
                 .splineToSplineHeading(leftNear, Math.toRadians(180), maxVel, maxAccel)
-                .build()),
-                "start -> wall set (62,-58,0) slow, dwell -> (20,-42,0) -> (-33,-40,0) -> leftNear (-55.5,-40.0,25)");
+                .build(), HiveAutoKit.TOP_WALL_COLLECT_START_S),
+                "start -> turn to face down, straight down x=61 into the GARDEN (61,-61), dwell -> (30,-40,0) -> (-33,-40,0) -> leftNear (-55.5,-40.0,25)");
 
-        wallSetToRightNear = new Leg("wallSetToRightNear", wallCollect(new SequentialAction(
-                drive.actionBuilder(begin2)
-                        .setTangent(Math.toRadians(-155))
-                        .splineToSplineHeading(wallSet, Math.toRadians(25), maxIntakeVel, maxAccel)
-                        .waitSeconds(dwell2)
-                        .build(),
-                drive.actionBuilder(wallSet)
-                        .setTangent(Math.atan2(10, -4))
-                        .splineToSplineHeading(new Pose2d(58, -48, Math.toRadians(30)), Math.toRadians(105.57), maxVel, maxAccel)
-                        .splineToSplineHeading(rightNear, Math.atan2(rightNear.position.y + 48, rightNear.position.x - 58), maxVel, maxAccel)
-                        .build())),
-                "start -> wall set (62,-58,0) slow, dwell -> (58,-48,30) -> rightNear (56.7,-40.0,155)");
+        wallSetToRightNear = new Leg("wallSetToRightNear", wallCollect(drive.actionBuilder(begin2)
+                .setTangent(Math.toRadians(-135))
+                .splineToSplineHeading(new Pose2d(60, -36, Math.toRadians(270)), Math.toRadians(-90), maxVel, maxAccel)
+                .splineToConstantHeading(new Vector2d(61, -48), Math.toRadians(-90), maxVel, maxAccel)
+                .splineToConstantHeading(new Vector2d(61, -61), Math.toRadians(-90), gardenVel, maxAccel)
+                .waitSeconds(dwell2)
+                .setTangent(Math.toRadians(100))
+                .splineToSplineHeading(rightNear, Math.toRadians(90), maxVel, maxAccel)
+                .build(), HiveAutoKit.TOP_WALL_COLLECT_START_S),
+                "start -> turn to face down, straight down x=61 into the GARDEN (61,-61), dwell -> rightNear (56.7,-40.0,155)");
 
         Action r = kit2.flowerRoute(leftNear, flowerOne2);
         leftNearToFlowerOne = new Leg("leftNearToFlowerOne", new SequentialAction(
@@ -1027,6 +1029,11 @@ public class BiobuzzHiveDecisionPreview extends LinearOpMode {
     }
 
     /** HiveAutoKit.withWallCollect's timing, with the rollers replaced by a wait. */
+    private static Action wallCollect(Action d, double startS) {
+        double run = Math.max(HiveAutoKit.WALL_COLLECT_MIN_S, HiveAutoKit.motionTime(d) - startS);
+        return new ParallelAction(d, new SequentialAction(new SleepAction(startS), new SleepAction(run)));
+    }
+
     private static Action wallCollect(Action d) {
         double run = Math.max(HiveAutoKit.WALL_COLLECT_MIN_S, HiveAutoKit.motionTime(d) - HiveAutoKit.WALL_COLLECT_START_S);
         return new ParallelAction(d, new SequentialAction(new SleepAction(HiveAutoKit.WALL_COLLECT_START_S), new SleepAction(run)));
